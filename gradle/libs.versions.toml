@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.0.21"
-agp = "8.11.0"
-compose-bom = "2024.12.01"
+agp = "9.0.0"
+compose-bom = "2026.01.00"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -12,7 +12,5 @@ compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 
 [plugins]
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-
 android-application = { id = "com.android.application", version.ref = "agp" }
 
