@@ -4,5 +4,6 @@
 .kotlin
 
 build
+android/release/*
 
 claude_task
