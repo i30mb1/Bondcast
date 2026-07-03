@@ -6,6 +6,7 @@ import n7.bondcast.bonding.LinkInfo
 import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.bonding.net.NetworkProvider
 import n7.srtla.protocol.PacketType
+import n7.srtla.protocol.SrtInspector
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.SchedulerAction
 import n7.srtla.scheduler.SchedulerEvent
@@ -42,6 +43,7 @@ internal class LinkIoLoop(
     private var nextLinkId = 1
     private var thread: Thread? = null
     private var lastSnapshotNanos = 0L
+    private var lastSummaryNanos = 0L
 
     @Volatile
     private var running = false
@@ -110,6 +112,10 @@ internal class LinkIoLoop(
                     publishSnapshot(now)
                     lastSnapshotNanos = now
                 }
+                if (now - lastSummaryNanos >= SUMMARY_NANOS) {
+                    logSummary()
+                    lastSummaryNanos = now
+                }
             }
         }
         closeQuietly()
@@ -162,6 +168,7 @@ internal class LinkIoLoop(
         try {
             buf.clear()
             val src = local.receive(buf) ?: return
+            if (callerAddress == null) Log.i(TAG, "локальный SRT-кейлер подключился: $src")
             callerAddress = src
             buf.flip()
             val data = ByteArray(buf.remaining())
@@ -181,9 +188,13 @@ internal class LinkIoLoop(
             buf.flip()
             val data = ByteArray(buf.remaining())
             buf.get(data)
+            logRegPacket("←", link, data, data.size)
             dispatch(scheduler.onEvent(SchedulerEvent.LinkPacket(link.id, data, data.size), now))
         } catch (t: Throwable) {
-            Log.w(TAG, "readLink failed on #${link.id} ${link.transport}: $t")
+            if (now - link.lastReadErrorNanos >= ERROR_LOG_THROTTLE_NANOS) {
+                link.lastReadErrorNanos = now
+                Log.w(TAG, "readLink failed on #${link.id} ${link.transport}: $t")
+            }
         }
     }
 
@@ -193,6 +204,7 @@ internal class LinkIoLoop(
                 when (action) {
                     is SchedulerAction.SendOnLink -> {
                         val link = links[action.linkId] ?: continue
+                        logRegPacket("→", link, action.data, action.data.size)
                         link.channel.write(ByteBuffer.wrap(action.data))
                         link.bytesSent += action.data.size
                     }
@@ -216,16 +228,47 @@ internal class LinkIoLoop(
             }
             link.lastRateBytes = link.bytesSent
             link.lastRateNanos = now
+            val reg = scheduler.regOf(link.id) ?: RegState.NONE
+            if (reg != link.lastLoggedReg) {
+                Log.i(TAG, "link #${link.id} ${link.transport}: ${link.lastLoggedReg} → $reg")
+                link.lastLoggedReg = reg
+            }
             LinkInfo(
                 id = link.id,
                 transport = link.transport,
-                reg = scheduler.regOf(link.id) ?: RegState.NONE,
+                reg = reg,
                 sendRateKbps = link.sendRateKbps,
                 inFlight = scheduler.inFlightOf(link.id),
                 window = scheduler.windowOf(link.id),
             )
         }
         onLinksSnapshot(infos)
+    }
+
+    /** Однострочная сводка для диагностики по логам. */
+    private fun logSummary() {
+        val linksSummary = links.values.joinToString(" | ") { link ->
+            "#${link.id} ${link.transport} ${scheduler.regOf(link.id)} ${link.sendRateKbps}kbps"
+        }.ifEmpty { "нет линков" }
+        Log.i(
+            TAG,
+            "сводка: target=$remote group=${if (scheduler.isEstablished) "est" else "PENDING"} " +
+                "caller=${if (callerAddress != null) "да" else "НЕТ"} :: $linksSummary",
+        )
+    }
+
+    /** Логирует только регистрационные srtla-пакеты (REG1..REG_NAK), не данные и не keepalive. */
+    private fun logRegPacket(direction: String, link: BondingLink, data: ByteArray, len: Int) {
+        val name = when (SrtInspector.srtType(data, len)) {
+            PacketType.SRTLA_REG1 -> "REG1"
+            PacketType.SRTLA_REG2 -> "REG2"
+            PacketType.SRTLA_REG3 -> "REG3"
+            PacketType.SRTLA_REG_ERR -> "REG_ERR"
+            PacketType.SRTLA_REG_NGP -> "REG_NGP"
+            PacketType.SRTLA_REG_NAK -> "REG_NAK"
+            else -> return
+        }
+        Log.i(TAG, "$direction link #${link.id} ${link.transport}: $name")
     }
 
     private fun closeQuietly() {
@@ -243,5 +286,7 @@ internal class LinkIoLoop(
         const val TICK_MS = 200L
         const val TICK_NANOS = 200_000_000L
         const val SNAPSHOT_NANOS = 1_000_000_000L
+        const val SUMMARY_NANOS = 5_000_000_000L
+        const val ERROR_LOG_THROTTLE_NANOS = 2_000_000_000L
     }
 }

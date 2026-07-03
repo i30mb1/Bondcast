@@ -1,6 +1,7 @@
 package n7.bondcast.stream
 
 import android.app.Application
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,11 +74,16 @@ internal class StreamController(
         StreamService.start(application)
         val sampler = launch { sampleStats() }
         val bonding = settings.bondingEnabled
+        Log.i(
+            TAG,
+            "сессия: bonding=$bonding " +
+                if (bonding) "srtla=${settings.srtlaHost}:${settings.srtlaPort}" else "srt=${settings.host}:${settings.port}",
+        )
         try {
             var localPort: Int? = null
             var attempt = 0
             while (currentCoroutineContext().isActive) {
-                _phase.value = StreamPhase.Connecting
+                setPhase(StreamPhase.Connecting)
                 var failure: Throwable? = null
                 try {
                     val effective = if (bonding) {
@@ -92,17 +98,19 @@ internal class StreamController(
                     }
                     engine.startStream(effective)
                     attempt = 0
-                    _phase.value = StreamPhase.Live(System.currentTimeMillis())
+                    setPhase(StreamPhase.Live(System.currentTimeMillis()))
                     engine.awaitDisconnect()
+                    Log.w(TAG, "SRT-соединение оборвалось: ${engine.lastError?.message ?: "без ошибки"}")
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (e: Exception) {
                     failure = e // старт не удался — уходим в retry ниже
+                    Log.w(TAG, "старт не удался: $e")
                 }
                 engine.stopStream()
                 attempt++
                 val backoffSeconds = min(30, 1 shl min(attempt, 5))
-                _phase.value = StreamPhase.Retrying(attempt, failure?.message ?: engine.lastError?.message)
+                setPhase(StreamPhase.Retrying(attempt, failure?.message ?: engine.lastError?.message))
                 delay(backoffSeconds * 1_000L)
             }
         } finally {
@@ -111,10 +119,19 @@ internal class StreamController(
                 engine.stopStream()
                 if (bonding) srtlaClient.stop()
                 StreamService.stop(application)
-                _phase.value = StreamPhase.Idle
+                setPhase(StreamPhase.Idle)
                 _stats.value = null
             }
         }
+    }
+
+    private fun setPhase(phase: StreamPhase) {
+        Log.i(TAG, "фаза → $phase")
+        _phase.value = phase
+    }
+
+    private companion object {
+        const val TAG = "StreamSession"
     }
 
     private suspend fun sampleStats() {

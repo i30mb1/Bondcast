@@ -1,6 +1,7 @@
 package n7.bondcast.bonding.io
 
 import android.net.Network
+import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
 import java.nio.channels.DatagramChannel
 import java.nio.channels.SelectionKey
@@ -17,4 +18,8 @@ internal class BondingLink(
     var lastRateBytes: Long = 0
     var lastRateNanos: Long = 0
     var sendRateKbps: Int = 0
+
+    // для логов: последнее залогированное состояние и троттлинг ошибок чтения
+    var lastLoggedReg: RegState = RegState.NONE
+    var lastReadErrorNanos: Long = 0
 }

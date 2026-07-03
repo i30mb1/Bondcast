@@ -24,6 +24,9 @@ public class SrtlaScheduler(
 
     public val activeLinkCount: Int get() = links.values.count { it.reg == RegState.ACTIVE }
 
+    /** Установлена ли srtla-группа (получен REG2 от сервера). */
+    public val isEstablished: Boolean get() = groupEstablished
+
     public fun onEvent(event: SchedulerEvent, nowNanos: Long): List<SchedulerAction> = when (event) {
         is SchedulerEvent.LinkUp -> onLinkUp(event, nowNanos)
         is SchedulerEvent.LinkDown -> onLinkDown(event)
