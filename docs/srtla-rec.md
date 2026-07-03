@@ -51,6 +51,24 @@ docker build -t srtla-rec .
 docker run -d --name srtla-rec --network host --restart unless-stopped srtla-rec
 ```
 
+## Локально на Windows (Docker Desktop) — рабочая схема
+
+`--network host` на Docker Desktop работает не как на Linux, поэтому локально srtla_rec и SRS
+связаны общей bridge-сетью, наружу опубликован только UDP 5000. Dockerfile —
+`dev-server/srtla-rec/Dockerfile` (ENTRYPOINT `srtla_rec`, цель задаётся аргументами запуска).
+
+```sh
+docker build -t srtla-rec dev-server/srtla-rec
+docker network create bondcast-net
+docker network connect bondcast-net srs
+docker run -d --name srtla-rec --network bondcast-net -p 5000:5000/udp \
+  --restart unless-stopped srtla-rec 5000 srs 10080
+```
+
+Быстрая проверка без телефона: отправить на `127.0.0.1:5000` UDP-пакет REG1
+(`0x9200` + 256 байт ID) — в ответ придёт REG2 (`0x9201` + 256 байт),
+а в `docker logs srtla-rec` появится `group ... registered`.
+
 ## Настройки в приложении
 
 Экран настроек → секция «Бондинг (SRTLA)»:

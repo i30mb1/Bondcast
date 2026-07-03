@@ -11,4 +11,10 @@ internal class BondingLink(
     val transport: Transport,
     val channel: DatagramChannel,
     val key: SelectionKey,
-)
+) {
+    // учёт трафика для UI; пишется только из io-потока
+    var bytesSent: Long = 0
+    var lastRateBytes: Long = 0
+    var lastRateNanos: Long = 0
+    var sendRateKbps: Int = 0
+}

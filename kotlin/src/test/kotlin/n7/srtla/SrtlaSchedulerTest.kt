@@ -153,6 +153,31 @@ class SrtlaSchedulerTest {
     }
 
     @Test
+    fun reg1RotatesToNextLinkWhenRegistrationStalls() {
+        val s = newScheduler()
+        // первый линк (cellular) не может достучаться до сервера
+        val up1 = s.onEvent(SchedulerEvent.LinkUp(1, Transport.CELLULAR), t0)
+        assertEquals(PacketType.SRTLA_REG1, up1.sends().first().type())
+        assertEquals(1, up1.sends().first().linkId)
+        // второй линк поднялся, пока регистрация висит на первом — молчит
+        val up2 = s.onEvent(SchedulerEvent.LinkUp(2, Transport.WIFI), t0)
+        assertTrue(up2.sends().isEmpty())
+
+        // ответа нет — по дедлайну регистрация переезжает на следующий линк
+        val later = t0 + params.connTimeoutNanos + 1
+        val out = s.onEvent(SchedulerEvent.Tick(later), later)
+        val reg1s = out.sends().filter { it.type() == PacketType.SRTLA_REG1 }
+        assertEquals(1, reg1s.size)
+        assertEquals(2, reg1s.first().linkId)
+
+        // REG2 с рабочего линка завершает регистрацию: оба линка получают REG2
+        val reg2 = TestPackets.reg2(TestPackets.receiverId(senderId))
+        val afterReg2 = s.onEvent(SchedulerEvent.LinkPacket(2, reg2, reg2.size), later)
+        assertEquals(2, afterReg2.sends().size)
+        assertTrue(afterReg2.sends().all { it.type() == PacketType.SRTLA_REG2 })
+    }
+
+    @Test
     fun timedOutLinkResendsReg2AndDropsActive() {
         val s = newScheduler()
         s.bringUp(1, Transport.WIFI, t0, first = true)

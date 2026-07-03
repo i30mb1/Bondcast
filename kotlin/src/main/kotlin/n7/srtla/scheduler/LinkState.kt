@@ -1,6 +1,6 @@
 package n7.srtla.scheduler
 
-internal enum class RegState { NONE, WAIT_REG2, WAIT_REG3, ACTIVE }
+public enum class RegState { NONE, WAIT_REG2, WAIT_REG3, ACTIVE }
 
 internal class LinkState(
     val id: Int,

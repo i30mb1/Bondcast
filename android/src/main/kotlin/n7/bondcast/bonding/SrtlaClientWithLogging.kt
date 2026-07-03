@@ -1,8 +1,11 @@
 package n7.bondcast.bonding
 
 import android.util.Log
+import kotlinx.coroutines.flow.StateFlow
 
 internal class SrtlaClientWithLogging(private val delegate: SrtlaClient) : SrtlaClient {
+
+    override val links: StateFlow<List<LinkInfo>> get() = delegate.links
 
     override suspend fun start(target: SrtlaTarget): Int {
         Log.i(TAG, "start bonding → ${target.host}:${target.port}")

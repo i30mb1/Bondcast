@@ -18,6 +18,8 @@ public class SrtlaScheduler(
     private var groupId: ByteArray = localGroupId.copyOf()
     private var groupEstablished: Boolean = false
     private var pendingReg2: LinkState? = null
+    private var pendingReg2DeadlineNanos: Long = 0L
+    private var lastReg1LinkId: Int = -1
     private val links = LinkedHashMap<Int, LinkState>()
 
     public val activeLinkCount: Int get() = links.values.count { it.reg == RegState.ACTIVE }
@@ -33,20 +35,30 @@ public class SrtlaScheduler(
     private fun onLinkUp(event: SchedulerEvent.LinkUp, nowNanos: Long): List<SchedulerAction> {
         val link = LinkState(event.linkId, event.transport, event.priority, params)
         links[event.linkId] = link
-        return when {
-            !groupEstablished && pendingReg2 == null -> {
-                pendingReg2 = link
-                link.reg = RegState.WAIT_REG2
-                link.lastSentNanos = nowNanos
-                listOf(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg1(groupId)))
-            }
-            groupEstablished -> {
-                link.reg = RegState.WAIT_REG3
-                link.lastSentNanos = nowNanos
-                listOf(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
-            }
-            else -> emptyList()
+        return if (groupEstablished) {
+            link.reg = RegState.WAIT_REG3
+            link.lastSentNanos = nowNanos
+            listOf(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
+        } else {
+            listOfNotNull(selectPendingReg2(nowNanos))
         }
+    }
+
+    /**
+     * Выбирает следующий линк для регистрации группы (REG1) по кругу от прошлого кандидата —
+     * мёртвый линк не должен монополизировать регистрацию.
+     */
+    private fun selectPendingReg2(nowNanos: Long): SchedulerAction? {
+        if (groupEstablished || pendingReg2 != null || links.isEmpty()) return null
+        val ordered = links.values.toList()
+        val lastIdx = ordered.indexOfFirst { it.id == lastReg1LinkId }
+        val candidate = ordered[(lastIdx + 1) % ordered.size]
+        pendingReg2 = candidate
+        pendingReg2DeadlineNanos = nowNanos + params.connTimeoutNanos
+        lastReg1LinkId = candidate.id
+        candidate.reg = RegState.WAIT_REG2
+        candidate.lastSentNanos = nowNanos
+        return SchedulerAction.SendOnLink(candidate.id, SrtlaCodec.reg1(groupId))
     }
 
     private fun onLinkDown(event: SchedulerEvent.LinkDown): List<SchedulerAction> {
@@ -72,7 +84,10 @@ public class SrtlaScheduler(
         if (type == PacketType.SRTLA_REG_NGP) {
             val noActive = links.values.none { !it.timedOut(nowNanos) }
             if (noActive && pendingReg2 == null) {
+                // сервер группу не нашёл, а линк живой (пакет только что пришёл) — регистрируемся с него
                 pendingReg2 = link
+                pendingReg2DeadlineNanos = nowNanos + params.connTimeoutNanos
+                lastReg1LinkId = link.id
                 link.reg = RegState.WAIT_REG2
                 link.lastSentNanos = nowNanos
                 return listOf(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg1(groupId)))
@@ -123,30 +138,21 @@ public class SrtlaScheduler(
 
     private fun onTick(nowNanos: Long): List<SchedulerAction> {
         val actions = ArrayList<SchedulerAction>()
-        val pending = pendingReg2
-        if (pending != null && pending.lastSentNanos + params.connTimeoutNanos < nowNanos) {
+        // дедлайн фиксируется в момент выбора кандидата и НЕ сдвигается ресендами:
+        // иначе мёртвый линк держит регистрацию вечно
+        if (pendingReg2 != null && pendingReg2DeadlineNanos < nowNanos) {
             pendingReg2 = null
         }
+        selectPendingReg2(nowNanos)?.let(actions::add)
         for (link in links.values) {
             if (link.timedOut(nowNanos)) {
                 if (link.lastRcvdNanos > 0L) link.reset()
-                when {
-                    !groupEstablished && pendingReg2 == null -> {
-                        pendingReg2 = link
-                        link.reg = RegState.WAIT_REG2
-                        link.lastSentNanos = nowNanos
-                        actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg1(groupId)))
-                    }
-                    pendingReg2 == null -> {
-                        link.reg = RegState.WAIT_REG3
-                        link.lastSentNanos = nowNanos
-                        actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
-                    }
-                    pendingReg2 === link -> {
-                        link.lastSentNanos = nowNanos
-                        actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg1(groupId)))
-                    }
+                if (groupEstablished) {
+                    link.reg = RegState.WAIT_REG3
+                    link.lastSentNanos = nowNanos
+                    actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
                 }
+                // при неустановленной группе REG1 шлёт только выбранный кандидат (ротация выше)
             } else if (link.lastSentNanos + params.idleNanos < nowNanos) {
                 link.lastSentNanos = nowNanos
                 actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.keepalive()))
@@ -242,6 +248,8 @@ public class SrtlaScheduler(
     public fun inFlightOf(linkId: Int): Int = links[linkId]?.inFlight ?: -1
 
     public fun isActive(linkId: Int): Boolean = links[linkId]?.reg == RegState.ACTIVE
+
+    public fun regOf(linkId: Int): RegState? = links[linkId]?.reg
 
     internal fun linkState(linkId: Int): LinkState? = links[linkId]
 }

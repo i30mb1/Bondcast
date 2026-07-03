@@ -1,6 +1,7 @@
 package n7.bondcast
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -26,7 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.SettingsScreen
 import n7.bondcast.ui.StreamScreen
 
@@ -34,10 +38,20 @@ internal class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val autostart = intent?.getBooleanExtra(EXTRA_AUTOSTART, false) == true
+        val graph = appGraph()
+        val launchIntent = intent
+        val autostart = launchIntent?.getBooleanExtra(EXTRA_AUTOSTART, false) == true
+        val hasSeed = launchIntent != null && hasSeedExtras(launchIntent)
+        if (hasSeed && launchIntent != null) {
+            lifecycleScope.launch {
+                val current = graph.settingsRepository.settings.first()
+                graph.settingsRepository.save(applySeedExtras(current, launchIntent))
+                if (autostart) graph.streamController.start()
+            }
+        }
         setContent {
             AppTheme {
-                App(graph = appGraph(), autostart = autostart)
+                App(graph = graph, autostart = autostart && !hasSeed)
             }
         }
     }
@@ -45,6 +59,26 @@ internal class MainActivity : ComponentActivity() {
     internal companion object {
         /** adb shell am start -n n7.bondcast/.MainActivity --ez autostart true */
         const val EXTRA_AUTOSTART: String = "autostart"
+
+        /**
+         * Отладочная заливка настроек с CLI перед autostart, например:
+         * adb shell am start -n n7.bondcast/.MainActivity --ez autostart true \
+         *   --ez cfg_bonding true --es cfg_srtla_host 192.168.31.133 --ei cfg_srtla_port 5000
+         */
+        private val SEED_KEYS = listOf(
+            "cfg_host", "cfg_port", "cfg_stream_name", "cfg_bonding", "cfg_srtla_host", "cfg_srtla_port",
+        )
+
+        private fun hasSeedExtras(intent: Intent): Boolean = SEED_KEYS.any(intent::hasExtra)
+
+        private fun applySeedExtras(current: StreamSettings, intent: Intent): StreamSettings = current.copy(
+            host = intent.getStringExtra("cfg_host") ?: current.host,
+            port = intent.getIntExtra("cfg_port", current.port),
+            streamName = intent.getStringExtra("cfg_stream_name") ?: current.streamName,
+            bondingEnabled = intent.getBooleanExtra("cfg_bonding", current.bondingEnabled),
+            srtlaHost = intent.getStringExtra("cfg_srtla_host") ?: current.srtlaHost,
+            srtlaPort = intent.getIntExtra("cfg_srtla_port", current.srtlaPort),
+        )
     }
 }
 

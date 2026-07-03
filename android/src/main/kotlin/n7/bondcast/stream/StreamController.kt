@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import n7.bondcast.bonding.LinkInfo
 import n7.bondcast.bonding.SrtlaClient
 import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.service.StreamService
@@ -50,6 +51,9 @@ internal class StreamController(
     private val _stats = MutableStateFlow<StreamStats?>(null)
     val stats: StateFlow<StreamStats?> = _stats.asStateFlow()
 
+    /** Живые линки бондинга (пусто, когда бондинг выключен или не запущен). */
+    val links: StateFlow<List<LinkInfo>> get() = srtlaClient.links
+
     private var sessionJob: Job? = null
 
     val isSessionActive: Boolean get() = sessionJob?.isActive == true
@@ -70,29 +74,35 @@ internal class StreamController(
         val sampler = launch { sampleStats() }
         val bonding = settings.bondingEnabled
         try {
-            val effective = if (bonding) {
-                val localPort = srtlaClient.start(SrtlaTarget(settings.srtlaHost, settings.srtlaPort))
-                settings.copy(host = "127.0.0.1", port = localPort)
-            } else {
-                settings
-            }
+            var localPort: Int? = null
             var attempt = 0
             while (currentCoroutineContext().isActive) {
                 _phase.value = StreamPhase.Connecting
+                var failure: Throwable? = null
                 try {
+                    val effective = if (bonding) {
+                        // relay стартует лениво и переживает SRT-реконнекты;
+                        // если старт упал — попробуем снова на следующей итерации
+                        val port = localPort
+                            ?: srtlaClient.start(SrtlaTarget(settings.srtlaHost, settings.srtlaPort))
+                                .also { localPort = it }
+                        settings.copy(host = "127.0.0.1", port = port)
+                    } else {
+                        settings
+                    }
                     engine.startStream(effective)
                     attempt = 0
                     _phase.value = StreamPhase.Live(System.currentTimeMillis())
                     engine.awaitDisconnect()
                 } catch (cancellation: CancellationException) {
                     throw cancellation
-                } catch (_: Exception) {
-                    // соединение не удалось — уходим в retry ниже
+                } catch (e: Exception) {
+                    failure = e // старт не удался — уходим в retry ниже
                 }
                 engine.stopStream()
                 attempt++
                 val backoffSeconds = min(30, 1 shl min(attempt, 5))
-                _phase.value = StreamPhase.Retrying(attempt, engine.lastError?.message)
+                _phase.value = StreamPhase.Retrying(attempt, failure?.message ?: engine.lastError?.message)
                 delay(backoffSeconds * 1_000L)
             }
         } finally {

@@ -2,12 +2,16 @@ package n7.bondcast.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
@@ -40,6 +44,8 @@ import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamPhase
 import n7.bondcast.ui.components.StatusDot
+import n7.srtla.scheduler.RegState
+import n7.srtla.scheduler.Transport
 
 @Composable
 internal fun StreamScreen(
@@ -89,13 +95,19 @@ internal fun StreamScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = DiscordColors.textSecondary,
                 )
+                val destination = if (settings.bondingEnabled) {
+                    "srtla://${settings.srtlaHost}:${settings.srtlaPort}"
+                } else {
+                    settings.url
+                }
                 Text(
-                    text = "${settings.url} → live/${settings.streamName}",
+                    text = "$destination → live/${settings.streamName}",
                     style = MaterialTheme.typography.bodySmall,
                     color = DiscordColors.textMuted,
                 )
             }
             HudStats(controller)
+            LinksPanel(controller)
         }
 
         Text(
@@ -148,6 +160,68 @@ private fun HudStats(controller: StreamController) {
         )
     }
 }
+
+@Composable
+private fun LinksPanel(controller: StreamController) {
+    val links by controller.links.collectAsState()
+    if (links.isEmpty()) return
+    val totalKbps = links.sumOf { it.sendRateKbps }.coerceAtLeast(1)
+    Spacer(Modifier.height(6.dp))
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.width(280.dp),
+    ) {
+        links.forEach { link ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(
+                    when (link.reg) {
+                        RegState.ACTIVE -> DiscordColors.green
+                        RegState.WAIT_REG2, RegState.WAIT_REG3 -> DiscordColors.yellow
+                        RegState.NONE -> DiscordColors.textMuted
+                    },
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = link.transport.label(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = DiscordColors.textSecondary,
+                    modifier = Modifier.width(72.dp),
+                )
+                Text(
+                    text = formatRate(link.sendRateKbps),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = DiscordColors.textPrimary,
+                    modifier = Modifier.width(86.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(DiscordColors.elevated),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((link.sendRateKbps.toFloat() / totalKbps).coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(DiscordColors.blurple, RoundedCornerShape(2.dp)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun Transport.label(): String = when (this) {
+    Transport.WIFI -> "WiFi"
+    Transport.CELLULAR -> "Сотовая"
+    Transport.ETHERNET -> "Ethernet"
+    Transport.RELAY -> "Bondlink"
+    Transport.UNKNOWN -> "Сеть"
+}
+
+private fun formatRate(kbps: Int): String =
+    if (kbps >= 1000) "${kbps / 1000}.${kbps % 1000 / 100} Mbps" else "$kbps kbps"
 
 @Composable
 private fun StatusLine(phase: StreamPhase) {

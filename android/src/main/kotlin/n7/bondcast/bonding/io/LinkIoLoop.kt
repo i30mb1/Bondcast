@@ -2,9 +2,11 @@ package n7.bondcast.bonding.io
 
 import android.net.Network
 import android.util.Log
+import n7.bondcast.bonding.LinkInfo
 import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.bonding.net.NetworkProvider
 import n7.srtla.protocol.PacketType
+import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.SchedulerAction
 import n7.srtla.scheduler.SchedulerEvent
 import n7.srtla.scheduler.SrtlaScheduler
@@ -29,6 +31,7 @@ internal class LinkIoLoop(
     private val scheduler: SrtlaScheduler,
     private val provider: NetworkProvider,
     private val clock: () -> Long = { System.nanoTime() },
+    private val onLinksSnapshot: (List<LinkInfo>) -> Unit = {},
 ) {
     private val selector: Selector = Selector.open()
     private val local: DatagramChannel = DatagramChannel.open()
@@ -38,6 +41,7 @@ internal class LinkIoLoop(
     private val closed = AtomicBoolean(false)
     private var nextLinkId = 1
     private var thread: Thread? = null
+    private var lastSnapshotNanos = 0L
 
     @Volatile
     private var running = false
@@ -102,6 +106,10 @@ internal class LinkIoLoop(
             if (now - lastTickNanos >= TICK_NANOS) {
                 dispatch(scheduler.onEvent(SchedulerEvent.Tick(now), now))
                 lastTickNanos = now
+                if (now - lastSnapshotNanos >= SNAPSHOT_NANOS) {
+                    publishSnapshot(now)
+                    lastSnapshotNanos = now
+                }
             }
         }
         closeQuietly()
@@ -130,7 +138,9 @@ internal class LinkIoLoop(
             key.attach(link)
             links[id] = link
             networkToId[network] = id
+            Log.i(TAG, "link #$id up: $transport → $remote")
             dispatch(scheduler.onEvent(SchedulerEvent.LinkUp(id, transport), now))
+            publishSnapshot(now)
         } catch (t: Throwable) {
             Log.w(TAG, "addLink failed for $transport", t)
         }
@@ -145,6 +155,7 @@ internal class LinkIoLoop(
             runCatching { link.key.cancel() }
             runCatching { link.channel.close() }
         }
+        publishSnapshot(now)
     }
 
     private fun readLocal(buf: ByteBuffer, now: Long) {
@@ -172,7 +183,7 @@ internal class LinkIoLoop(
             buf.get(data)
             dispatch(scheduler.onEvent(SchedulerEvent.LinkPacket(link.id, data, data.size), now))
         } catch (t: Throwable) {
-            Log.w(TAG, "readLink failed", t)
+            Log.w(TAG, "readLink failed on #${link.id} ${link.transport}: $t")
         }
     }
 
@@ -183,6 +194,7 @@ internal class LinkIoLoop(
                     is SchedulerAction.SendOnLink -> {
                         val link = links[action.linkId] ?: continue
                         link.channel.write(ByteBuffer.wrap(action.data))
+                        link.bytesSent += action.data.size
                     }
                     is SchedulerAction.SendToLocal -> {
                         val caller = callerAddress ?: continue
@@ -195,6 +207,27 @@ internal class LinkIoLoop(
         }
     }
 
+    /** Пересчитывает скорость каждого линка и публикует снимок для UI. Только io-поток. */
+    private fun publishSnapshot(now: Long) {
+        val infos = links.values.map { link ->
+            val elapsed = now - link.lastRateNanos
+            if (link.lastRateNanos != 0L && elapsed > 0) {
+                link.sendRateKbps = ((link.bytesSent - link.lastRateBytes) * 8_000_000L / elapsed).toInt()
+            }
+            link.lastRateBytes = link.bytesSent
+            link.lastRateNanos = now
+            LinkInfo(
+                id = link.id,
+                transport = link.transport,
+                reg = scheduler.regOf(link.id) ?: RegState.NONE,
+                sendRateKbps = link.sendRateKbps,
+                inFlight = scheduler.inFlightOf(link.id),
+                window = scheduler.windowOf(link.id),
+            )
+        }
+        onLinksSnapshot(infos)
+    }
+
     private fun closeQuietly() {
         if (!closed.compareAndSet(false, true)) return
         for (link in links.values) runCatching { link.channel.close() }
@@ -202,11 +235,13 @@ internal class LinkIoLoop(
         networkToId.clear()
         runCatching { local.close() }
         runCatching { selector.close() }
+        onLinksSnapshot(emptyList())
     }
 
     private companion object {
         const val TAG = "SrtlaIo"
         const val TICK_MS = 200L
         const val TICK_NANOS = 200_000_000L
+        const val SNAPSHOT_NANOS = 1_000_000_000L
     }
 }

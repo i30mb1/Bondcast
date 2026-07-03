@@ -72,12 +72,15 @@
 Подход: своя Kotlin-реализация srtla в `:kotlin` (без NDK — `Network.bindSocket` закрывает привязку сокета к сети). Два уровня: сети телефона + Bondlink (соседнее устройство). Детальный план и этапы M0–M5 — [docs/srtla-plan.md](docs/srtla-plan.md).
 
 - [x] M0: протокол-слой + шедулер в `:kotlin` (порт с BELABOX/srtla, 20 unit-тестов, сверено с C)
-- [x] M1: локальный UDP-relay + IO-цикл (1 линк) + проводка в сессию + UI бондинга (e2e через реальный srtla_rec ещё не прогонялся)
+- [x] M1: локальный UDP-relay + IO-цикл (1 линк) + проводка в сессию + UI бондинга (e2e через реальный srtla_rec прогнан 2026-07-03: группа и линк регистрируются, поток доходит до SRS)
 - [x] M2: захват сетей `requestNetwork(CELLULAR/WIFI/ETHERNET)` + `Network.bindSocket` + failover (код адверсариал-верифицирован; failover на устройстве не прогонялся)
-- [ ] M3: UI линков — per-link throughput / RTT / loss, вкл-выкл, приоритеты
+- [x] M3a: per-link панель в HUD — статус регистрации (точка), исходящий битрейт и доля трафика полоской; `LinkInfo` публикуется io-циклом раз в секунду через StateFlow
+- [ ] M3b: вкл/выкл линка и приоритеты из UI (scheduler API уже есть), per-link RTT/loss (нужны таймстампы в keepalive)
 - [ ] M4: Bondlink — соседнее устройство как relay-аплинк (NSD + pairing + прозрачный форвардер)
 - [ ] M5: бондированный спидтест перед стримом + ABR v2 (битрейт от суммарной полосы всех линков)
-- [ ] e2e-стенд: docker `srtla_rec` перед SRS ([docs/srtla-rec.md](docs/srtla-rec.md)), тест деградации (отключаем WiFi посреди стрима — картинка не падает)
+- [x] e2e-стенд поднят: docker `srtla_rec` перед SRS на общей сети `bondcast-net` ([docs/srtla-rec.md](docs/srtla-rec.md)), хендшейк REG1→REG2 проверен с хоста
+- [x] e2e с телефона: бондированный стрим через srtla_rec до SRS (WiFi-линк регистрируется и несёт поток; cellular до LAN-адреса недостижим — ожидаемо для локальной топологии)
+- [ ] Тест деградации на публично доступном srtla_rec (отключаем WiFi посреди стрима — cellular подхватывает): нужен проброс UDP 5000 до 93.84.96.193 или VPS
 - [ ] Проверка совместимости с BELABOX Cloud
 
 ## Фаза 4 — качество картинки и звука
@@ -131,5 +134,6 @@
 
 - **2026-07-03**: StreamPack + srtdroid вместо своего пайплайна — скорость MVP; изолируем за `StreamEngine`, чтобы можно было заменить. Бондинг — SRTLA (совместимость с belabox-экосистемой), реализация NDK-портом `srtla_send`; своя Kotlin-реализация — возможная v2. SRT socket groups отклонены (experimental, нет серверов).
 - **2026-07-03**: Дев/прод-сервер — **SRS v6** с готовым конфигом из `D:\AndroidProject\docs\stream` (вместо MediaMTX); для бондинга `srtla_rec` встанет перед SRS. Камера — **CameraX** (решение владельца); StreamPack остаётся слоем энкодер/муксер/SRT, интеграция через кастомный видеоисточник проверяется спайком. Исследование Android — через Android CLI 1.0 (`android` + агентские скиллы) и adb/gradlew, не через Studio.
+- **2026-07-03**: Найден и починен deadlock регистрации srtla: `pendingReg2` навсегда прилипал к первому линку (cellular, недостижимый до LAN), т.к. дедлайн обновлялся каждым ресендом REG1. Теперь дедлайн фиксируется при выборе кандидата, REG1 ротируется по линкам (тест `reg1RotatesToNextLinkWhenRegistrationStalls`). Для CLI-прогонов добавлены intent-extras `cfg_*` + `autostart` (заливают настройки без UI). HUD показывает srtla-адрес при включённом бондинге.
 - **2026-07-03**: SRTLA — **пересмотр: своя Kotlin-реализация в `:kotlin` вместо NDK-порта `srtla_send`**. Единственный весомый довод за NDK (привязка UDP-сокета к сети через `android_setsocknetwork()`) снят — публичный `Network.bindSocket(DatagramSocket)` делает это из Kotlin; протокол мал и юнит-тестируем, Bondlink-relay всё равно кастомный. Два уровня бондинга (сети телефона + соседнее устройство), этапы M0–M5 — [docs/srtla-plan.md](docs/srtla-plan.md). srtla_send — прозрачный локальный UDP-прокси, `srtla_rec` перед SRS ([docs/srtla-rec.md](docs/srtla-rec.md)).
 - **2026-07-03**: Камера в MVP — по факту **Camera2** (встроенный источник StreamPack `cameraSingleStreamer`), не CameraX. CameraX — обёртка над Camera2, для стабильности/качества стрима не даёт выигрыша (это уровень сети/энкодера), а нужные настройки (экспозиция/ISO/WB/фокус/стабилизация/зум/фонарик + raw `set(CaptureRequest.Key)`) уже доступны через StreamPack `CameraSettings`. Строку CameraX в таблице выше считать неактуальной.
