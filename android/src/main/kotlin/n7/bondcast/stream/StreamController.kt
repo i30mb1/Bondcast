@@ -130,10 +130,6 @@ internal class StreamController(
         _phase.value = phase
     }
 
-    private companion object {
-        const val TAG = "StreamSession"
-    }
-
     private suspend fun sampleStats() {
         while (currentCoroutineContext().isActive) {
             _stats.value = if (_phase.value is StreamPhase.Live) engine.readStats() else null
@@ -142,6 +138,7 @@ internal class StreamController(
     }
 
     private companion object {
+        const val TAG = "StreamSession"
         const val STATS_INTERVAL_MS = 1_000L
     }
 }
