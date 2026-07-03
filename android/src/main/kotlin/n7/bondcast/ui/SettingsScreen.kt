@@ -13,11 +13,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,8 +22,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.ui.components.DiscordField
+import n7.bondcast.ui.components.DiscordSegmentedRow
+import n7.bondcast.ui.components.DiscordTopBar
+import n7.bondcast.ui.components.RowDivider
+import n7.bondcast.ui.components.SectionFooter
+import n7.bondcast.ui.components.SectionLabel
+import n7.bondcast.ui.components.SettingsCard
 
 @Composable
 internal fun SettingsScreen(
@@ -48,11 +51,10 @@ internal fun SettingsScreen(
     val portInt = port.toIntOrNull()
     val bitrateInt = bitrate.toIntOrNull()
     val latencyInt = latency.toIntOrNull()
-    val valid = host.isNotBlank() &&
-        streamName.isNotBlank() &&
-        portInt != null && portInt in 1..65535 &&
-        bitrateInt != null && bitrateInt in 500..20_000 &&
-        latencyInt != null && latencyInt in 20..8_000
+    val portValid = portInt != null && portInt in 1..65535
+    val bitrateValid = bitrateInt != null && bitrateInt in 500..20_000
+    val latencyValid = latencyInt != null && latencyInt in 20..8_000
+    val valid = host.isNotBlank() && streamName.isNotBlank() && portValid && bitrateValid && latencyValid
 
     BackHandler(onBack = onBack)
 
@@ -61,106 +63,112 @@ internal fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            Text("Настройки стрима", style = MaterialTheme.typography.titleLarge)
+            DiscordTopBar(title = "Настройки", onBack = onBack)
 
-            OutlinedTextField(
-                value = host,
-                onValueChange = { host = it },
-                label = { Text("Хост SRT-сервера") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = { port = it },
-                    label = { Text("Порт") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = latency,
-                    onValueChange = { latency = it },
-                    label = { Text("Latency, мс") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            OutlinedTextField(
-                value = streamName,
-                onValueChange = { streamName = it },
-                label = { Text("Имя стрима (live/<имя>)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = passphrase,
-                onValueChange = { passphrase = it },
-                label = { Text("Passphrase (пусто — без шифрования)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = bitrate,
-                onValueChange = { bitrate = it },
-                label = { Text("Битрейт видео, kbps") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = !is1080p,
-                    onClick = { is1080p = false },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("720p") }
-                SegmentedButton(
-                    selected = is1080p,
-                    onClick = { is1080p = true },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("1080p") }
-            }
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = !is60fps,
-                    onClick = { is60fps = false },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("30 fps") }
-                SegmentedButton(
-                    selected = is60fps,
-                    onClick = { is60fps = true },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("60 fps") }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
-                    Text("Назад")
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                SectionLabel("Сервер")
+                SettingsCard {
+                    DiscordField(
+                        label = "Хост SRT-сервера",
+                        value = host,
+                        onValueChange = { host = it },
+                        isError = host.isBlank(),
+                    )
+                    RowDivider()
+                    DiscordField(
+                        label = "Порт",
+                        value = port,
+                        onValueChange = { port = it },
+                        keyboardType = KeyboardType.Number,
+                        isError = !portValid,
+                    )
+                    RowDivider()
+                    DiscordField(
+                        label = "Имя стрима (live/<имя>)",
+                        value = streamName,
+                        onValueChange = { streamName = it },
+                        isError = streamName.isBlank(),
+                    )
+                    RowDivider()
+                    DiscordField(
+                        label = "Passphrase",
+                        value = passphrase,
+                        onValueChange = { passphrase = it },
+                    )
                 }
-                Button(
-                    onClick = {
-                        onSave(
-                            StreamSettings(
-                                host = host.trim(),
-                                port = requireNotNull(portInt),
-                                streamName = streamName.trim(),
-                                passphrase = passphrase,
-                                width = if (is1080p) 1920 else 1280,
-                                height = if (is1080p) 1080 else 720,
-                                fps = if (is60fps) 60 else 30,
-                                videoBitrateKbps = requireNotNull(bitrateInt),
-                                latencyMs = requireNotNull(latencyInt),
-                            ),
-                        )
-                    },
-                    enabled = valid,
-                    modifier = Modifier.weight(1f),
+                SectionFooter("Пусто в passphrase — без шифрования. streamid: #!::r=live/<имя>,m=publish")
+
+                SectionLabel("Видео")
+                SettingsCard {
+                    DiscordSegmentedRow(
+                        label = "Разрешение",
+                        options = listOf("720p", "1080p"),
+                        selectedIndex = if (is1080p) 1 else 0,
+                        onSelect = { is1080p = it == 1 },
+                    )
+                    RowDivider()
+                    DiscordSegmentedRow(
+                        label = "Частота кадров",
+                        options = listOf("30 fps", "60 fps"),
+                        selectedIndex = if (is60fps) 1 else 0,
+                        onSelect = { is60fps = it == 1 },
+                    )
+                    RowDivider()
+                    DiscordField(
+                        label = "Битрейт видео, kbps",
+                        value = bitrate,
+                        onValueChange = { bitrate = it },
+                        keyboardType = KeyboardType.Number,
+                        isError = !bitrateValid,
+                    )
+                }
+
+                SectionLabel("Соединение")
+                SettingsCard {
+                    DiscordField(
+                        label = "Latency, мс",
+                        value = latency,
+                        onValueChange = { latency = it },
+                        keyboardType = KeyboardType.Number,
+                        isError = !latencyValid,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("Сохранить")
+                    TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
+                        Text("Назад")
+                    }
+                    Button(
+                        onClick = {
+                            onSave(
+                                StreamSettings(
+                                    host = host.trim(),
+                                    port = requireNotNull(portInt),
+                                    streamName = streamName.trim(),
+                                    passphrase = passphrase,
+                                    width = if (is1080p) 1920 else 1280,
+                                    height = if (is1080p) 1080 else 720,
+                                    fps = if (is60fps) 60 else 30,
+                                    videoBitrateKbps = requireNotNull(bitrateInt),
+                                    latencyMs = requireNotNull(latencyInt),
+                                ),
+                            )
+                        },
+                        enabled = valid,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Сохранить")
+                    }
                 }
             }
         }

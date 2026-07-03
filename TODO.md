@@ -36,23 +36,23 @@
 - [x] Gradle-скелет: AGP 9, version catalog, toolchain, R8 + proguard
 - [x] Compose + Material3 тема, edge-to-edge
 - [x] Android CLI 1.0 инициализирован (`android init`), скиллы agentов: `android-cli`, `camera1-to-camerax`, `testing-setup` → `~/.claude/skills`
-- [ ] Доделать переименование: в файлах пакет всё ещё `n7.test` (файлы уже лежат в `n7/bondcast`), в манифесте `n7.test.MainActivity`
-- [ ] Закоммитить каркас
+- [x] Доделать переименование: пакет `n7.bondcast`, манифест на относительных `.MainActivity` / `.BondcastApp`
+- [x] Закоммитить каркас
 - [ ] GitHub Actions: сборка + тесты на PR
 
 ## Фаза 1 — MVP: камера → SRT на сервер
 
 Критерий готовности: 1080p30 @ 4.5 Mbps H.264 + AAC летит час без падения на SRS (просмотр по HTTP-FLV), задержка ~2 с, стрим переживает сворачивание приложения.
 
-- [ ] Разрешения: CAMERA, RECORD_AUDIO, POST_NOTIFICATIONS (экран-заглушка при отказе)
-- [ ] Полноэкранное превью камеры на CameraX (landscape-first)
-- [ ] Спайк: видеоисточник CameraX для StreamPack (кастомный source, API v3); если связка хрупкая — свой GL-фан-аут (экран + surface энкодера), от StreamPack остаются муксер/эндпоинт
-- [ ] `StreamEngine` — свой интерфейс поверх StreamPack: `configure / startPreview / startStream / stopStream / stats: Flow`
-- [ ] Кодирование H.264 + AAC → MPEG-TS → SRT caller (streamid, passphrase, latency настраиваемые)
-- [ ] Экран настроек: адрес `srt://<IP>:10080`, streamid `#!::r=live/<name>,m=publish`, passphrase, разрешение / fps / битрейт / latency (по умолчанию 1500 — как на сервере) (DataStore)
-- [ ] Foreground service + нотификация с кнопкой Stop; keep screen on
-- [ ] HUD поверх превью: статус соединения, таймер, текущий битрейт, RTT, потерянные пакеты
-- [ ] Реконнект с экспоненциальным backoff (переживает пропажу сети на 30 с)
+- [x] Разрешения: CAMERA, RECORD_AUDIO, POST_NOTIFICATIONS (экран-заглушка при отказе)
+- [x] Полноэкранное превью камеры на CameraX (landscape-first)
+- [x] Спайк: видеоисточник CameraX для StreamPack (кастомный source, API v3); если связка хрупкая — свой GL-фан-аут (экран + surface энкодера), от StreamPack остаются муксер/эндпоинт
+- [x] `StreamEngine` — свой интерфейс поверх StreamPack: `prepare / startStream / awaitDisconnect / stopStream / bindPreview / readStats`
+- [x] Кодирование H.264 + AAC → MPEG-TS → SRT caller (streamid, passphrase, latency настраиваемые)
+- [x] Экран настроек: адрес `srt://<IP>:10080`, streamid `#!::r=live/<name>,m=publish`, passphrase, разрешение / fps / битрейт / latency (по умолчанию 1500 — как на сервере) (DataStore)
+- [x] Foreground service + нотификация с кнопкой Stop; keep screen on
+- [x] HUD поверх превью: статус соединения, таймер, текущий битрейт, RTT, потерянные пакеты (SRT-статистика, сэмпл раз в секунду)
+- [x] Реконнект с экспоненциальным backoff (переживает пропажу сети на 30 с)
 - [ ] Поднять SRS по инструкции из `D:\AndroidProject\docs\stream`, прогнать стрим: с эмулятора сервер = `10.0.2.2`, просмотр `http://localhost:8080/live/<name>.flv`; здоровье связи — ровный `ikbps` в `docker logs -f srs`
 - [ ] Ручной прогон: час стрима на реальном устройстве
 

@@ -21,6 +21,8 @@ internal interface StreamEngine {
     /** Ждёт, пока активное соединение не оборвётся. */
     suspend fun awaitDisconnect()
 
+    suspend fun readStats(): StreamStats?
+
     suspend fun stopStream()
 
     /** Привязывает превью камеры к View. */

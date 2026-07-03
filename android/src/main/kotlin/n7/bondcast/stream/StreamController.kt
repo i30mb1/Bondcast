@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,9 @@ internal class StreamController(
     private val _phase = MutableStateFlow<StreamPhase>(StreamPhase.Idle)
     val phase: StateFlow<StreamPhase> = _phase.asStateFlow()
 
+    private val _stats = MutableStateFlow<StreamStats?>(null)
+    val stats: StateFlow<StreamStats?> = _stats.asStateFlow()
+
     private var sessionJob: Job? = null
 
     val isSessionActive: Boolean get() = sessionJob?.isActive == true
@@ -56,9 +61,10 @@ internal class StreamController(
         sessionJob = null
     }
 
-    private suspend fun runSession() {
+    private suspend fun runSession() = coroutineScope {
         val settings = settingsRepository.settings.first()
         StreamService.start(application)
+        val sampler = launch { sampleStats() }
         try {
             var attempt = 0
             while (currentCoroutineContext().isActive) {
@@ -81,10 +87,23 @@ internal class StreamController(
             }
         } finally {
             withContext(NonCancellable) {
+                sampler.cancelAndJoin()
                 engine.stopStream()
                 StreamService.stop(application)
                 _phase.value = StreamPhase.Idle
+                _stats.value = null
             }
         }
+    }
+
+    private suspend fun sampleStats() {
+        while (currentCoroutineContext().isActive) {
+            _stats.value = if (_phase.value is StreamPhase.Live) engine.readStats() else null
+            delay(STATS_INTERVAL_MS)
+        }
+    }
+
+    private companion object {
+        const val STATS_INTERVAL_MS = 1_000L
     }
 }
