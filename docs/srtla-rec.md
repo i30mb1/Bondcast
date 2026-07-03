@@ -1,87 +1,35 @@
 # srtla_rec перед SRS (для бондинга)
 
-SRS не понимает SRTLA. Чтобы принять бондированный поток с телефона, перед SRS ставится
-`srtla_rec` из BELABOX/srtla: он слушает UDP-порт, собирает линки в один SRT-поток и форвардит
-его в SRT-ингест SRS.
+srtla_rec принимает бондированный UDP-поток с телефона, собирает линки в один SRT и отдаёт в SRS.
 
 ```
-телефон (srtla_send, N линков) ──UDP──▶ srtla_rec ──SRT──▶ SRS (10080) ──▶ HTTP-FLV/HLS
+телефон (N линков) ──UDP:5000──▶ srtla_rec ──SRT──▶ SRS :10080 ──▶ HTTP-FLV :8080
 ```
 
-## Сборка из исходников
+## Запуск (Docker Desktop, Git Bash) — одной командой
 
-```sh
-git clone https://github.com/BELABOX/srtla
-cd srtla
-make            # соберёт srtla_send и srtla_rec
+SRS уже поднят контейнером `srs`. Команда создаёт общую сеть, подключает к ней SRS,
+пересоздаёт srtla_rec с публикацией порта и форвардом в SRS:
+
+```bash
+docker network create bondcast-net 2>/dev/null; docker network connect bondcast-net srs 2>/dev/null; docker rm -f srtla-rec 2>/dev/null; docker run -d --name srtla-rec --network bondcast-net -p 5000:5000/udp --restart unless-stopped --entrypoint srtla_rec srtla-rec 5000 srs 10080
 ```
 
-## Запуск на сервере (93.84.96.193, рядом с SRS)
+Что делает команда:
+- `--network bondcast-net` + `srs 10080` — srtla_rec видит контейнер `srs` по имени и форвардит SRT в него.
+- `-p 5000:5000/udp` — публикует UDP-порт наружу (**`/udp` обязателен**, иначе телефон не достучится).
+- `srtla_rec 5000 srs 10080` — слушать SRTLA на 5000, форвардить SRT в `srs:10080`.
 
-`srtla_rec <SRTLA_PORT> <SRT_HOST> <SRT_PORT>` — слушает SRTLA на `SRTLA_PORT`,
-форвардит SRT на `SRT_HOST:SRT_PORT`.
+Первый раз собрать образ: `docker build -t srtla-rec dev-server/srtla-rec`
 
-```sh
-# SRS слушает SRT-ингест на 10080 локально
-./srtla_rec 5000 127.0.0.1 10080
-```
+## В приложении
 
-Открыть UDP-порт 5000 в фаерволе:
-
-```sh
-sudo ufw allow 5000/udp
-```
-
-## Docker (опция)
-
-```dockerfile
-FROM debian:bookworm-slim AS build
-RUN apt-get update && apt-get install -y git build-essential && rm -rf /var/lib/apt/lists/*
-RUN git clone https://github.com/BELABOX/srtla /srtla && make -C /srtla
-
-FROM debian:bookworm-slim
-COPY --from=build /srtla/srtla_rec /usr/local/bin/srtla_rec
-EXPOSE 5000/udp
-ENTRYPOINT ["srtla_rec", "5000", "127.0.0.1", "10080"]
-```
-
-```sh
-docker build -t srtla-rec .
-# --network host, чтобы 127.0.0.1:10080 указывал на SRS хоста
-docker run -d --name srtla-rec --network host --restart unless-stopped srtla-rec
-```
-
-## Локально на Windows (Docker Desktop) — рабочая схема
-
-`--network host` на Docker Desktop работает не как на Linux, поэтому локально srtla_rec и SRS
-связаны общей bridge-сетью, наружу опубликован только UDP 5000. Dockerfile —
-`dev-server/srtla-rec/Dockerfile` (ENTRYPOINT `srtla_rec`, цель задаётся аргументами запуска).
-
-```sh
-docker build -t srtla-rec dev-server/srtla-rec
-docker network create bondcast-net
-docker network connect bondcast-net srs
-docker run -d --name srtla-rec --network bondcast-net -p 5000:5000/udp \
-  --restart unless-stopped srtla-rec 5000 srs 10080
-```
-
-Быстрая проверка без телефона: отправить на `127.0.0.1:5000` UDP-пакет REG1
-(`0x9200` + 256 байт ID) — в ответ придёт REG2 (`0x9201` + 256 байт),
-а в `docker logs srtla-rec` появится `group ... registered`.
-
-## Настройки в приложении
-
-Экран настроек → секция «Бондинг (SRTLA)»:
-- Включить бондинг: вкл
-- Хост srtla_rec: `93.84.96.193`
-- Порт srtla_rec: `5000`
-
-Остальное (имя стрима, passphrase, разрешение/битрейт/latency) — как в прямом режиме;
-SRT-хендшейк и streamid идут end-to-end до SRS сквозь srtla_rec. Поле «Сервер» (host/port)
-при включённом бондинге не используется — SRT уходит на локальный прокси (`127.0.0.1`).
+Бондинг: вкл · Хост srtla_rec: **IP машины с докером** (в той же сети, что телефон) · Порт: `5000`
 
 ## Проверка
 
-- `docker logs -f srtla-rec` (или вывод srtla_rec) — видно регистрацию группы и линков.
-- `docker logs -f srs` — ровный `ikbps` на `live/<имя>`.
-- Просмотр: `http://93.84.96.193:8080/live/<имя>.flv`.
+```bash
+docker ps                 # у srtla-rec в PORTS: 0.0.0.0:5000->5000/udp
+docker logs -f srtla-rec  # регистрация группы и линков
+```
+Просмотр: `http://<IP>:8080/live/<имя>.flv`
