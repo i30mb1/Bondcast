@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import n7.bondcast.bonding.SrtlaClient
+import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
 import kotlin.math.min
@@ -36,6 +38,7 @@ internal sealed interface StreamPhase {
 internal class StreamController(
     private val application: Application,
     private val settingsRepository: SettingsRepository,
+    private val srtlaClient: SrtlaClient,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -65,12 +68,19 @@ internal class StreamController(
         val settings = settingsRepository.settings.first()
         StreamService.start(application)
         val sampler = launch { sampleStats() }
+        val bonding = settings.bondingEnabled
         try {
+            val effective = if (bonding) {
+                val localPort = srtlaClient.start(SrtlaTarget(settings.srtlaHost, settings.srtlaPort))
+                settings.copy(host = "127.0.0.1", port = localPort)
+            } else {
+                settings
+            }
             var attempt = 0
             while (currentCoroutineContext().isActive) {
                 _phase.value = StreamPhase.Connecting
                 try {
-                    engine.startStream(settings)
+                    engine.startStream(effective)
                     attempt = 0
                     _phase.value = StreamPhase.Live(System.currentTimeMillis())
                     engine.awaitDisconnect()
@@ -89,6 +99,7 @@ internal class StreamController(
             withContext(NonCancellable) {
                 sampler.cancelAndJoin()
                 engine.stopStream()
+                if (bonding) srtlaClient.stop()
                 StreamService.stop(application)
                 _phase.value = StreamPhase.Idle
                 _stats.value = null

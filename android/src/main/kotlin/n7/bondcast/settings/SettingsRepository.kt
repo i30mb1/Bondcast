@@ -1,6 +1,7 @@
 package n7.bondcast.settings
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -24,6 +25,9 @@ internal class SettingsRepository(private val context: Context) {
             fps = preferences[FPS] ?: default.fps,
             videoBitrateKbps = preferences[VIDEO_BITRATE_KBPS] ?: default.videoBitrateKbps,
             latencyMs = preferences[LATENCY_MS] ?: default.latencyMs,
+            bondingEnabled = preferences[BONDING_ENABLED] ?: default.bondingEnabled,
+            srtlaHost = preferences[SRTLA_HOST] ?: default.srtlaHost,
+            srtlaPort = preferences[SRTLA_PORT] ?: default.srtlaPort,
         )
     }
 
@@ -38,6 +42,9 @@ internal class SettingsRepository(private val context: Context) {
             preferences[FPS] = settings.fps
             preferences[VIDEO_BITRATE_KBPS] = settings.videoBitrateKbps
             preferences[LATENCY_MS] = settings.latencyMs
+            preferences[BONDING_ENABLED] = settings.bondingEnabled
+            preferences[SRTLA_HOST] = settings.srtlaHost
+            preferences[SRTLA_PORT] = settings.srtlaPort
         }
     }
 
@@ -51,5 +58,8 @@ internal class SettingsRepository(private val context: Context) {
         val FPS = intPreferencesKey("fps")
         val VIDEO_BITRATE_KBPS = intPreferencesKey("video_bitrate_kbps")
         val LATENCY_MS = intPreferencesKey("latency_ms")
+        val BONDING_ENABLED = booleanPreferencesKey("bonding_enabled")
+        val SRTLA_HOST = stringPreferencesKey("srtla_host")
+        val SRTLA_PORT = intPreferencesKey("srtla_port")
     }
 }

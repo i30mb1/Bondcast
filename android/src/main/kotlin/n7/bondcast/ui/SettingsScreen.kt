@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.components.DiscordField
 import n7.bondcast.ui.components.DiscordSegmentedRow
+import n7.bondcast.ui.components.DiscordSwitchRow
 import n7.bondcast.ui.components.DiscordTopBar
 import n7.bondcast.ui.components.RowDivider
 import n7.bondcast.ui.components.SectionFooter
@@ -47,14 +48,20 @@ internal fun SettingsScreen(
     var latency by remember { mutableStateOf(initial.latencyMs.toString()) }
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
+    var bonding by remember { mutableStateOf(initial.bondingEnabled) }
+    var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
+    var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
 
     val portInt = port.toIntOrNull()
     val bitrateInt = bitrate.toIntOrNull()
     val latencyInt = latency.toIntOrNull()
+    val srtlaPortInt = srtlaPort.toIntOrNull()
     val portValid = portInt != null && portInt in 1..65535
     val bitrateValid = bitrateInt != null && bitrateInt in 500..20_000
     val latencyValid = latencyInt != null && latencyInt in 20..8_000
-    val valid = host.isNotBlank() && streamName.isNotBlank() && portValid && bitrateValid && latencyValid
+    val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
+    val srtlaValid = !bonding || (srtlaHost.isNotBlank() && srtlaPortValid)
+    val valid = host.isNotBlank() && streamName.isNotBlank() && portValid && bitrateValid && latencyValid && srtlaValid
 
     BackHandler(onBack = onBack)
 
@@ -139,6 +146,33 @@ internal fun SettingsScreen(
                     )
                 }
 
+                SectionLabel("Бондинг (SRTLA)")
+                SettingsCard {
+                    DiscordSwitchRow(
+                        label = "Включить бондинг",
+                        checked = bonding,
+                        onCheckedChange = { bonding = it },
+                    )
+                    if (bonding) {
+                        RowDivider()
+                        DiscordField(
+                            label = "Хост srtla_rec",
+                            value = srtlaHost,
+                            onValueChange = { srtlaHost = it },
+                            isError = srtlaHost.isBlank(),
+                        )
+                        RowDivider()
+                        DiscordField(
+                            label = "Порт srtla_rec",
+                            value = srtlaPort,
+                            onValueChange = { srtlaPort = it },
+                            keyboardType = KeyboardType.Number,
+                            isError = !srtlaPortValid,
+                        )
+                    }
+                }
+                SectionFooter("srtla_rec собирает линки и отдаёт SRT в SRS. При бондинге SRT идёт на localhost, адрес в «Сервер» не используется.")
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -161,6 +195,9 @@ internal fun SettingsScreen(
                                     fps = if (is60fps) 60 else 30,
                                     videoBitrateKbps = requireNotNull(bitrateInt),
                                     latencyMs = requireNotNull(latencyInt),
+                                    bondingEnabled = bonding,
+                                    srtlaHost = srtlaHost.trim(),
+                                    srtlaPort = srtlaPortInt ?: 5000,
                                 ),
                             )
                         },
