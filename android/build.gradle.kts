@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "n7.test"
+    namespace = "n7.bondcast"
     compileSdk = 36
 
     defaultConfig {
