@@ -47,4 +47,12 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
     implementation(libs.material)
+
+    implementation(libs.core.ktx)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.datastore.preferences)
+
+    implementation(libs.streampack.core)
+    implementation(libs.streampack.srt)
+    implementation(libs.streampack.ui)
 }
