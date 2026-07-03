@@ -8,7 +8,7 @@ import n7.bondcast.stream.StreamController
 
 internal class AppGraph(application: Application) {
     val settingsRepository = SettingsRepository(application)
-    val streamController = StreamController(application, settingsRepository, srtlaClient())
+    val streamController = StreamController(application, settingsRepository, srtlaClient(application))
 }
 
 internal fun Context.appGraph(): AppGraph = (applicationContext as BondcastApp).graph

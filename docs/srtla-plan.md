@@ -1,7 +1,8 @@
 # План: SRTLA-бондинг (Фаза 3 + Bondlink)
 
 > Прогресс: **M0 ✅** (протокол+шедулер в `:kotlin`, 20 тестов, сверено с C) · **M1 ✅**
-> (локальный relay, 1 линк, проводка в сессию, UI бондинга) · M2–M5 — впереди.
+> (локальный relay, 1 линк, проводка в сессию, UI бондинга) · **M2 ✅** (мульти-сеть +
+> failover, код адверсариал-верифицирован; на устройстве не прогонялось) · M3–M5 — впереди.
 > Серверная часть для e2e — `docs/srtla-rec.md`.
 
 ## Context
@@ -44,7 +45,7 @@ StreamPack SRT-caller → 127.0.0.1:<localPort> (LocalRelaySocket)
 
 `:android` `android/src/main/kotlin/n7/bondcast/bonding/`:
 - **M1 ✅:** `SrtlaClient`(+Impl/WithMutex/WithLogging), `SrtlaTarget`, `io/LinkIoLoop`.
-- M2: `net/` — `NetworkProvider` + `ConnectivityNetworkProvider` (requestNetwork + bindSocket), `BondingLink`.
+- **M2 ✅:** `net/` — `NetworkProvider`(+`ConnectivityNetworkProvider`/`WithLogging`), `io/BondingLink`; `LinkIoLoop` переписан на N динамических линков; `SrtlaClientImpl(context)` + `srtlaClient(context)` + `AppGraph`.
 - M3: `BondingStats`.
 - M4: `relay/` — `RelayForwarder`, `RelayNatTable`, `discovery/NsdDiscovery`, `PairingChannel`, `RelayRole`.
 
@@ -62,7 +63,7 @@ Relay **прозрачный** → вся srtla-логика переиспол�
 
 - **M0 ✅** — чистый кодек + шедулер + тесты (без устройства). `./gradlew kotlin:test`.
 - **M1 ✅** — один линк, passthrough. Локальный relay поднят до `engine.startStream`, `StreamSettings`→127.0.0.1. **e2e (реальный srtla_rec) ещё не прогонялся.**
-- **M2** — мульти-сеть on-device + failover. `ConnectivityNetworkProvider` (requestNetwork CELLULAR/WIFI/ETHERNET), динамика `LinkAvailable/Lost`, `network.bindSocket`. Verify: выключить Wi-Fi в эфире → сотовая тянет.
+- **M2 ✅** — мульти-сеть on-device + failover. `ConnectivityNetworkProvider` (requestNetwork CELLULAR/WIFI/ETHERNET) → `NetworkProvider` → `NetworkProviderWithLogging`; `LinkIoLoop` держит N динамических линков (событие сети с binder-потока → очередь → io-поток: `addLink`/`removeLink`), `network.bindSocket` привязывает сокет к сети, хост резолвится один раз до цикла. Failover: `onLost` + `timedOut()` 4с. **На устройстве (выключить Wi-Fi в эфире) не прогонялось.** Отложено (нужен аккуратный дизайн, чтобы не выбивать живые линки при транзиентных ошибках): sub-4с evict мёртвого линка через scheduler-watchdog «шлём, но не получаем»; readiness-gate «не стартовать SRT-caller, пока нет активного линка» (сейчас первые хендшейки теряются, SRT их ретрансмитит).
 - **M3** — HUD по линкам + настройки. `BondingStats`→строки в `StreamScreen`; вкл/выкл + приоритет.
 - **M4** — Bondlink relay. relay-режим + форвардер + NAT + NSD + pairing. Verify: два телефона.
 - **M5** — ABR v2 + бондированный спидтест. Битрейт от суммарной полосы всех линков.

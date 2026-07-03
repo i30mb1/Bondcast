@@ -73,7 +73,7 @@
 
 - [x] M0: протокол-слой + шедулер в `:kotlin` (порт с BELABOX/srtla, 20 unit-тестов, сверено с C)
 - [x] M1: локальный UDP-relay + IO-цикл (1 линк) + проводка в сессию + UI бондинга (e2e через реальный srtla_rec ещё не прогонялся)
-- [ ] M2: захват сетей `requestNetwork(CELLULAR/WIFI/ETHERNET)` + `Network.bindSocket` + failover (cellular живой при WiFi)
+- [x] M2: захват сетей `requestNetwork(CELLULAR/WIFI/ETHERNET)` + `Network.bindSocket` + failover (код адверсариал-верифицирован; failover на устройстве не прогонялся)
 - [ ] M3: UI линков — per-link throughput / RTT / loss, вкл-выкл, приоритеты
 - [ ] M4: Bondlink — соседнее устройство как relay-аплинк (NSD + pairing + прозрачный форвардер)
 - [ ] M5: бондированный спидтест перед стримом + ABR v2 (битрейт от суммарной полосы всех линков)

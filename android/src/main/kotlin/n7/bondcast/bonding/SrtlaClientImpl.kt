@@ -1,18 +1,20 @@
 package n7.bondcast.bonding
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import n7.bondcast.bonding.io.LinkIoLoop
+import n7.bondcast.bonding.net.networkProvider
 import n7.srtla.protocol.GroupId
 import n7.srtla.scheduler.SrtlaScheduler
 
-internal class SrtlaClientImpl : SrtlaClient {
+internal class SrtlaClientImpl(private val context: Context) : SrtlaClient {
 
     private var loop: LinkIoLoop? = null
 
     override suspend fun start(target: SrtlaTarget): Int = withContext(Dispatchers.IO) {
         val scheduler = SrtlaScheduler(GroupId.random())
-        val newLoop = LinkIoLoop(target, scheduler)
+        val newLoop = LinkIoLoop(target, scheduler, networkProvider(context))
         val port = newLoop.start()
         loop = newLoop
         port
