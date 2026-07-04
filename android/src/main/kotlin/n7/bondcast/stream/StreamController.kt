@@ -24,6 +24,10 @@ import n7.bondcast.bonding.SrtlaClient
 import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
+import n7.bondcast.settings.StreamSettings
+import n7.srtla.abr.AbrConfig
+import n7.srtla.abr.AbrSample
+import n7.srtla.abr.abrController
 import kotlin.math.min
 
 internal sealed interface StreamPhase {
@@ -52,6 +56,9 @@ internal class StreamController(
     private val _stats = MutableStateFlow<StreamStats?>(null)
     val stats: StateFlow<StreamStats?> = _stats.asStateFlow()
 
+    private val _videoBitrateKbps = MutableStateFlow(0)
+    val videoBitrateKbps: StateFlow<Int> = _videoBitrateKbps.asStateFlow()
+
     /** Живые линки бондинга (пусто, когда бондинг выключен или не запущен). */
     val links: StateFlow<List<LinkInfo>> get() = srtlaClient.links
 
@@ -72,7 +79,7 @@ internal class StreamController(
     private suspend fun runSession() = coroutineScope {
         val settings = settingsRepository.settings.first()
         StreamService.start(application)
-        val sampler = launch { sampleStats() }
+        val sampler = launch { sampleStats(settings) }
         val bonding = settings.bondingEnabled
         Log.i(
             TAG,
@@ -121,6 +128,7 @@ internal class StreamController(
                 StreamService.stop(application)
                 setPhase(StreamPhase.Idle)
                 _stats.value = null
+                _videoBitrateKbps.value = 0
             }
         }
     }
@@ -130,9 +138,45 @@ internal class StreamController(
         _phase.value = phase
     }
 
-    private suspend fun sampleStats() {
+    private suspend fun sampleStats(settings: StreamSettings) {
+        val abr = if (settings.abrEnabled) {
+            abrController(
+                AbrConfig(
+                    minKbps = settings.minVideoBitrateKbps,
+                    maxKbps = settings.videoBitrateKbps,
+                    sndBufHighMs = settings.latencyMs / 2,
+                    sndBufLowMs = settings.latencyMs / 5,
+                ),
+            ) { Log.i(TAG, it) }
+        } else {
+            null
+        }
+        var wasLive = false
         while (currentCoroutineContext().isActive) {
-            _stats.value = if (_phase.value is StreamPhase.Live) engine.readStats() else null
+            val live = _phase.value is StreamPhase.Live
+            if (live) {
+                val stats = engine.readStats()
+                _stats.value = stats
+                if (abr != null) {
+                    if (!wasLive) {
+                        abr.reset(settings.videoBitrateKbps)
+                        engine.setVideoBitrate(settings.videoBitrateKbps)
+                        _videoBitrateKbps.value = settings.videoBitrateKbps
+                    }
+                    if (stats != null) {
+                        val decision = abr.onSample(
+                            AbrSample(System.nanoTime(), stats.sndBufferMs, stats.pktLossTotal),
+                        )
+                        if (decision.changed) {
+                            engine.setVideoBitrate(decision.targetKbps)
+                            _videoBitrateKbps.value = decision.targetKbps
+                        }
+                    }
+                }
+            } else {
+                _stats.value = null
+            }
+            wasLive = live
             delay(STATS_INTERVAL_MS)
         }
     }

@@ -75,6 +75,14 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
         )
     }
 
+    override suspend fun setVideoBitrate(kbps: Int) {
+        val current = streamer ?: return
+        streamerLock.withLock {
+            if (!current.isStreamingFlow.value) return@withLock
+            runCatching { current.videoEncoder?.bitrate = kbps * 1000 }
+        }
+    }
+
     override suspend fun stopStream() {
         val current = streamer ?: return
         streamerLock.withLock {

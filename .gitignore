@@ -7,3 +7,5 @@ build
 android/release/*
 
 claude_task
+local.properties
+stream.md

@@ -24,6 +24,8 @@ internal class SettingsRepository(private val context: Context) {
             height = preferences[HEIGHT] ?: default.height,
             fps = preferences[FPS] ?: default.fps,
             videoBitrateKbps = preferences[VIDEO_BITRATE_KBPS] ?: default.videoBitrateKbps,
+            abrEnabled = preferences[ABR_ENABLED] ?: default.abrEnabled,
+            minVideoBitrateKbps = preferences[MIN_VIDEO_BITRATE_KBPS] ?: default.minVideoBitrateKbps,
             latencyMs = preferences[LATENCY_MS] ?: default.latencyMs,
             bondingEnabled = preferences[BONDING_ENABLED] ?: default.bondingEnabled,
             srtlaHost = preferences[SRTLA_HOST] ?: default.srtlaHost,
@@ -41,6 +43,8 @@ internal class SettingsRepository(private val context: Context) {
             preferences[HEIGHT] = settings.height
             preferences[FPS] = settings.fps
             preferences[VIDEO_BITRATE_KBPS] = settings.videoBitrateKbps
+            preferences[ABR_ENABLED] = settings.abrEnabled
+            preferences[MIN_VIDEO_BITRATE_KBPS] = settings.minVideoBitrateKbps
             preferences[LATENCY_MS] = settings.latencyMs
             preferences[BONDING_ENABLED] = settings.bondingEnabled
             preferences[SRTLA_HOST] = settings.srtlaHost
@@ -57,6 +61,8 @@ internal class SettingsRepository(private val context: Context) {
         val HEIGHT = intPreferencesKey("height")
         val FPS = intPreferencesKey("fps")
         val VIDEO_BITRATE_KBPS = intPreferencesKey("video_bitrate_kbps")
+        val ABR_ENABLED = booleanPreferencesKey("abr_enabled")
+        val MIN_VIDEO_BITRATE_KBPS = intPreferencesKey("min_video_bitrate_kbps")
         val LATENCY_MS = intPreferencesKey("latency_ms")
         val BONDING_ENABLED = booleanPreferencesKey("bonding_enabled")
         val SRTLA_HOST = stringPreferencesKey("srtla_host")

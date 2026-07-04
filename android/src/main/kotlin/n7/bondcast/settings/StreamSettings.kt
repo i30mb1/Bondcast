@@ -9,6 +9,8 @@ internal data class StreamSettings(
     val height: Int = 1080,
     val fps: Int = 30,
     val videoBitrateKbps: Int = 4500,
+    val abrEnabled: Boolean = true,
+    val minVideoBitrateKbps: Int = 800,
     val latencyMs: Int = 1500,
     val bondingEnabled: Boolean = false,
     val srtlaHost: String = "",

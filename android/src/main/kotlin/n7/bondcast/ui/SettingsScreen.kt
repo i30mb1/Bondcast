@@ -45,6 +45,8 @@ internal fun SettingsScreen(
     var streamName by remember { mutableStateOf(initial.streamName) }
     var passphrase by remember { mutableStateOf(initial.passphrase) }
     var bitrate by remember { mutableStateOf(initial.videoBitrateKbps.toString()) }
+    var abr by remember { mutableStateOf(initial.abrEnabled) }
+    var minBitrate by remember { mutableStateOf(initial.minVideoBitrateKbps.toString()) }
     var latency by remember { mutableStateOf(initial.latencyMs.toString()) }
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
@@ -58,10 +60,13 @@ internal fun SettingsScreen(
     val srtlaPortInt = srtlaPort.toIntOrNull()
     val portValid = portInt != null && portInt in 1..65535
     val bitrateValid = bitrateInt != null && bitrateInt in 500..20_000
+    val minBitrateInt = minBitrate.toIntOrNull()
+    val minBitrateValid = !abr || (minBitrateInt != null && bitrateInt != null && minBitrateInt in 300..bitrateInt)
     val latencyValid = latencyInt != null && latencyInt in 20..8_000
     val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
     val srtlaValid = !bonding || (srtlaHost.isNotBlank() && srtlaPortValid)
-    val valid = host.isNotBlank() && streamName.isNotBlank() && portValid && bitrateValid && latencyValid && srtlaValid
+    val valid = host.isNotBlank() && streamName.isNotBlank() && portValid && bitrateValid &&
+        minBitrateValid && latencyValid && srtlaValid
 
     BackHandler(onBack = onBack)
 
@@ -133,7 +138,24 @@ internal fun SettingsScreen(
                         keyboardType = KeyboardType.Number,
                         isError = !bitrateValid,
                     )
+                    RowDivider()
+                    DiscordSwitchRow(
+                        label = "Адаптивный битрейт (ABR)",
+                        checked = abr,
+                        onCheckedChange = { abr = it },
+                    )
+                    if (abr) {
+                        RowDivider()
+                        DiscordField(
+                            label = "Мин. битрейт, kbps",
+                            value = minBitrate,
+                            onValueChange = { minBitrate = it },
+                            keyboardType = KeyboardType.Number,
+                            isError = !minBitrateValid,
+                        )
+                    }
                 }
+                SectionFooter("ABR роняет битрейт под ёмкость сети и поднимает при запасе — эфир держится при слабом линке.")
 
                 SectionLabel("Соединение")
                 SettingsCard {
@@ -194,6 +216,8 @@ internal fun SettingsScreen(
                                     height = if (is1080p) 1080 else 720,
                                     fps = if (is60fps) 60 else 30,
                                     videoBitrateKbps = requireNotNull(bitrateInt),
+                                    abrEnabled = abr,
+                                    minVideoBitrateKbps = minBitrateInt ?: 800,
                                     latencyMs = requireNotNull(latencyInt),
                                     bondingEnabled = bonding,
                                     srtlaHost = srtlaHost.trim(),

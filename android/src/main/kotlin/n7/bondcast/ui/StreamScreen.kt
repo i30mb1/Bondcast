@@ -151,6 +151,7 @@ internal fun StreamScreen(
 @Composable
 private fun HudStats(controller: StreamController) {
     val stats by controller.stats.collectAsState()
+    val bitrate by controller.videoBitrateKbps.collectAsState()
     val liveStats = stats
     if (liveStats != null) {
         Text(
@@ -158,6 +159,13 @@ private fun HudStats(controller: StreamController) {
             style = MaterialTheme.typography.bodySmall,
             color = DiscordColors.textPrimary,
         )
+        if (bitrate > 0) {
+            Text(
+                text = "битрейт (ABR): $bitrate kbps",
+                style = MaterialTheme.typography.bodySmall,
+                color = DiscordColors.textSecondary,
+            )
+        }
     }
 }
 

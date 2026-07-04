@@ -23,6 +23,8 @@ internal interface StreamEngine {
 
     suspend fun readStats(): StreamStats?
 
+    suspend fun setVideoBitrate(kbps: Int)
+
     suspend fun stopStream()
 
     /** Привязывает превью камеры к View. */
