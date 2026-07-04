@@ -59,6 +59,13 @@ internal class StreamController(
     private val _videoBitrateKbps = MutableStateFlow(0)
     val videoBitrateKbps: StateFlow<Int> = _videoBitrateKbps.asStateFlow()
 
+    val cameras: List<CameraOption> by lazy { engine.availableCameras() }
+
+    private val _currentCamera = MutableStateFlow(
+        cameras.firstOrNull { !it.isFront } ?: cameras.firstOrNull(),
+    )
+    val currentCamera: StateFlow<CameraOption?> = _currentCamera.asStateFlow()
+
     /** Живые линки бондинга (пусто, когда бондинг выключен или не запущен). */
     val links: StateFlow<List<LinkInfo>> get() = srtlaClient.links
 
@@ -74,6 +81,12 @@ internal class StreamController(
     fun stop() {
         sessionJob?.cancel()
         sessionJob = null
+    }
+
+    fun selectCamera(option: CameraOption) {
+        if (option == _currentCamera.value) return
+        _currentCamera.value = option
+        scope.launch { engine.switchCamera(option.id) }
     }
 
     private suspend fun runSession() = coroutineScope {

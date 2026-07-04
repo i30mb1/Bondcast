@@ -25,6 +25,10 @@ internal interface StreamEngine {
 
     suspend fun setVideoBitrate(kbps: Int)
 
+    fun availableCameras(): List<CameraOption>
+
+    suspend fun switchCamera(cameraId: String)
+
     suspend fun stopStream()
 
     /** Привязывает превью камеры к View. */

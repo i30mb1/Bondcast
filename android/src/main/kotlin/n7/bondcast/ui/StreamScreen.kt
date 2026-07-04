@@ -125,24 +125,55 @@ internal fun StreamScreen(
         )
 
         val streaming = phase !is StreamPhase.Idle
-        Button(
-            onClick = { if (streaming) controller.stop() else controller.start() },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (streaming) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-            ),
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            CameraChips(controller)
+            Button(
+                onClick = { if (streaming) controller.stop() else controller.start() },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (streaming) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                ),
+            ) {
+                Text(
+                    text = if (streaming) "Стоп" else "В эфир",
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraChips(controller: StreamController) {
+    val cameras = controller.cameras
+    if (cameras.size < 2) return
+    val current by controller.currentCamera.collectAsState()
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        cameras.forEach { cam ->
+            val selected = cam == current
             Text(
-                text = if (streaming) "Стоп" else "В эфир",
-                fontWeight = FontWeight.SemiBold,
+                text = cam.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) Color.White else DiscordColors.textSecondary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (selected) DiscordColors.blurple else DiscordColors.background.copy(alpha = 0.72f),
+                    )
+                    .clickable { controller.selectCamera(cam) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
     }

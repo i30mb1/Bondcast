@@ -1,8 +1,12 @@
 package n7.bondcast.stream
 
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.util.Log
 import android.util.Size
 import io.github.thibaultbee.srtdroid.core.models.Stats
+import io.github.thibaultbee.streampack.core.elements.sources.video.camera.CameraSourceFactory
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
@@ -81,6 +85,69 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             if (!current.isStreamingFlow.value) return@withLock
             runCatching { current.videoEncoder?.bitrate = kbps * 1000 }
         }
+    }
+
+    override fun availableCameras(): List<CameraOption> {
+        val manager = cameraManager() ?: return emptyList()
+        val ids = runCatching { manager.cameraIdList.toList() }.getOrDefault(emptyList())
+        val front = mutableListOf<String>()
+        val back = mutableListOf<String>()
+        for (id in ids) {
+            when (facingOf(manager, id)) {
+                CameraCharacteristics.LENS_FACING_FRONT -> front.add(id)
+                CameraCharacteristics.LENS_FACING_BACK -> back.add(id)
+            }
+        }
+        val defaultId = back.firstOrNull() ?: ids.firstOrNull()
+        val options = mutableListOf<CameraOption>()
+        dedupByFocal(manager, front, defaultId).forEachIndexed { i, id ->
+            options.add(CameraOption(id, if (i == 0) "Фронт" else "Фронт ${i + 1}", true))
+        }
+        val backSorted = dedupByFocal(manager, back, defaultId).sortedBy { focalOf(manager, it) ?: Float.MAX_VALUE }
+        backSorted.forEachIndexed { i, id ->
+            options.add(CameraOption(id, backLabel(i, backSorted.size), false))
+        }
+        return options
+    }
+
+    override suspend fun switchCamera(cameraId: String) {
+        val current = streamer ?: return
+        streamerLock.withLock {
+            runCatching { current.setVideoSource(CameraSourceFactory(cameraId)) }
+                .onFailure { Log.w("StreamCamera", "switchCamera($cameraId): $it") }
+        }
+    }
+
+    private fun cameraManager(): CameraManager? = context.getSystemService(CameraManager::class.java)
+
+    private fun facingOf(manager: CameraManager, id: String): Int? = runCatching {
+        manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
+    }.getOrNull()
+
+    private fun focalOf(manager: CameraManager, id: String): Float? = runCatching {
+        manager.getCameraCharacteristics(id)
+            .get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+            ?.minOrNull()
+    }.getOrNull()
+
+    private fun dedupByFocal(manager: CameraManager, ids: List<String>, preferId: String?): List<String> {
+        val ordered = ids.sortedByDescending { it == preferId }
+        val seen = HashSet<Int>()
+        val out = mutableListOf<String>()
+        for (id in ordered) {
+            val key = focalOf(manager, id)?.let { (it * 10).toInt() } ?: (-1 - out.size)
+            if (seen.add(key)) out.add(id)
+        }
+        return out.sortedBy { ids.indexOf(it) }
+    }
+
+    private fun backLabel(index: Int, count: Int): String = when {
+        count <= 1 -> "Осн"
+        count == 2 -> if (index == 0) "Ультра" else "Осн"
+        index == 0 -> "Ультра"
+        index == count - 1 -> "Теле"
+        index == 1 -> "Осн"
+        else -> "Осн $index"
     }
 
     override suspend fun stopStream() {
