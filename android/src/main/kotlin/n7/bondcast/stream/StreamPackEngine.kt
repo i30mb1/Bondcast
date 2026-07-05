@@ -36,6 +36,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
         current.setConfig(
             AudioConfig(startBitrate = 128_000),
             VideoConfig(
+                mimeType = settings.videoCodec.mime,
                 startBitrate = settings.videoBitrateKbps * 1000,
                 resolution = Size(settings.width, settings.height),
                 fps = settings.fps,
@@ -162,6 +163,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
         streamerLock.withLock {
             runCatching { current.stopStream() }
             runCatching { current.close() }
+            appliedSettings = null
         }
     }
 

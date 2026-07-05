@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.settings.VideoCodec
 import n7.bondcast.ui.components.DiscordField
 import n7.bondcast.ui.components.DiscordRangeField
 import n7.bondcast.ui.components.DiscordSegmentedRow
@@ -51,6 +52,7 @@ internal fun SettingsScreen(
     var latency by remember { mutableStateOf(initial.latencyMs.toString()) }
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
+    var codec by remember { mutableStateOf(initial.videoCodec) }
     var bonding by remember { mutableStateOf(initial.bondingEnabled) }
     var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
     var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
@@ -166,6 +168,19 @@ internal fun SettingsScreen(
                         onSelect = { is60fps = it == 1 },
                     )
                     RowDivider()
+                    DiscordSegmentedRow(
+                        label = "Кодек",
+                        options = VideoCodec.entries.map { it.label },
+                        selectedIndex = codec.ordinal,
+                        onSelect = { codec = VideoCodec.entries[it] },
+                        onInfo = {
+                            info = "Кодек видео" to
+                                "H.265 (HEVC) экономит ~40–50% битрейта при том же качестве — выгодно для бондинга по сотовой. " +
+                                "Но зрителю нужен плеер с H.265 (Safari — ок; desktop Chrome — нужен аппаратный декодер), " +
+                                "а серверу — SRS 6.0+. H.264 играет везде — безопасный выбор."
+                        },
+                    )
+                    RowDivider()
                     DiscordRangeField(
                         label = "Битрейт видео, kbps",
                         value = bitrate,
@@ -234,6 +249,7 @@ internal fun SettingsScreen(
                                     width = if (is1080p) 1920 else 1280,
                                     height = if (is1080p) 1080 else 720,
                                     fps = if (is60fps) 60 else 30,
+                                    videoCodec = codec,
                                     videoBitrateKbps = requireNotNull(bitrateInt),
                                     abrEnabled = abr,
                                     minVideoBitrateKbps = minBitrateInt ?: 800,

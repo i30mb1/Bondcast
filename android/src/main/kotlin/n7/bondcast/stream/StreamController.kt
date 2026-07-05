@@ -28,11 +28,13 @@ import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.thermal.ThermalMitigations
 import n7.bondcast.uvc.usbCameraMonitor
 import n7.srtla.abr.AbrConfig
 import n7.srtla.abr.AbrSample
 import n7.srtla.abr.abrController
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 internal sealed interface StreamPhase {
     data object Idle : StreamPhase
@@ -49,6 +51,7 @@ internal class StreamController(
     private val application: Application,
     private val settingsRepository: SettingsRepository,
     private val srtlaClient: SrtlaClient,
+    private val mitigations: ThermalMitigations,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -177,11 +180,12 @@ internal class StreamController(
     }
 
     private suspend fun sampleStats(settings: StreamSettings) {
+        val max = settings.videoBitrateKbps
         val abr = if (settings.abrEnabled) {
             abrController(
                 AbrConfig(
                     minKbps = settings.minVideoBitrateKbps,
-                    maxKbps = settings.videoBitrateKbps,
+                    maxKbps = max,
                     sndBufHighMs = settings.latencyMs / 2,
                     sndBufLowMs = settings.latencyMs / 5,
                 ),
@@ -190,6 +194,8 @@ internal class StreamController(
             null
         }
         var wasLive = false
+        var desiredKbps = max
+        var appliedKbps = 0
         while (currentCoroutineContext().isActive) {
             val live = _phase.value is StreamPhase.Live
             if (live) {
@@ -197,22 +203,29 @@ internal class StreamController(
                 _stats.value = stats
                 if (abr != null) {
                     if (!wasLive) {
-                        abr.reset(settings.videoBitrateKbps)
-                        engine.setVideoBitrate(settings.videoBitrateKbps)
-                        _videoBitrateKbps.value = settings.videoBitrateKbps
+                        abr.reset(max)
+                        desiredKbps = max
                     }
                     if (stats != null) {
-                        val decision = abr.onSample(
+                        desiredKbps = abr.onSample(
                             AbrSample(System.nanoTime(), stats.sndBufferMs, stats.pktLossTotal),
-                        )
-                        if (decision.changed) {
-                            engine.setVideoBitrate(decision.targetKbps)
-                            _videoBitrateKbps.value = decision.targetKbps
-                        }
+                        ).targetKbps
+                    }
+                } else {
+                    desiredKbps = max
+                }
+                val cap = mitigations.bitrateCapFraction.value?.let { (max * it).roundToInt() }
+                if (abr != null || cap != null) {
+                    val effective = cap?.let { min(desiredKbps, it) } ?: desiredKbps
+                    if (effective != appliedKbps) {
+                        engine.setVideoBitrate(effective)
+                        _videoBitrateKbps.value = effective
+                        appliedKbps = effective
                     }
                 }
             } else {
                 _stats.value = null
+                appliedKbps = 0
             }
             wasLive = live
             delay(STATS_INTERVAL_MS)

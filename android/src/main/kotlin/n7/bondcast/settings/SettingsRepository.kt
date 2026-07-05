@@ -23,6 +23,9 @@ internal class SettingsRepository(private val context: Context) {
             width = preferences[WIDTH] ?: default.width,
             height = preferences[HEIGHT] ?: default.height,
             fps = preferences[FPS] ?: default.fps,
+            videoCodec = preferences[VIDEO_CODEC]
+                ?.let { name -> VideoCodec.entries.firstOrNull { it.name == name } }
+                ?: default.videoCodec,
             videoBitrateKbps = preferences[VIDEO_BITRATE_KBPS] ?: default.videoBitrateKbps,
             abrEnabled = preferences[ABR_ENABLED] ?: default.abrEnabled,
             minVideoBitrateKbps = preferences[MIN_VIDEO_BITRATE_KBPS] ?: default.minVideoBitrateKbps,
@@ -42,6 +45,7 @@ internal class SettingsRepository(private val context: Context) {
             preferences[WIDTH] = settings.width
             preferences[HEIGHT] = settings.height
             preferences[FPS] = settings.fps
+            preferences[VIDEO_CODEC] = settings.videoCodec.name
             preferences[VIDEO_BITRATE_KBPS] = settings.videoBitrateKbps
             preferences[ABR_ENABLED] = settings.abrEnabled
             preferences[MIN_VIDEO_BITRATE_KBPS] = settings.minVideoBitrateKbps
@@ -60,6 +64,7 @@ internal class SettingsRepository(private val context: Context) {
         val WIDTH = intPreferencesKey("width")
         val HEIGHT = intPreferencesKey("height")
         val FPS = intPreferencesKey("fps")
+        val VIDEO_CODEC = stringPreferencesKey("video_codec")
         val VIDEO_BITRATE_KBPS = intPreferencesKey("video_bitrate_kbps")
         val ABR_ENABLED = booleanPreferencesKey("abr_enabled")
         val MIN_VIDEO_BITRATE_KBPS = intPreferencesKey("min_video_bitrate_kbps")

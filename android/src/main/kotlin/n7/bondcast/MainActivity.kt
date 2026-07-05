@@ -135,6 +135,8 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             controller = graph.streamController,
             settings = currentSettings,
             onOpenSettings = { showSettings = true },
+            thermalMonitor = graph.thermalMonitor,
+            mitigations = graph.thermalMitigations,
         )
     }
 }

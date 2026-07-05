@@ -267,13 +267,20 @@ internal fun DiscordSegmentedRow(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    onInfo: (() -> Unit)? = null,
 ) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(
-            text = label,
-            color = DiscordColors.textMuted,
-            style = MaterialTheme.typography.labelMedium,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                color = DiscordColors.textMuted,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            if (onInfo != null) {
+                Spacer(Modifier.width(6.dp))
+                InfoButton(onInfo)
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier

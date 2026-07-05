@@ -36,8 +36,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.WindowManager
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.delay
@@ -46,8 +53,14 @@ import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamPhase
 import n7.bondcast.stream.USB_CAMERA_ID
+import n7.bondcast.temperatureColor
+import n7.bondcast.thermal.ThermalMitigations
+import n7.bondcast.thermal.ThermalMonitor
+import n7.bondcast.thermal.ThermalState
 import n7.bondcast.uvc.UvcPreviewBus
+import n7.bondcast.ui.components.FlameIcon
 import n7.bondcast.ui.components.StatusDot
+import n7.bondcast.ui.components.ThermalPanel
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
 
@@ -56,10 +69,38 @@ internal fun StreamScreen(
     controller: StreamController,
     settings: StreamSettings?,
     onOpenSettings: () -> Unit,
+    thermalMonitor: ThermalMonitor,
+    mitigations: ThermalMitigations,
 ) {
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
+
+    val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
+    val thermalState by thermalFlow.collectAsState(initial = ThermalState.UNKNOWN)
+    val previewEnabled by mitigations.previewEnabled.collectAsState()
+    val brightness by mitigations.screenBrightness.collectAsState()
+    val bitrateCap by mitigations.bitrateCapFraction.collectAsState()
+    val effectiveBitrate by controller.videoBitrateKbps.collectAsState()
+    var showThermal by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val window = remember(context) { context.findActivity()?.window }
+    LaunchedEffect(brightness, window) {
+        val target = window ?: return@LaunchedEffect
+        target.attributes = target.attributes.apply {
+            screenBrightness = brightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
+    }
+    DisposableEffect(window) {
+        onDispose {
+            window?.let {
+                it.attributes = it.attributes.apply {
+                    screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+            }
+        }
+    }
 
     LaunchedEffect(previewView, settings) {
         val view = previewView ?: return@LaunchedEffect
@@ -85,7 +126,7 @@ internal fun StreamScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (currentCamera?.id == USB_CAMERA_ID) {
+        if (currentCamera?.id == USB_CAMERA_ID && previewEnabled) {
             AndroidView(
                 factory = { context ->
                     SurfaceView(context).apply {
@@ -102,6 +143,14 @@ internal fun StreamScreen(
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        if (!previewEnabled) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
             )
         }
 
@@ -135,19 +184,29 @@ internal fun StreamScreen(
             LinksPanel(controller)
         }
 
-        Text(
-            text = "⚙",
-            color = DiscordColors.textPrimary,
-            style = MaterialTheme.typography.headlineSmall,
+        Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .clip(CircleShape)
-                .background(DiscordColors.background.copy(alpha = 0.72f))
-                .clickable(enabled = phase is StreamPhase.Idle, onClick = onOpenSettings)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+                .padding(12.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "⚙",
+                color = DiscordColors.textPrimary,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(DiscordColors.background.copy(alpha = 0.72f))
+                    .clickable(enabled = phase is StreamPhase.Idle, onClick = onOpenSettings)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+            FlameIcon(
+                color = temperatureColor(thermalState.heat),
+                onClick = { showThermal = !showThermal },
+            )
+        }
 
         val streaming = phase !is StreamPhase.Idle
         Column(
@@ -175,6 +234,32 @@ internal fun StreamScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+        }
+
+        if (showThermal) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { showThermal = false },
+            )
+            ThermalPanel(
+                state = thermalState,
+                effectiveBitrateKbps = if (effectiveBitrate > 0) effectiveBitrate else settings?.videoBitrateKbps ?: 0,
+                brightness = brightness,
+                onBrightness = { mitigations.setScreenBrightness(it) },
+                previewEnabled = previewEnabled,
+                onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
+                bitrateCapFraction = bitrateCap,
+                onBitrateCap = { mitigations.setBitrateCapFraction(it) },
+                onClose = { showThermal = false },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(12.dp),
+            )
         }
     }
 }
@@ -286,6 +371,15 @@ private fun Transport.label(): String = when (this) {
 
 private fun formatRate(kbps: Int): String =
     if (kbps >= 1000) "${kbps / 1000}.${kbps % 1000 / 100} Mbps" else "$kbps kbps"
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
+}
 
 @Composable
 private fun StatusLine(phase: StreamPhase) {

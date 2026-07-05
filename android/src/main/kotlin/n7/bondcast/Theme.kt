@@ -56,6 +56,12 @@ internal object DiscordColors {
     val green = Green
     val danger = Red
     val yellow = Yellow
+    fun temperature(heat: Float): Color = temperatureColor(heat)
+}
+
+internal fun temperatureColor(heat: Float): Color {
+    val clamped = heat.coerceIn(0f, 1f)
+    return Color.hsv(240f - clamped * 240f, 0.9f, 1f)
 }
 
 @Composable

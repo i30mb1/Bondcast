@@ -8,6 +8,7 @@ internal data class StreamSettings(
     val width: Int = 1920,
     val height: Int = 1080,
     val fps: Int = 30,
+    val videoCodec: VideoCodec = VideoCodec.H264,
     val videoBitrateKbps: Int = 4500,
     val abrEnabled: Boolean = true,
     val minVideoBitrateKbps: Int = 800,
