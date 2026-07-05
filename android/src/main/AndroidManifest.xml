@@ -14,10 +14,13 @@
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="true" />
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
 
     <application
         android:name=".BondcastApp"
-        android:label="Bondcast"
+        android:label="@string/app_name"
         android:theme="@style/Theme.App">
         <activity
             android:name=".MainActivity"

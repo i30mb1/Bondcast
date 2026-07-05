@@ -36,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.delay
@@ -43,6 +45,8 @@ import n7.bondcast.DiscordColors
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamPhase
+import n7.bondcast.stream.USB_CAMERA_ID
+import n7.bondcast.uvc.UvcPreviewBus
 import n7.bondcast.ui.components.StatusDot
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
@@ -54,6 +58,7 @@ internal fun StreamScreen(
     onOpenSettings: () -> Unit,
 ) {
     val phase by controller.phase.collectAsState()
+    val currentCamera by controller.currentCamera.collectAsState()
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
 
     LaunchedEffect(previewView, settings) {
@@ -79,6 +84,26 @@ internal fun StreamScreen(
             update = { view -> if (previewView !== view) previewView = view },
             modifier = Modifier.fillMaxSize(),
         )
+
+        if (currentCamera?.id == USB_CAMERA_ID) {
+            AndroidView(
+                factory = { context ->
+                    SurfaceView(context).apply {
+                        holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(holder: SurfaceHolder) =
+                                UvcPreviewBus.set(holder.surface)
+
+                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
+                                UvcPreviewBus.set(holder.surface)
+
+                            override fun surfaceDestroyed(holder: SurfaceHolder) =
+                                UvcPreviewBus.set(null)
+                        })
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         Column(
             modifier = Modifier

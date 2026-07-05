@@ -58,4 +58,6 @@ dependencies {
     implementation(libs.streampack.srt)
     implementation(libs.streampack.ui)
     implementation(libs.srtdroid.core)
+
+    implementation(project(":libuvccamera"))
 }

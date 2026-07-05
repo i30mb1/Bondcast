@@ -13,8 +13,10 @@ dependencyResolutionManagement {
     repositories {
         maven(url = "https://repo.maven.apache.org/maven2/")
         google()
+        maven(url = "https://jitpack.io")
     }
 }
 
 include("kotlin")
 include("android")
+include("libuvccamera")

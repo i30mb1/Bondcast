@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.uvc.UvcVideoSourceFactory
 import kotlin.math.roundToInt
 
 internal class StreamPackEngine(private val context: Context) : StreamEngine {
@@ -107,13 +108,19 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
         backSorted.forEachIndexed { i, id ->
             options.add(CameraOption(id, backLabel(i, backSorted.size), false))
         }
+        options.add(CameraOption(USB_CAMERA_ID, "USB", false))
         return options
     }
 
     override suspend fun switchCamera(cameraId: String) {
         val current = streamer ?: return
         streamerLock.withLock {
-            runCatching { current.setVideoSource(CameraSourceFactory(cameraId)) }
+            val factory = if (cameraId == USB_CAMERA_ID) {
+                UvcVideoSourceFactory()
+            } else {
+                CameraSourceFactory(cameraId)
+            }
+            runCatching { current.setVideoSource(factory) }
                 .onFailure { Log.w("StreamCamera", "switchCamera($cameraId): $it") }
         }
     }
