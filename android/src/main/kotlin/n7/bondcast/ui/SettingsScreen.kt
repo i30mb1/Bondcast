@@ -29,8 +29,8 @@ import n7.bondcast.ui.components.DiscordField
 import n7.bondcast.ui.components.DiscordSegmentedRow
 import n7.bondcast.ui.components.DiscordSwitchRow
 import n7.bondcast.ui.components.DiscordTopBar
+import n7.bondcast.ui.components.InfoDialog
 import n7.bondcast.ui.components.RowDivider
-import n7.bondcast.ui.components.SectionFooter
 import n7.bondcast.ui.components.SectionLabel
 import n7.bondcast.ui.components.SettingsCard
 
@@ -53,6 +53,7 @@ internal fun SettingsScreen(
     var bonding by remember { mutableStateOf(initial.bondingEnabled) }
     var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
     var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
+    var info by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val portInt = port.toIntOrNull()
     val bitrateInt = bitrate.toIntOrNull()
@@ -64,9 +65,9 @@ internal fun SettingsScreen(
     val minBitrateValid = !abr || (minBitrateInt != null && bitrateInt != null && minBitrateInt in 300..bitrateInt)
     val latencyValid = latencyInt != null && latencyInt in 20..8_000
     val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
-    val srtlaValid = !bonding || (srtlaHost.isNotBlank() && srtlaPortValid)
-    val valid = host.isNotBlank() && streamName.isNotBlank() && portValid && bitrateValid &&
-        minBitrateValid && latencyValid && srtlaValid
+    val destinationValid = if (bonding) srtlaHost.isNotBlank() && srtlaPortValid else host.isNotBlank() && portValid
+    val valid = streamName.isNotBlank() && bitrateValid &&
+        minBitrateValid && latencyValid && destinationValid
 
     BackHandler(onBack = onBack)
 
@@ -83,22 +84,51 @@ internal fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                SectionLabel("Сервер")
+                SectionLabel("Назначение")
                 SettingsCard {
-                    DiscordField(
-                        label = "Хост SRT-сервера",
-                        value = host,
-                        onValueChange = { host = it },
-                        isError = host.isBlank(),
+                    DiscordSwitchRow(
+                        label = "Бондинг (объединить сети)",
+                        checked = bonding,
+                        onCheckedChange = { bonding = it },
+                        onInfo = {
+                            info = "Бондинг (SRTLA)" to
+                                "Объединяет сотовую + Wi-Fi (и доп. линки) в один SRT-поток через srtla_rec. " +
+                                "При включении видео уходит на localhost и раздаётся по линкам — прямой адрес сервера не используется. " +
+                                "Нужен запущенный srtla_rec перед вашим SRT-сервером."
+                        },
                     )
                     RowDivider()
-                    DiscordField(
-                        label = "Порт",
-                        value = port,
-                        onValueChange = { port = it },
-                        keyboardType = KeyboardType.Number,
-                        isError = !portValid,
-                    )
+                    if (bonding) {
+                        DiscordField(
+                            label = "Хост srtla_rec",
+                            value = srtlaHost,
+                            onValueChange = { srtlaHost = it },
+                            isError = srtlaHost.isBlank(),
+                        )
+                        RowDivider()
+                        DiscordField(
+                            label = "Порт srtla_rec",
+                            value = srtlaPort,
+                            onValueChange = { srtlaPort = it },
+                            keyboardType = KeyboardType.Number,
+                            isError = !srtlaPortValid,
+                        )
+                    } else {
+                        DiscordField(
+                            label = "Хост SRT-сервера",
+                            value = host,
+                            onValueChange = { host = it },
+                            isError = host.isBlank(),
+                        )
+                        RowDivider()
+                        DiscordField(
+                            label = "Порт",
+                            value = port,
+                            onValueChange = { port = it },
+                            keyboardType = KeyboardType.Number,
+                            isError = !portValid,
+                        )
+                    }
                     RowDivider()
                     DiscordField(
                         label = "Имя стрима (live/<имя>)",
@@ -111,9 +141,13 @@ internal fun SettingsScreen(
                         label = "Passphrase",
                         value = passphrase,
                         onValueChange = { passphrase = it },
+                        onInfo = {
+                            info = "Passphrase" to
+                                "AES-шифрование SRT. Пусто — без шифрования; должно совпадать с сервером. " +
+                                "streamid: #!::r=live/<имя>,m=publish."
+                        },
                     )
                 }
-                SectionFooter("Пусто в passphrase — без шифрования. streamid: #!::r=live/<имя>,m=publish")
 
                 SectionLabel("Видео")
                 SettingsCard {
@@ -143,6 +177,11 @@ internal fun SettingsScreen(
                         label = "Адаптивный битрейт (ABR)",
                         checked = abr,
                         onCheckedChange = { abr = it },
+                        onInfo = {
+                            info = "Адаптивный битрейт (ABR)" to
+                                "Роняет качество под ёмкость сети и поднимает при запасе — эфир держится на слабом линке. " +
+                                "Мин. битрейт — нижняя граница."
+                        },
                     )
                     if (abr) {
                         RowDivider()
@@ -155,7 +194,6 @@ internal fun SettingsScreen(
                         )
                     }
                 }
-                SectionFooter("ABR роняет битрейт под ёмкость сети и поднимает при запасе — эфир держится при слабом линке.")
 
                 SectionLabel("Соединение")
                 SettingsCard {
@@ -165,35 +203,13 @@ internal fun SettingsScreen(
                         onValueChange = { latency = it },
                         keyboardType = KeyboardType.Number,
                         isError = !latencyValid,
+                        onInfo = {
+                            info = "Latency, мс" to
+                                "Буфер SRT для сглаживания потерь и джиттера. Больше — устойчивее, но выше задержка. " +
+                                "Для бондинга и слабых сетей ставьте выше (напр. 2000–4000)."
+                        },
                     )
                 }
-
-                SectionLabel("Бондинг (SRTLA)")
-                SettingsCard {
-                    DiscordSwitchRow(
-                        label = "Включить бондинг",
-                        checked = bonding,
-                        onCheckedChange = { bonding = it },
-                    )
-                    if (bonding) {
-                        RowDivider()
-                        DiscordField(
-                            label = "Хост srtla_rec",
-                            value = srtlaHost,
-                            onValueChange = { srtlaHost = it },
-                            isError = srtlaHost.isBlank(),
-                        )
-                        RowDivider()
-                        DiscordField(
-                            label = "Порт srtla_rec",
-                            value = srtlaPort,
-                            onValueChange = { srtlaPort = it },
-                            keyboardType = KeyboardType.Number,
-                            isError = !srtlaPortValid,
-                        )
-                    }
-                }
-                SectionFooter("srtla_rec собирает линки и отдаёт SRT в SRS. При бондинге SRT идёт на localhost, адрес в «Сервер» не используется.")
 
                 Row(
                     modifier = Modifier
@@ -230,6 +246,10 @@ internal fun SettingsScreen(
                     ) {
                         Text("Сохранить")
                     }
+                }
+
+                info?.let { (title, text) ->
+                    InfoDialog(title, text) { info = null }
                 }
             }
         }
