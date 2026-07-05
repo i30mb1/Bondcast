@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.components.DiscordField
+import n7.bondcast.ui.components.DiscordRangeField
 import n7.bondcast.ui.components.DiscordSegmentedRow
 import n7.bondcast.ui.components.DiscordSwitchRow
 import n7.bondcast.ui.components.DiscordTopBar
@@ -165,11 +166,12 @@ internal fun SettingsScreen(
                         onSelect = { is60fps = it == 1 },
                     )
                     RowDivider()
-                    DiscordField(
+                    DiscordRangeField(
                         label = "Битрейт видео, kbps",
                         value = bitrate,
                         onValueChange = { bitrate = it },
-                        keyboardType = KeyboardType.Number,
+                        min = 500,
+                        max = 20_000,
                         isError = !bitrateValid,
                     )
                     RowDivider()
@@ -185,11 +187,12 @@ internal fun SettingsScreen(
                     )
                     if (abr) {
                         RowDivider()
-                        DiscordField(
+                        DiscordRangeField(
                             label = "Мин. битрейт, kbps",
                             value = minBitrate,
                             onValueChange = { minBitrate = it },
-                            keyboardType = KeyboardType.Number,
+                            min = 300,
+                            max = bitrateInt ?: 20_000,
                             isError = !minBitrateValid,
                         )
                     }

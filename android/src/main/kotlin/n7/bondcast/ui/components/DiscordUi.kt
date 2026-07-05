@@ -101,16 +101,6 @@ internal fun RowDivider() {
 }
 
 @Composable
-internal fun SectionFooter(text: String) {
-    Text(
-        text = text,
-        color = DiscordColors.textMuted,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-    )
-}
-
-@Composable
 internal fun InfoButton(onClick: () -> Unit) {
     Text(
         text = "ⓘ",
@@ -194,6 +184,80 @@ internal fun DiscordField(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+@Composable
+internal fun DiscordRangeField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    min: Int,
+    max: Int,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Number,
+    isError: Boolean = false,
+    onInfo: (() -> Unit)? = null,
+) {
+    Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                color = DiscordColors.textMuted,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            if (onInfo != null) {
+                Spacer(Modifier.width(6.dp))
+                InfoButton(onInfo)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BoundButton(min.toString()) { onValueChange(min.toString()) }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(DiscordColors.inputBackground, RoundedCornerShape(8.dp))
+                    .border(
+                        width = 1.dp,
+                        color = if (isError) MaterialTheme.colorScheme.error else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            ) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = DiscordColors.textPrimary),
+                    cursorBrush = SolidColor(DiscordColors.blurple),
+                    keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            BoundButton(max.toString()) { onValueChange(max.toString()) }
+        }
+    }
+}
+
+@Composable
+private fun BoundButton(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(DiscordColors.elevated)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = DiscordColors.textSecondary,
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }
 
