@@ -13,9 +13,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,6 +28,7 @@ import n7.bondcast.bonding.SrtlaTarget
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.uvc.usbCameraMonitor
 import n7.srtla.abr.AbrConfig
 import n7.srtla.abr.AbrSample
 import n7.srtla.abr.abrController
@@ -59,12 +63,33 @@ internal class StreamController(
     private val _videoBitrateKbps = MutableStateFlow(0)
     val videoBitrateKbps: StateFlow<Int> = _videoBitrateKbps.asStateFlow()
 
-    val cameras: List<CameraOption> by lazy { engine.availableCameras() }
+    private val usbMonitor = usbCameraMonitor(application)
+    private val baseCameras = engine.availableCameras().filterNot { it.id == USB_CAMERA_ID }
+    private val usbOption = CameraOption(USB_CAMERA_ID, "USB", false)
+
+    val cameras: StateFlow<List<CameraOption>> = usbMonitor.connected
+        .map { connected -> if (connected) baseCameras + usbOption else baseCameras }
+        .stateIn(
+            scope,
+            SharingStarted.Eagerly,
+            if (usbMonitor.connected.value) baseCameras + usbOption else baseCameras,
+        )
 
     private val _currentCamera = MutableStateFlow(
-        cameras.firstOrNull { !it.isFront } ?: cameras.firstOrNull(),
+        baseCameras.firstOrNull { !it.isFront } ?: baseCameras.firstOrNull(),
     )
     val currentCamera: StateFlow<CameraOption?> = _currentCamera.asStateFlow()
+
+    init {
+        scope.launch {
+            usbMonitor.connected.collect { connected ->
+                if (!connected && _currentCamera.value?.id == USB_CAMERA_ID) {
+                    (baseCameras.firstOrNull { !it.isFront } ?: baseCameras.firstOrNull())
+                        ?.let { selectCamera(it) }
+                }
+            }
+        }
+    }
 
     /** Живые линки бондинга (пусто, когда бондинг выключен или не запущен). */
     val links: StateFlow<List<LinkInfo>> get() = srtlaClient.links

@@ -181,7 +181,7 @@ internal fun StreamScreen(
 
 @Composable
 private fun CameraChips(controller: StreamController) {
-    val cameras = controller.cameras
+    val cameras by controller.cameras.collectAsState()
     if (cameras.size < 2) return
     val current by controller.currentCamera.collectAsState()
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
