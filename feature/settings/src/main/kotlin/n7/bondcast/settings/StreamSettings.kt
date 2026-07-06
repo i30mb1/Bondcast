@@ -17,6 +17,8 @@ public data class StreamSettings(
     val bondingEnabled: Boolean = false,
     val srtlaHost: String = "",
     val srtlaPort: Int = 5000,
+    /** Шуточные подписи-объяснения в карточках; ветераны могут выключить. */
+    val hintsEnabled: Boolean = true,
 ) {
     /** streamid в формате SRS: поток попадёт в live/<streamName>. */
     val streamId: String get() = "#!::r=live/$streamName,m=publish"

@@ -33,6 +33,7 @@ public fun CameraPanel(
     onPreviewEnabled: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    showHint: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -86,11 +87,13 @@ public fun CameraPanel(
             PreviewChip("Вкл", previewEnabled) { onPreviewEnabled(true) }
             PreviewChip("Выкл", !previewEnabled) { onPreviewEnabled(false) }
         }
-        Text(
-            text = "Выкл — экран отдыхает, телефон холоднее. Зрители разницы не заметят 😉",
-            color = DiscordColors.textMuted,
-            style = MaterialTheme.typography.bodySmall,
-        )
+        if (showHint) {
+            Text(
+                text = "Выкл — экран отдыхает, телефон холоднее. Зрители разницы не заметят 😉",
+                color = DiscordColors.textMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 

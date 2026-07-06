@@ -33,6 +33,7 @@ public class SettingsRepository(private val context: Context) {
             bondingEnabled = preferences[BONDING_ENABLED] ?: default.bondingEnabled,
             srtlaHost = preferences[SRTLA_HOST] ?: default.srtlaHost,
             srtlaPort = preferences[SRTLA_PORT] ?: default.srtlaPort,
+            hintsEnabled = preferences[HINTS_ENABLED] ?: default.hintsEnabled,
         )
     }
 
@@ -53,6 +54,7 @@ public class SettingsRepository(private val context: Context) {
             preferences[BONDING_ENABLED] = settings.bondingEnabled
             preferences[SRTLA_HOST] = settings.srtlaHost
             preferences[SRTLA_PORT] = settings.srtlaPort
+            preferences[HINTS_ENABLED] = settings.hintsEnabled
         }
     }
 
@@ -72,5 +74,6 @@ public class SettingsRepository(private val context: Context) {
         val BONDING_ENABLED = booleanPreferencesKey("bonding_enabled")
         val SRTLA_HOST = stringPreferencesKey("srtla_host")
         val SRTLA_PORT = intPreferencesKey("srtla_port")
+        val HINTS_ENABLED = booleanPreferencesKey("hints_enabled")
     }
 }

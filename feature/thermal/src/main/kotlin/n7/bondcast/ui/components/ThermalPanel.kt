@@ -44,6 +44,7 @@ public fun ThermalPanel(
     onOpenStats: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    showHints: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -108,7 +109,7 @@ public fun ThermalPanel(
             )
             AdviceRow("🎥 Вырубить превью — экран греет не хуже энкодера") { onOpenCameras() }
             AdviceRow("📉 Прижать потолок битрейта — энкодер скажет спасибо") { onOpenStats() }
-        } else {
+        } else if (showHints) {
             Text(
                 text = "Телефону хорошо. Стримь и ни о чём не думай 😎",
                 color = DiscordColors.textMuted,

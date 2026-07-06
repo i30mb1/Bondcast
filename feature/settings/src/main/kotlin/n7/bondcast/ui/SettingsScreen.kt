@@ -59,6 +59,7 @@ public fun SettingsScreen(
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
     var bonding by remember { mutableStateOf(initial.bondingEnabled) }
+    var hints by remember { mutableStateOf(initial.hintsEnabled) }
     var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
     var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
     var info by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -249,6 +250,18 @@ public fun SettingsScreen(
                             onClick = { bitrate = recOutdoorKbps.toString() },
                         )
                     }
+                    RowDivider()
+                    DiscordSwitchRow(
+                        label = "Шуточные подсказки",
+                        checked = hints,
+                        onCheckedChange = { hints = it },
+                        onInfo = {
+                            info = "Шуточные подсказки" to
+                                "Серые подписи-объяснялки в карточках стрим-экрана. " +
+                                "Когда выучишь всё наизусть — выключай, и интерфейс станет " +
+                                "серьёзным, как бухгалтер в понедельник 🤵"
+                        },
+                    )
                 }
 
                 Row(
@@ -281,6 +294,7 @@ public fun SettingsScreen(
                                     bondingEnabled = bonding,
                                     srtlaHost = srtlaHost.trim(),
                                     srtlaPort = srtlaPortInt ?: 5000,
+                                    hintsEnabled = hints,
                                 ),
                             )
                         },

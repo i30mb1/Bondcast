@@ -305,13 +305,15 @@ public fun StreamScreen(
                         CapChip("50%", 0.5f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
                         CapChip("25%", 0.25f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Ручник для энкодера: 50% — это половина максимума.\n" +
-                            "Прижал — телефон остывает, картинка чуть мылит, зато эфир живёт 🧯",
-                        color = DiscordColors.textMuted,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    if (settings?.hintsEnabled != false) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Ручник для энкодера: 50% — это половина максимума.\n" +
+                                "Прижал — телефон остывает, картинка чуть мылит, зато эфир живёт 🧯",
+                            color = DiscordColors.textMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     if (settings != null) {
                         // ABR применяется на старте сессии, поэтому в эфире переключение заперто
                         val live = phase !is StreamPhase.Idle
@@ -364,16 +366,19 @@ public fun StreamScreen(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = if (live) {
-                                "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅"
-                            } else {
-                                "Мягко приседает качеством вместо слайд-шоу."
-                            },
-                            color = DiscordColors.textMuted,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        // подпись про блокировку в эфире — функциональная, живёт и без подсказок
+                        if (live || settings.hintsEnabled) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = if (live) {
+                                    "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅"
+                                } else {
+                                    "Мягко приседает качеством вместо слайд-шоу."
+                                },
+                                color = DiscordColors.textMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
@@ -387,6 +392,7 @@ public fun StreamScreen(
                     brightness = brightness,
                     onBrightness = { mitigations.setScreenBrightness(it) },
                     bitrateCapFraction = bitrateCap,
+                    showHints = settings?.hintsEnabled != false,
                     onOpenCameras = { overlays.open(PANEL_CAMERAS) },
                     onOpenStats = { overlays.open(PANEL_STATS) },
                     onClose = { overlays.close(PANEL_THERMAL) },
@@ -405,6 +411,7 @@ public fun StreamScreen(
                     },
                     previewEnabled = previewEnabled,
                     onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
+                    showHint = settings?.hintsEnabled != false,
                     onClose = { overlays.close(PANEL_CAMERAS) },
                 )
             }
