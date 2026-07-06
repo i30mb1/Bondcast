@@ -298,7 +298,7 @@ public fun StreamScreen(
                     Spacer(Modifier.height(6.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.width(232.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         CapChip("Макс", null, bitrateCap) { mitigations.setBitrateCapFraction(it) }
                         CapChip("75%", 0.75f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
@@ -324,7 +324,7 @@ public fun StreamScreen(
                         Spacer(Modifier.height(6.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.width(232.dp),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             BoolChip("Вкл", settings.abrEnabled, enabled = !live) {
                                 onUpdateSettings(settings.copy(abrEnabled = true))
@@ -338,7 +338,7 @@ public fun StreamScreen(
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.width(232.dp),
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
                                 BoolChip("−", false, enabled = !live) {
                                     onUpdateSettings(
