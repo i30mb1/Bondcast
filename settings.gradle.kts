@@ -17,11 +17,11 @@ dependencyResolutionManagement {
     }
 }
 
-include("kotlin")
 include("libuvccamera")
 include("benchmark")
 include(":core:ui")
-include(":feature:bonding")
+include(":feature:bonding:domain")
+include(":feature:bonding:impl")
 include(":feature:settings")
 include(":feature:thermal")
 include(":feature:camera")

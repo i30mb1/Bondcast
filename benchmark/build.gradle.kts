@@ -10,7 +10,7 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":kotlin"))
+    implementation(project(":feature:bonding:domain"))
     implementation("org.openjdk.jmh:jmh-core:1.37")
     kapt("org.openjdk.jmh:jmh-generator-annprocess:1.37")
 }

@@ -23,12 +23,12 @@ java {
 }
 
 dependencies {
-    implementation(project(":feature:bonding"))
+    implementation(project(":feature:bonding:impl"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:thermal"))
     implementation(project(":feature:camera"))
     implementation(project(":core:ui"))
-    implementation(project(":kotlin"))
+    implementation(project(":feature:bonding:domain"))
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)

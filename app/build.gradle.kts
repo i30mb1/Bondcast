@@ -37,7 +37,7 @@ java {
 
 dependencies {
     implementation(project(":core:ui"))
-    implementation(project(":feature:bonding"))
+    implementation(project(":feature:bonding:impl"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:thermal"))
     implementation(project(":feature:stream"))

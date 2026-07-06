@@ -18,7 +18,7 @@ java {
 }
 
 dependencies {
-    implementation(project(":kotlin"))
+    implementation(project(":feature:bonding:domain"))
     implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 }
