@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":feature:bonding"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:thermal"))
+    implementation(project(":feature:camera"))
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)
