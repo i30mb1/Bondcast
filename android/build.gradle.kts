@@ -51,6 +51,7 @@ dependencies {
     implementation(project(":kotlin"))
     implementation(project(":core:ui"))
     implementation(project(":feature:bonding"))
+    implementation(project(":feature:settings"))
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)
