@@ -58,6 +58,8 @@ import n7.bondcast.thermal.ThermalMitigations
 import n7.bondcast.thermal.ThermalMonitor
 import n7.bondcast.thermal.ThermalState
 import n7.bondcast.uvc.UvcPreviewBus
+import n7.bondcast.ui.components.CameraIcon
+import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.FlameIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.ThermalPanel
@@ -74,7 +76,9 @@ internal fun StreamScreen(
 ) {
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
+    val cameras by controller.cameras.collectAsState()
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var showCameras by remember { mutableStateOf(false) }
 
     val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
     val thermalState by thermalFlow.collectAsState(initial = ThermalState.UNKNOWN)
@@ -202,9 +206,20 @@ internal fun StreamScreen(
                     .clickable(enabled = phase is StreamPhase.Idle, onClick = onOpenSettings)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
+            if (cameras.size >= 2) {
+                CameraIcon(
+                    onClick = {
+                        showCameras = !showCameras
+                        showThermal = false
+                    },
+                )
+            }
             FlameIcon(
                 color = temperatureColor(thermalState.heat),
-                onClick = { showThermal = !showThermal },
+                onClick = {
+                    showThermal = !showThermal
+                    showCameras = false
+                },
             )
         }
 
@@ -217,7 +232,6 @@ internal fun StreamScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            CameraChips(controller)
             Button(
                 onClick = { if (streaming) controller.stop() else controller.start() },
                 shape = RoundedCornerShape(12.dp),
@@ -261,29 +275,28 @@ internal fun StreamScreen(
                     .padding(12.dp),
             )
         }
-    }
-}
 
-@Composable
-private fun CameraChips(controller: StreamController) {
-    val cameras by controller.cameras.collectAsState()
-    if (cameras.size < 2) return
-    val current by controller.currentCamera.collectAsState()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        cameras.forEach { cam ->
-            val selected = cam == current
-            Text(
-                text = cam.label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) Color.White else DiscordColors.textSecondary,
+        if (showCameras) {
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (selected) DiscordColors.blurple else DiscordColors.background.copy(alpha = 0.72f),
-                    )
-                    .clickable { controller.selectCamera(cam) }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { showCameras = false },
+            )
+            CameraPanel(
+                cameras = cameras,
+                current = currentCamera,
+                onSelect = {
+                    controller.selectCamera(it)
+                    showCameras = false
+                },
+                onClose = { showCameras = false },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(12.dp),
             )
         }
     }
