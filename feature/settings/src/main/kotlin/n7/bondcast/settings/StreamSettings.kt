@@ -12,7 +12,7 @@ public data class StreamSettings(
     val videoBitrateKbps: Int = 4500,
     val abrEnabled: Boolean = true,
     val minVideoBitrateKbps: Int = 800,
-    val latencyMs: Int = 1500,
+    val latencyMs: Int = 2000,
     val bondingEnabled: Boolean = false,
     val srtlaHost: String = "",
     val srtlaPort: Int = 5000,

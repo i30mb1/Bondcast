@@ -33,6 +33,7 @@ import n7.bondcast.uvc.usbCameraMonitor
 import n7.srtla.abr.AbrConfig
 import n7.srtla.abr.AbrSample
 import n7.srtla.abr.abrController
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -203,6 +204,8 @@ public class StreamController(
                     maxKbps = max,
                     sndBufHighMs = settings.latencyMs / 2,
                     sndBufLowMs = settings.latencyMs / 5,
+                    // шаг подъёма растёт вместе с потолком, иначе от минимума до 20000 ползти минуту+
+                    increaseStepKbps = max(500, max / 25),
                 ),
             ) { Log.i(TAG, it) }
         } else {

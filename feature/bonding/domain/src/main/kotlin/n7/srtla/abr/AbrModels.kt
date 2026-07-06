@@ -21,4 +21,6 @@ public data class AbrConfig(
     val increaseStepKbps: Int = 500,
     val increaseIntervalNanos: Long = 2_000_000_000L,
     val decreaseCooldownNanos: Long = 1_000_000_000L,
+    /** Порог скорости роста счётчика потерь, при котором режем битрейт даже без роста буфера. */
+    val lossHighPerSec: Int = 50,
 )

@@ -138,6 +138,55 @@ class AbrControllerTest {
     }
 
     @Test
+    fun negativeSndBufIsIgnored() {
+        val abr = controller()
+        // мусор из libsrt: ни вниз, ни вверх, ни влияния на счётчики
+        val d = abr.sample(0, sndBufferMs = -1_827, pktLossTotal = 0)
+        assertFalse(d.changed)
+        assertEquals(6_000, d.targetKbps)
+    }
+
+    @Test
+    fun singleModerateSpikeDoesNotDrop() {
+        val abr = controller()
+        // выброс между high и 2×high: одиночный семпл не считается перегрузкой
+        val first = abr.sample(0, sndBufferMs = 1_500, pktLossTotal = 0)
+        assertFalse(first.changed)
+
+        val calm = abr.sample(1_000, sndBufferMs = 100, pktLossTotal = 0)
+        assertEquals(6_000, calm.targetKbps)
+    }
+
+    @Test
+    fun sustainedModerateSpikeDropsOnSecondSample() {
+        val abr = controller()
+        abr.sample(0, sndBufferMs = 1_500, pktLossTotal = 0)
+        val second = abr.sample(1_000, sndBufferMs = 1_500, pktLossTotal = 0)
+        assertTrue(second.changed)
+        assertEquals(4_800, second.targetKbps)
+    }
+
+    @Test
+    fun lossSpikeTriggersDrop() {
+        val abr = controller()
+        abr.sample(0, sndBufferMs = 50, pktLossTotal = 0)
+        // +200 потерь за секунду при спокойном буфере — канал теряет, режем
+        val d = abr.sample(1_000, sndBufferMs = 50, pktLossTotal = 200)
+        assertTrue(d.changed)
+        assertEquals(4_800, d.targetKbps)
+    }
+
+    @Test
+    fun lossCounterResetIsNotASpike() {
+        val abr = controller()
+        abr.sample(0, sndBufferMs = 50, pktLossTotal = 500)
+        // реконнект: счётчик потерь нового сокета меньше прошлого — не всплеск
+        val d = abr.sample(1_000, sndBufferMs = 50, pktLossTotal = 3)
+        assertFalse(d.changed)
+        assertEquals(6_000, d.targetKbps)
+    }
+
+    @Test
     fun noIncreaseWhileBufferMidRange() {
         val abr = controller()
         abr.sample(0, sndBufferMs = 2_000, pktLossTotal = 0) // → 4800
