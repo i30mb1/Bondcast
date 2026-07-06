@@ -26,7 +26,6 @@ import kotlinx.coroutines.withContext
 import n7.bondcast.bonding.LinkInfo
 import n7.bondcast.bonding.SrtlaClient
 import n7.bondcast.bonding.SrtlaTarget
-import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.thermal.ThermalMitigations
@@ -53,6 +52,7 @@ public class StreamController(
     private val settingsRepository: SettingsRepository,
     private val srtlaClient: SrtlaClient,
     private val mitigations: ThermalMitigations,
+    private val foreground: StreamForeground,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -133,7 +133,7 @@ public class StreamController(
 
     private suspend fun runSession() = coroutineScope {
         val settings = settingsRepository.settings.first()
-        StreamService.start(application)
+        foreground.start()
         val sampler = launch { sampleStats(settings) }
         val bonding = settings.bondingEnabled
         Log.i(
@@ -180,7 +180,7 @@ public class StreamController(
                 sampler.cancelAndJoin()
                 engine.stopStream()
                 if (bonding) srtlaClient.stop()
-                StreamService.stop(application)
+                foreground.stop()
                 setPhase(StreamPhase.Idle)
                 _stats.value = null
                 _health.value = null
