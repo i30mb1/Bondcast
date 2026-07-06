@@ -20,3 +20,4 @@ dependencyResolutionManagement {
 include("kotlin")
 include("android")
 include("libuvccamera")
+include("benchmark")
