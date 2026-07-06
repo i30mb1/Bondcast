@@ -10,6 +10,8 @@ public data class WindowParams(
     val pktLogSize: Int = 256,
     val connTimeoutNanos: Long = 4_000_000_000L,
     val idleNanos: Long = 1_000_000_000L,
+    /** Минимальный интервал повторного REG2 для таймаутнувшего линка — без него REG2 летит каждый тик. */
+    val reg2ResendNanos: Long = 1_000_000_000L,
 ) {
     public companion object {
         public val DEFAULT: WindowParams = WindowParams()

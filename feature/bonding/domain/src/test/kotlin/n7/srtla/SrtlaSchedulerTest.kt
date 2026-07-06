@@ -188,4 +188,25 @@ class SrtlaSchedulerTest {
         assertEquals(PacketType.SRTLA_REG2, out.sends().first().type())
         assertFalse(s.isActive(1))
     }
+
+    @Test
+    fun timedOutLinkThrottlesReg2Resend() {
+        val s = newScheduler()
+        s.bringUp(1, Transport.WIFI, t0, first = true)
+
+        val late = t0 + 5_000_000_000L
+        assertEquals(1, s.onEvent(SchedulerEvent.Tick(late), late).sends().size)
+
+        // тики каждые 200мс не должны спамить REG2, пока не пройдёт reg2ResendNanos
+        var now = late
+        repeat(4) {
+            now += 200_000_000L
+            assertTrue(s.onEvent(SchedulerEvent.Tick(now), now).sends().isEmpty())
+        }
+
+        now = late + params.reg2ResendNanos + 1
+        val resend = s.onEvent(SchedulerEvent.Tick(now), now).sends()
+        assertEquals(1, resend.size)
+        assertEquals(PacketType.SRTLA_REG2, resend.first().type())
+    }
 }

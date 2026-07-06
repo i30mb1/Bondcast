@@ -150,7 +150,9 @@ public class SrtlaScheduler(
         for (link in links.values) {
             if (link.timedOut(nowNanos)) {
                 if (link.lastRcvdNanos > 0L) link.reset()
-                if (groupEstablished) {
+                // после reset() линк остаётся timedOut до первого входящего пакета,
+                // поэтому ресенд REG2 обязан троттлиться — иначе шторм на каждый тик
+                if (groupEstablished && link.lastSentNanos + params.reg2ResendNanos < nowNanos) {
                     link.reg = RegState.WAIT_REG3
                     link.lastSentNanos = nowNanos
                     actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
