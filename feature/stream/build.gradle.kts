@@ -34,6 +34,7 @@ dependencies {
     implementation(libs.streampack.srt)
     implementation(libs.streampack.ui)
     implementation(libs.srtdroid.core)
+    implementation(libs.srtdroid.ktx)
 
     implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)

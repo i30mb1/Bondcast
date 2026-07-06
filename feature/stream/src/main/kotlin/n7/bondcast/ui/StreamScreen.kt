@@ -336,7 +336,10 @@ private const val STATS_HELP =
         "Ретрансмиты/с — повторные отправки из-за потерь. Высокие → сеть теряет, но SRT пока вытягивает.\n\n" +
         "Дропы/с — пакеты, которые SRT ВЫБРОСИЛ, не успев доставить. Любой дроп = фриз/артефакт у зрителя. " +
         "Срочно: ниже битрейт, выше latency, включить ABR.\n\n" +
-        "Полоса (SRT) — оценка ёмкости канала. Держи битрейт заметно ниже неё (примерно 70%)."
+        "Полоса (SRT) — оценка ёмкости канала. Держи битрейт заметно ниже неё (примерно 70%).\n\n" +
+        "Энкодер — насколько кодирование видео отстаёт от реального времени. Растёт → телефон не успевает " +
+        "(перегрев или битрейт не по силам), у зрителя рывки и растущая задержка, сеть тут НЕ виновата. " +
+        "Помогает: ниже битрейт (потолок в термопанели 🔥), остудить телефон, выключить превью."
 
 @Composable
 private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
@@ -372,6 +375,9 @@ private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SignalCell(h.dropLevel, "Дропы ${h.dropPerSec}/с")
                 SignalCell(null, "Полоса ${s.bandwidthKbps}")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SignalCell(h.encoderLevel, "Энкодер ${formatLag(s.encoderLagMs)}")
             }
         }
     }
@@ -454,6 +460,9 @@ private fun Transport.label(): String = when (this) {
 
 private fun formatRate(kbps: Int): String =
     if (kbps >= 1000) "${kbps / 1000}.${kbps % 1000 / 100} Mbps" else "$kbps kbps"
+
+private fun formatLag(ms: Int): String =
+    if (ms >= 1000) "+${ms / 1000}.${ms % 1000 / 100}с" else "${ms}мс"
 
 private fun Context.findActivity(): Activity? {
     var current: Context = this

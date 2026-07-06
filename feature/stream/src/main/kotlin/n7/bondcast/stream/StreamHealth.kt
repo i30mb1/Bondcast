@@ -14,6 +14,7 @@ public data class StreamHealth(
     val retransLevel: HealthLevel,
     val dropLevel: HealthLevel,
     val rateLevel: HealthLevel,
+    val encoderLevel: HealthLevel,
     val overall: HealthLevel,
 )
 
@@ -57,8 +58,14 @@ public fun streamHealth(
         rateFraction >= 0.6f -> HealthLevel.WARN
         else -> HealthLevel.BAD
     }
+    // отставание энкодера: телефон не успевает кодировать (перегрев/битрейт не по силам)
+    val encoderLevel = when {
+        cur.encoderLagMs < 300 -> HealthLevel.OK
+        cur.encoderLagMs < 1_000 -> HealthLevel.WARN
+        else -> HealthLevel.BAD
+    }
 
-    val overall = listOf(rttLevel, bufLevel, lossLevel, retransLevel, dropLevel, rateLevel)
+    val overall = listOf(rttLevel, bufLevel, lossLevel, retransLevel, dropLevel, rateLevel, encoderLevel)
         .maxByOrNull { it.ordinal } ?: HealthLevel.OK
 
     return StreamHealth(
@@ -71,6 +78,7 @@ public fun streamHealth(
         retransLevel = retransLevel,
         dropLevel = dropLevel,
         rateLevel = rateLevel,
+        encoderLevel = encoderLevel,
         overall = overall,
     )
 }

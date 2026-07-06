@@ -25,6 +25,7 @@ streampack-core = { group = "io.github.thibaultbee.streampack", name = "streampa
 streampack-srt = { group = "io.github.thibaultbee.streampack", name = "streampack-srt", version.ref = "streampack" }
 streampack-ui = { group = "io.github.thibaultbee.streampack", name = "streampack-ui", version.ref = "streampack" }
 srtdroid-core = { group = "io.github.thibaultbee.srtdroid", name = "srtdroid-core", version.ref = "srtdroid" }
+srtdroid-ktx = { group = "io.github.thibaultbee.srtdroid", name = "srtdroid-ktx", version.ref = "srtdroid" }
 
 [plugins]
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -6,6 +6,9 @@ import android.hardware.camera2.CameraManager
 import android.util.Log
 import android.util.Size
 import io.github.thibaultbee.srtdroid.core.models.Stats
+import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.createDefaultTsServiceInfo
+import io.github.thibaultbee.streampack.core.elements.endpoints.composites.CompositeEndpointFactory
+import io.github.thibaultbee.streampack.core.elements.endpoints.composites.muxers.ts.TsMuxer
 import io.github.thibaultbee.streampack.core.elements.sources.video.camera.CameraSourceFactory
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
@@ -13,6 +16,7 @@ import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
 import io.github.thibaultbee.streampack.core.streamers.single.cameraSingleStreamer
 import io.github.thibaultbee.streampack.ext.srt.configuration.mediadescriptor.SrtMediaDescriptor
 import io.github.thibaultbee.streampack.ui.views.PreviewView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,6 +27,7 @@ import kotlin.math.roundToInt
 internal class StreamPackEngine(private val context: Context) : StreamEngine {
 
     private var streamer: SingleStreamer? = null
+    private var sink: SendTimeSrtSink? = null
     private var appliedSettings: StreamSettings? = null
     private val streamerLock = Mutex()
 
@@ -30,7 +35,20 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
         get() = streamer?.throwableFlow?.value
 
     override suspend fun prepare(settings: StreamSettings) {
-        val current = streamer ?: cameraSingleStreamer(context).also { streamer = it }
+        val current = streamer ?: run {
+            // свой sink вместо штатного: без srcTime из MediaCodec PTS (см. SendTimeSrtSink)
+            val newSink = SendTimeSrtSink(Dispatchers.IO)
+            cameraSingleStreamer(
+                context,
+                endpointFactory = CompositeEndpointFactory(
+                    TsMuxer().apply { addService(createDefaultTsServiceInfo()) },
+                    newSink,
+                ),
+            ).also {
+                streamer = it
+                sink = newSink
+            }
+        }
         if (appliedSettings == settings) return
         if (current.isStreamingFlow.value) return
         current.setConfig(
@@ -79,6 +97,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             pktDropTotal = stats.pktSndDropTotal,
             sndBufferMs = stats.msSndBuf,
             bandwidthKbps = (stats.mbpsBandwidth * 1000).roundToInt(),
+            encoderLagMs = sink?.encoderLagMs ?: 0,
         )
     }
 
@@ -175,6 +194,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
     override suspend fun release() = streamerLock.withLock {
         runCatching { streamer?.release() }
         streamer = null
+        sink = null
         appliedSettings = null
     }
 }
