@@ -307,7 +307,8 @@ public fun StreamScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Ниже потолок — холоднее телефон. Физика!",
+                        text = "Ручник для энкодера: 50% — это половина максимума.\n" +
+                            "Прижал — телефон остывает, картинка чуть мылит, зато эфир живёт 🧯",
                         color = DiscordColors.textMuted,
                         style = MaterialTheme.typography.bodySmall,
                     )
