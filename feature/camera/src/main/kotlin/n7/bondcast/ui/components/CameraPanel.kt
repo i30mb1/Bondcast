@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
 import n7.bondcast.stream.CameraOption
@@ -27,6 +29,8 @@ public fun CameraPanel(
     cameras: List<CameraOption>,
     current: CameraOption?,
     onSelect: (CameraOption) -> Unit,
+    previewEnabled: Boolean,
+    onPreviewEnabled: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,5 +76,37 @@ public fun CameraPanel(
                 )
             }
         }
+
+        Text(
+            text = "Превью на экране",
+            color = DiscordColors.textMuted,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PreviewChip("Вкл", previewEnabled) { onPreviewEnabled(true) }
+            PreviewChip("Выкл", !previewEnabled) { onPreviewEnabled(false) }
+        }
+        Text(
+            text = "Выкл — экран отдыхает, телефон холоднее. Зрители разницы не заметят 😉",
+            color = DiscordColors.textMuted,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
+}
+
+@Composable
+private fun RowScope.PreviewChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (selected) Color.White else DiscordColors.textSecondary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) DiscordColors.blurple else DiscordColors.elevated)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+    )
 }

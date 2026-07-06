@@ -67,6 +67,11 @@ internal class OverlayManager {
         open.add(OpenOverlay(id, region, counter++))
     }
 
+    /** Гарантированно показывает окно (для советов-ссылок): уже открытое не трогает. */
+    fun open(id: String) {
+        if (!isOpen(id)) toggle(id)
+    }
+
     fun close(id: String) {
         open.removeAll { it.id == id }
     }

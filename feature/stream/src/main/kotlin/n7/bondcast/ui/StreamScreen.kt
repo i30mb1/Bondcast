@@ -11,9 +11,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,8 +26,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.thibaultbee.streampack.ui.views.PreviewView
@@ -74,6 +79,7 @@ public fun StreamScreen(
     controller: StreamController,
     settings: StreamSettings?,
     onOpenSettings: () -> Unit,
+    onUpdateSettings: (StreamSettings) -> Unit,
     thermalMonitor: ThermalMonitor,
     mitigations: ThermalMitigations,
 ) {
@@ -240,10 +246,27 @@ public fun StreamScreen(
             OverlaySlot(region) {
                 Column(
                     modifier = Modifier
+                        // фиксированная ширина: иначе полоски линков (fillMaxWidth) раздувают карточку
+                        .width(308.dp)
+                        .heightIn(max = 330.dp)
                         .background(DiscordColors.background.copy(alpha = 0.72f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .verticalScroll(rememberScrollState()),
                 ) {
-                    StatusLine(phase)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            StatusLine(phase)
+                        }
+                        Text(
+                            text = "✕",
+                            color = DiscordColors.textMuted,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { overlays.close(PANEL_STATS) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
                     if (settings != null) {
                         Text(
                             text = "${settings.width}×${settings.height}@${settings.fps} • ${settings.videoBitrateKbps} kbps",
@@ -266,6 +289,91 @@ public fun StreamScreen(
                         onHelp = { overlays.toggle(PANEL_STATS_HELP) },
                     )
                     LinksPanel(controller)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Потолок битрейта",
+                        color = DiscordColors.textMuted,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.width(232.dp),
+                    ) {
+                        CapChip("Макс", null, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+                        CapChip("75%", 0.75f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+                        CapChip("50%", 0.5f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+                        CapChip("25%", 0.25f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Ниже потолок — холоднее телефон. Физика!",
+                        color = DiscordColors.textMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (settings != null) {
+                        // ABR применяется на старте сессии, поэтому в эфире переключение заперто
+                        val live = phase !is StreamPhase.Idle
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Адаптивный битрейт (ABR)",
+                            color = DiscordColors.textMuted,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.width(232.dp),
+                        ) {
+                            BoolChip("Вкл", settings.abrEnabled, enabled = !live) {
+                                onUpdateSettings(settings.copy(abrEnabled = true))
+                            }
+                            BoolChip("Выкл", !settings.abrEnabled, enabled = !live) {
+                                onUpdateSettings(settings.copy(abrEnabled = false))
+                            }
+                        }
+                        if (settings.abrEnabled) {
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.width(232.dp),
+                            ) {
+                                BoolChip("−", false, enabled = !live) {
+                                    onUpdateSettings(
+                                        settings.copy(
+                                            minVideoBitrateKbps = (settings.minVideoBitrateKbps - 100).coerceAtLeast(300),
+                                        ),
+                                    )
+                                }
+                                Text(
+                                    text = "мин ${settings.minVideoBitrateKbps}",
+                                    color = DiscordColors.textSecondary,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.weight(2f),
+                                )
+                                BoolChip("+", false, enabled = !live) {
+                                    onUpdateSettings(
+                                        settings.copy(
+                                            minVideoBitrateKbps = (settings.minVideoBitrateKbps + 100)
+                                                .coerceAtMost(settings.videoBitrateKbps),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (live) {
+                                "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅"
+                            } else {
+                                "Мягко приседает качеством вместо слайд-шоу."
+                            },
+                            color = DiscordColors.textMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }
@@ -277,10 +385,9 @@ public fun StreamScreen(
                     effectiveBitrateKbps = if (effectiveBitrate > 0) effectiveBitrate else settings?.videoBitrateKbps ?: 0,
                     brightness = brightness,
                     onBrightness = { mitigations.setScreenBrightness(it) },
-                    previewEnabled = previewEnabled,
-                    onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
                     bitrateCapFraction = bitrateCap,
-                    onBitrateCap = { mitigations.setBitrateCapFraction(it) },
+                    onOpenCameras = { overlays.open(PANEL_CAMERAS) },
+                    onOpenStats = { overlays.open(PANEL_STATS) },
                     onClose = { overlays.close(PANEL_THERMAL) },
                 )
             }
@@ -295,6 +402,8 @@ public fun StreamScreen(
                         controller.selectCamera(it)
                         overlays.close(PANEL_CAMERAS)
                     },
+                    previewEnabled = previewEnabled,
+                    onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
                     onClose = { overlays.close(PANEL_CAMERAS) },
                 )
             }
@@ -456,6 +565,61 @@ private fun formatRate(kbps: Int): String =
 
 private fun formatLag(ms: Int): String =
     if (ms >= 1000) "+${ms / 1000}.${ms % 1000 / 100}с" else "${ms}мс"
+
+@Composable
+private fun RowScope.BoolChip(
+    text: String,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        color = when {
+            !enabled -> DiscordColors.textMuted
+            selected -> Color.White
+            else -> DiscordColors.textSecondary
+        },
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                when {
+                    selected && enabled -> DiscordColors.blurple
+                    selected -> DiscordColors.blurple.copy(alpha = 0.4f)
+                    else -> DiscordColors.elevated
+                },
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun RowScope.CapChip(
+    label: String,
+    value: Float?,
+    selected: Float?,
+    onSelect: (Float?) -> Unit,
+) {
+    val active = selected == value
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (active) Color.White else DiscordColors.textSecondary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (active) DiscordColors.blurple else DiscordColors.elevated)
+            .clickable { onSelect(value) }
+            .padding(vertical = 6.dp),
+    )
+}
 
 private fun Context.findActivity(): Activity? {
     var current: Context = this

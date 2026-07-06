@@ -152,6 +152,7 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             controller = graph.streamController,
             settings = currentSettings,
             onOpenSettings = { showSettings = true },
+            onUpdateSettings = { new -> scope.launch { graph.settingsRepository.save(new) } },
             thermalMonitor = graph.thermalMonitor,
             mitigations = graph.thermalMitigations,
         )

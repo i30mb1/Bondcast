@@ -55,8 +55,6 @@ public fun SettingsScreen(
     var streamName by remember { mutableStateOf(initial.streamName) }
     var passphrase by remember { mutableStateOf(initial.passphrase) }
     var bitrate by remember { mutableStateOf(initial.videoBitrateKbps.toString()) }
-    var abr by remember { mutableStateOf(initial.abrEnabled) }
-    var minBitrate by remember { mutableStateOf(initial.minVideoBitrateKbps.toString()) }
     var latency by remember { mutableStateOf(initial.latencyMs.toString()) }
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
@@ -71,13 +69,10 @@ public fun SettingsScreen(
     val srtlaPortInt = srtlaPort.toIntOrNull()
     val portValid = portInt != null && portInt in 1..65535
     val bitrateValid = bitrateInt != null && bitrateInt in 500..20_000
-    val minBitrateInt = minBitrate.toIntOrNull()
-    val minBitrateValid = !abr || (minBitrateInt != null && bitrateInt != null && minBitrateInt in 300..bitrateInt)
     val latencyValid = latencyInt != null && latencyInt in 20..8_000
     val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
     val destinationValid = if (bonding) srtlaHost.isNotBlank() && srtlaPortValid else host.isNotBlank() && portValid
-    val valid = streamName.isNotBlank() && bitrateValid &&
-        minBitrateValid && latencyValid && destinationValid
+    val valid = streamName.isNotBlank() && bitrateValid && latencyValid && destinationValid
 
     // рекомендации для H.265 по гайду belabox: сложность сцены решает не меньше разрешения —
     // статичная комната прощает низкий битрейт, улица с листвой и движением просит почти вдвое больше
@@ -254,36 +249,6 @@ public fun SettingsScreen(
                             onClick = { bitrate = recOutdoorKbps.toString() },
                         )
                     }
-                    RowDivider()
-                    DiscordSwitchRow(
-                        label = "Адаптивный битрейт (ABR)",
-                        checked = abr,
-                        onCheckedChange = { abr = it },
-                        onInfo = {
-                            info = "Адаптивный битрейт (ABR)" to
-                                "Сеть закашляла — качество мягко приседает, сеть ожила — снова красота. " +
-                                "Зрители готовы простить мыльце на пару секунд, " +
-                                "но слайд-шоу не простят никогда. Выключать — только если точно знаешь зачем."
-                        },
-                    )
-                    if (abr) {
-                        RowDivider()
-                        DiscordStepperField(
-                            label = "Мин. битрейт, kbps",
-                            value = minBitrate,
-                            onValueChange = { minBitrate = it },
-                            min = 300,
-                            max = bitrateInt ?: 20_000,
-                            step = 100,
-                            isError = !minBitrateValid,
-                            onInfo = {
-                                info = "Мин. битрейт" to
-                                    "Ниже этой планки ABR не опустится даже в самой грустной сети — " +
-                                    "лучше честные потери, чем каша из пикселей, " +
-                                    "в которой зритель играет в «угадай, что происходит»."
-                            },
-                        )
-                    }
                 }
 
                 Row(
@@ -309,8 +274,9 @@ public fun SettingsScreen(
                                     // сервер свой и всегда умеет H.265 — меню кодека не показываем
                                     videoCodec = VideoCodec.H265,
                                     videoBitrateKbps = requireNotNull(bitrateInt),
-                                    abrEnabled = abr,
-                                    minVideoBitrateKbps = minBitrateInt ?: 800,
+                                    // ABR и мин. битрейт живут в карточке статистики на стрим-экране
+                                    abrEnabled = initial.abrEnabled,
+                                    minVideoBitrateKbps = initial.minVideoBitrateKbps,
                                     latencyMs = requireNotNull(latencyInt),
                                     bondingEnabled = bonding,
                                     srtlaHost = srtlaHost.trim(),
