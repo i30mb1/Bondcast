@@ -18,7 +18,6 @@ dependencyResolutionManagement {
 }
 
 include("kotlin")
-include("android")
 include("libuvccamera")
 include("benchmark")
 include(":core:ui")
@@ -27,3 +26,4 @@ include(":feature:settings")
 include(":feature:thermal")
 include(":feature:camera")
 include(":feature:stream")
+include(":app")
