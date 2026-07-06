@@ -56,6 +56,12 @@ internal class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        val controller = appGraph().streamController
+        if (isFinishing && !controller.isSessionActive) controller.close()
+        super.onDestroy()
+    }
+
     internal companion object {
         /** adb shell am start -n n7.bondcast/.MainActivity --ez autostart true */
         const val EXTRA_AUTOSTART: String = "autostart"

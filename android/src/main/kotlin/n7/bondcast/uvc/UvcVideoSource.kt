@@ -38,8 +38,12 @@ internal class UvcVideoSource(private val context: Context) : IVideoSourceIntern
     private var helper: ICameraHelper? = null
     private var started = false
 
-    private val renderBitmap: Bitmap = Bitmap.createBitmap(FRAME_W, FRAME_H, Bitmap.Config.ARGB_8888)
-    private val srcRect = Rect(0, 0, FRAME_W, FRAME_H)
+    @Volatile
+    private var renderBitmap: Bitmap = Bitmap.createBitmap(FRAME_W, FRAME_H, Bitmap.Config.ARGB_8888)
+
+    @Volatile
+    private var srcRect = Rect(0, 0, FRAME_W, FRAME_H)
+    private var frameCount = 0L
 
     override val timebase: Timebase = Timebase.UPTIME
     override val infoProviderFlow: StateFlow<ISourceInfoProvider> = _infoProviderFlow.asStateFlow()
@@ -111,7 +115,16 @@ internal class UvcVideoSource(private val context: Context) : IVideoSourceIntern
             }
             helper = null
             started = false
+            runCatching { renderBitmap.recycle() }
         }
+    }
+
+    private fun ensureBitmap(width: Int, height: Int) {
+        val current = renderBitmap
+        if (!current.isRecycled && current.width == width && current.height == height) return
+        renderBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        srcRect = Rect(0, 0, width, height)
+        if (!current.isRecycled) runCatching { current.recycle() }
     }
 
     private fun isUvc(device: UsbDevice): Boolean {
@@ -128,7 +141,7 @@ internal class UvcVideoSource(private val context: Context) : IVideoSourceIntern
         }.isSuccess
         if (ok) {
             renderToSurface(outputSurface)
-            renderToSurface(UvcPreviewBus.surface)
+            if (frameCount++ % PREVIEW_FRAME_DIVISOR == 0L) renderToSurface(UvcPreviewBus.surface)
         }
     }
 
@@ -164,6 +177,7 @@ internal class UvcVideoSource(private val context: Context) : IVideoSourceIntern
             val mjpeg = sizes.firstOrNull { it.type == UVCCamera.UVC_VS_FRAME_MJPEG }
             if (mjpeg != null) {
                 runCatching { h.previewSize = mjpeg }
+                ensureBitmap(mjpeg.width, mjpeg.height)
                 Log.i(TAG, "set previewSize ${mjpeg.width}x${mjpeg.height}")
             }
             runCatching { h.setFrameCallback(frameCallback, UVCCamera.PIXEL_FORMAT_RGBX) }
@@ -193,5 +207,6 @@ internal class UvcVideoSource(private val context: Context) : IVideoSourceIntern
         const val TAG = "UvcSource"
         const val FRAME_W = 1280
         const val FRAME_H = 720
+        const val PREVIEW_FRAME_DIVISOR = 2L
     }
 }

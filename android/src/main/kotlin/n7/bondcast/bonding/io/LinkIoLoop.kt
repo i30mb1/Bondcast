@@ -40,6 +40,7 @@ internal class LinkIoLoop(
     private val networkToId = HashMap<Network, Int>()
     private val pendingEvents = ConcurrentLinkedQueue<NetworkEvent>()
     private val closed = AtomicBoolean(false)
+    private val scratch = ByteArray(PacketType.MTU + 512)
     private var nextLinkId = 1
     private var thread: Thread? = null
     private var lastSnapshotNanos = 0L
@@ -86,7 +87,6 @@ internal class LinkIoLoop(
         running = false
         runCatching { provider.stop() }
         runCatching { selector.wakeup() }
-        thread?.join(2_000)
     }
 
     private fun loop() {
@@ -171,9 +171,9 @@ internal class LinkIoLoop(
             if (callerAddress == null) Log.i(TAG, "локальный SRT-кейлер подключился: $src")
             callerAddress = src
             buf.flip()
-            val data = ByteArray(buf.remaining())
-            buf.get(data)
-            dispatch(scheduler.onEvent(SchedulerEvent.LocalSrtPacket(data, data.size), now))
+            val n = buf.remaining()
+            buf.get(scratch, 0, n)
+            dispatch(scheduler.onEvent(SchedulerEvent.LocalSrtPacket(scratch, n), now))
         } catch (t: Throwable) {
             Log.w(TAG, "readLocal failed", t)
         }
@@ -186,10 +186,10 @@ internal class LinkIoLoop(
             val n = link.channel.read(buf)
             if (n <= 0) return
             buf.flip()
-            val data = ByteArray(buf.remaining())
-            buf.get(data)
-            logRegPacket("←", link, data, data.size)
-            dispatch(scheduler.onEvent(SchedulerEvent.LinkPacket(link.id, data, data.size), now))
+            val count = buf.remaining()
+            buf.get(scratch, 0, count)
+            logRegPacket("←", link, scratch, count)
+            dispatch(scheduler.onEvent(SchedulerEvent.LinkPacket(link.id, scratch, count), now))
         } catch (t: Throwable) {
             if (now - link.lastReadErrorNanos >= ERROR_LOG_THROTTLE_NANOS) {
                 link.lastReadErrorNanos = now
@@ -204,13 +204,13 @@ internal class LinkIoLoop(
                 when (action) {
                     is SchedulerAction.SendOnLink -> {
                         val link = links[action.linkId] ?: continue
-                        logRegPacket("→", link, action.data, action.data.size)
-                        link.channel.write(ByteBuffer.wrap(action.data))
-                        link.bytesSent += action.data.size
+                        logRegPacket("→", link, action.data, action.length)
+                        link.channel.write(ByteBuffer.wrap(action.data, 0, action.length))
+                        link.bytesSent += action.length
                     }
                     is SchedulerAction.SendToLocal -> {
                         val caller = callerAddress ?: continue
-                        local.send(ByteBuffer.wrap(action.data), caller)
+                        local.send(ByteBuffer.wrap(action.data, 0, action.length), caller)
                     }
                 }
             } catch (t: Throwable) {

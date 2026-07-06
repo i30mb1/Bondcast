@@ -15,16 +15,22 @@ internal class SrtlaClientImpl(private val context: Context) : SrtlaClient {
 
     private var loop: LinkIoLoop? = null
 
+    @Volatile
+    private var startEpoch = 0
+
     private val _links = MutableStateFlow<List<LinkInfo>>(emptyList())
     override val links: StateFlow<List<LinkInfo>> = _links.asStateFlow()
 
     override suspend fun start(target: SrtlaTarget): Int = withContext(Dispatchers.IO) {
+        loop?.let { runCatching { it.stop() } }
+        loop = null
+        val epoch = ++startEpoch
         val scheduler = SrtlaScheduler(GroupId.random())
         val newLoop = LinkIoLoop(
             target = target,
             scheduler = scheduler,
             provider = networkProvider(context),
-            onLinksSnapshot = { snapshot -> _links.value = snapshot },
+            onLinksSnapshot = { snapshot -> if (epoch == startEpoch) _links.value = snapshot },
         )
         val port = newLoop.start()
         loop = newLoop
@@ -32,6 +38,7 @@ internal class SrtlaClientImpl(private val context: Context) : SrtlaClient {
     }
 
     override suspend fun stop(): Unit = withContext(Dispatchers.IO) {
+        startEpoch++
         loop?.stop()
         loop = null
         _links.value = emptyList()

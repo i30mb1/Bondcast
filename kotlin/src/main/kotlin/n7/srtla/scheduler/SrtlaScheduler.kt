@@ -73,10 +73,9 @@ public class SrtlaScheduler(
 
     private fun onLocalSrtPacket(event: SchedulerEvent.LocalSrtPacket, nowNanos: Long): List<SchedulerAction> {
         val link = selectConn(nowNanos) ?: return emptyList()
-        val payload = exact(event.data, event.length)
         val sn = SrtInspector.srtDataSeqnum(event.data, event.length)
         if (sn >= 0) link.logPacket(sn)
-        return listOf(SchedulerAction.SendOnLink(link.id, payload))
+        return listOf(SchedulerAction.SendOnLink(link.id, event.data, event.length))
     }
 
     private fun onLinkPacket(event: SchedulerEvent.LinkPacket, nowNanos: Long): List<SchedulerAction> {
@@ -120,14 +119,14 @@ public class SrtlaScheduler(
         return when (type) {
             PacketType.SRT_ACK -> {
                 registerSrtAck(SrtInspector.srtAckLastAck(data, len))
-                listOf(SchedulerAction.SendToLocal(exact(data, len)))
+                listOf(SchedulerAction.SendToLocal(data, len))
             }
             PacketType.SRT_NAK -> {
-                for (lost in SrtInspector.nakLostSeqnums(data, len)) registerNak(lost)
-                listOf(SchedulerAction.SendToLocal(exact(data, len)))
+                SrtInspector.nakLostSeqnums(data, len) { registerNak(it) }
+                listOf(SchedulerAction.SendToLocal(data, len))
             }
             PacketType.SRTLA_ACK -> {
-                for (ack in SrtInspector.srtlaAckSeqnums(data, len)) registerSrtlaAck(ack)
+                SrtInspector.srtlaAckSeqnums(data, len) { registerSrtlaAck(it) }
                 emptyList()
             }
             PacketType.SRTLA_KEEPALIVE -> emptyList()
@@ -136,7 +135,7 @@ public class SrtlaScheduler(
                 emptyList()
             }
             PacketType.SRTLA_REG_ERR, PacketType.SRTLA_REG_NAK, PacketType.SRTLA_REG1 -> emptyList()
-            else -> listOf(SchedulerAction.SendToLocal(exact(data, len)))
+            else -> listOf(SchedulerAction.SendToLocal(data, len))
         }
     }
 
@@ -184,12 +183,16 @@ public class SrtlaScheduler(
     private fun registerSrtAck(ack: Int) {
         if (ack < 0) return
         for (link in links.values) {
+            val log = link.pktLog
+            val skip = link.pktIdx
             var count = 0
-            var i = prevIdx(link.pktIdx)
-            while (i != link.pktIdx) {
-                val value = link.pktLog[i]
-                if (value < ack) link.pktLog[i] = -1 else count++
-                i = prevIdx(i)
+            var idx = 0
+            while (idx < pktLogSize) {
+                if (idx != skip) {
+                    val value = log[idx]
+                    if (value < ack) log[idx] = -1 else count++
+                }
+                idx++
             }
             link.inFlight = count
         }
@@ -239,8 +242,6 @@ public class SrtlaScheduler(
         val i = idx - 1
         return if (i < 0) pktLogSize - 1 else i
     }
-
-    private fun exact(data: ByteArray, len: Int): ByteArray = if (len == data.size) data else data.copyOf(len)
 
     public fun setLinkEnabled(linkId: Int, enabled: Boolean) {
         links[linkId]?.enabled = enabled

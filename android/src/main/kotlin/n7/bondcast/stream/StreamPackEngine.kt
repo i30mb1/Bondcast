@@ -172,8 +172,8 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
         view.setVideoSourceProvider(streamer)
     }
 
-    override suspend fun release() {
-        streamer?.release()
+    override suspend fun release() = streamerLock.withLock {
+        runCatching { streamer?.release() }
         streamer = null
         appliedSettings = null
     }
