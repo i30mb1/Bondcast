@@ -30,8 +30,24 @@ public object SrtInspector {
 
     public fun nakLostSeqnums(buf: ByteArray, len: Int): IntArray {
         val words = len / 4
-        val out = ArrayList<Int>()
+        var count = 0
         var i = 4
+        while (i < words) {
+            val id = Bytes.i32be(buf, i * 4)
+            if (id < 0) {
+                val start = id and 0x7FFFFFFF
+                val end = if (i + 1 < words) Bytes.i32be(buf, (i + 1) * 4) else start
+                if (end >= start) count += end - start + 1
+                i++
+            } else {
+                count++
+            }
+            i++
+        }
+        if (count == 0) return IntArray(0)
+        val out = IntArray(count)
+        var o = 0
+        i = 4
         while (i < words) {
             val id = Bytes.i32be(buf, i * 4)
             if (id < 0) {
@@ -39,15 +55,15 @@ public object SrtInspector {
                 val end = if (i + 1 < words) Bytes.i32be(buf, (i + 1) * 4) else start
                 var lost = start
                 while (lost <= end) {
-                    out.add(lost)
+                    out[o++] = lost
                     lost++
                 }
                 i++
             } else {
-                out.add(id)
+                out[o++] = id
             }
             i++
         }
-        return out.toIntArray()
+        return out
     }
 }

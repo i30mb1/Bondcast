@@ -30,7 +30,8 @@ internal class LinkState(
 
     fun logPacket(seqnum: Int) {
         pktLog[pktIdx] = seqnum
-        pktIdx = (pktIdx + 1) % params.pktLogSize
+        pktIdx++
+        if (pktIdx >= pktLog.size) pktIdx = 0
         inFlight++
     }
 }

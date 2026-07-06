@@ -21,6 +21,7 @@ public class SrtlaScheduler(
     private var pendingReg2DeadlineNanos: Long = 0L
     private var lastReg1LinkId: Int = -1
     private val links = LinkedHashMap<Int, LinkState>()
+    private val pktLogSize: Int = params.pktLogSize
 
     public val activeLinkCount: Int get() = links.values.count { it.reg == RegState.ACTIVE }
 
@@ -234,7 +235,10 @@ public class SrtlaScheduler(
         }
     }
 
-    private fun prevIdx(idx: Int): Int = (idx - 1 + params.pktLogSize) % params.pktLogSize
+    private fun prevIdx(idx: Int): Int {
+        val i = idx - 1
+        return if (i < 0) pktLogSize - 1 else i
+    }
 
     private fun exact(data: ByteArray, len: Int): ByteArray = if (len == data.size) data else data.copyOf(len)
 
