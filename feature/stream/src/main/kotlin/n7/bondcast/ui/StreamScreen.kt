@@ -61,7 +61,6 @@ import n7.bondcast.thermal.ThermalState
 import n7.bondcast.ui.components.CameraIcon
 import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.FlameIcon
-import n7.bondcast.ui.components.InfoDialog
 import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.ThermalPanel
@@ -83,9 +82,8 @@ public fun StreamScreen(
     val cameras by controller.cameras.collectAsState()
     val health by controller.health.collectAsState()
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
-    var showCameras by remember { mutableStateOf(false) }
-    var showStats by remember { mutableStateOf(true) }
-    var showStatsHelp by remember { mutableStateOf(false) }
+    // карточка статистики — обычное окно менеджера, открыта с самого начала
+    val overlays = remember { OverlayManager().apply { toggle(PANEL_STATS) } }
 
     val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
     val thermalState by thermalFlow.collectAsState(initial = ThermalState.UNKNOWN)
@@ -93,7 +91,6 @@ public fun StreamScreen(
     val brightness by mitigations.screenBrightness.collectAsState()
     val bitrateCap by mitigations.bitrateCapFraction.collectAsState()
     val effectiveBitrate by controller.videoBitrateKbps.collectAsState()
-    var showThermal by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val window = remember(context) { context.findActivity()?.window }
@@ -165,37 +162,19 @@ public fun StreamScreen(
             )
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .background(DiscordColors.background.copy(alpha = 0.72f), RoundedCornerShape(16.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        ) {
-            StatusLine(phase)
-            if (settings != null) {
-                Text(
-                    text = "${settings.width}×${settings.height}@${settings.fps} • ${settings.videoBitrateKbps} kbps",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = DiscordColors.textSecondary,
-                )
-                val destination = if (settings.bondingEnabled) {
-                    "srtla://${settings.srtlaHost}:${settings.srtlaPort}"
-                } else {
-                    settings.url
-                }
-                Text(
-                    text = "$destination → live/${settings.streamName}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = DiscordColors.textMuted,
-                )
-            }
-            if (showStats) {
-                HudStats(controller, onHelp = { showStatsHelp = true })
-                LinksPanel(controller)
-            }
+        // скрим лежит ПОД кнопками и панелями: тап мимо закрывает все окна,
+        // а иконки справа остаются кликабельными для переключения панелей
+        if (overlays.anyOpen) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { overlays.closeAll() },
+            )
         }
+
 
         Column(
             modifier = Modifier
@@ -217,22 +196,16 @@ public fun StreamScreen(
             )
             if (cameras.size >= 2) {
                 CameraIcon(
-                    onClick = {
-                        showCameras = !showCameras
-                        showThermal = false
-                    },
+                    onClick = { overlays.toggle(PANEL_CAMERAS) },
                 )
             }
             StatsIcon(
                 color = healthColor(health?.overall),
-                onClick = { showStats = !showStats },
+                onClick = { overlays.toggle(PANEL_STATS) },
             )
             FlameIcon(
                 state = thermalState,
-                onClick = {
-                    showThermal = !showThermal
-                    showCameras = false
-                },
+                onClick = { overlays.toggle(PANEL_THERMAL) },
             )
         }
 
@@ -263,65 +236,86 @@ public fun StreamScreen(
             }
         }
 
-        if (showThermal) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { showThermal = false },
-            )
-            ThermalPanel(
-                state = thermalState,
-                effectiveBitrateKbps = if (effectiveBitrate > 0) effectiveBitrate else settings?.videoBitrateKbps ?: 0,
-                brightness = brightness,
-                onBrightness = { mitigations.setScreenBrightness(it) },
-                previewEnabled = previewEnabled,
-                onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
-                bitrateCapFraction = bitrateCap,
-                onBitrateCap = { mitigations.setBitrateCapFraction(it) },
-                onClose = { showThermal = false },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(12.dp),
-            )
+        overlays.regionOf(PANEL_STATS)?.let { region ->
+            OverlaySlot(region) {
+                Column(
+                    modifier = Modifier
+                        .background(DiscordColors.background.copy(alpha = 0.72f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    StatusLine(phase)
+                    if (settings != null) {
+                        Text(
+                            text = "${settings.width}×${settings.height}@${settings.fps} • ${settings.videoBitrateKbps} kbps",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DiscordColors.textSecondary,
+                        )
+                        val destination = if (settings.bondingEnabled) {
+                            "srtla://${settings.srtlaHost}:${settings.srtlaPort}"
+                        } else {
+                            settings.url
+                        }
+                        Text(
+                            text = "$destination → live/${settings.streamName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DiscordColors.textMuted,
+                        )
+                    }
+                    HudStats(
+                        controller,
+                        onHelp = { overlays.toggle(PANEL_STATS_HELP) },
+                    )
+                    LinksPanel(controller)
+                }
+            }
         }
 
-        if (showCameras) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { showCameras = false },
-            )
-            CameraPanel(
-                cameras = cameras,
-                current = currentCamera,
-                onSelect = {
-                    controller.selectCamera(it)
-                    showCameras = false
-                },
-                onClose = { showCameras = false },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(12.dp),
-            )
+        overlays.regionOf(PANEL_THERMAL)?.let { region ->
+            OverlaySlot(region) {
+                ThermalPanel(
+                    state = thermalState,
+                    effectiveBitrateKbps = if (effectiveBitrate > 0) effectiveBitrate else settings?.videoBitrateKbps ?: 0,
+                    brightness = brightness,
+                    onBrightness = { mitigations.setScreenBrightness(it) },
+                    previewEnabled = previewEnabled,
+                    onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
+                    bitrateCapFraction = bitrateCap,
+                    onBitrateCap = { mitigations.setBitrateCapFraction(it) },
+                    onClose = { overlays.close(PANEL_THERMAL) },
+                )
+            }
         }
 
-        if (showStatsHelp) {
-            InfoDialog(
-                title = "Параметры потока",
-                text = STATS_HELP,
-                onDismiss = { showStatsHelp = false },
-            )
+        overlays.regionOf(PANEL_CAMERAS)?.let { region ->
+            OverlaySlot(region) {
+                CameraPanel(
+                    cameras = cameras,
+                    current = currentCamera,
+                    onSelect = {
+                        controller.selectCamera(it)
+                        overlays.close(PANEL_CAMERAS)
+                    },
+                    onClose = { overlays.close(PANEL_CAMERAS) },
+                )
+            }
+        }
+
+        overlays.regionOf(PANEL_STATS_HELP)?.let { region ->
+            OverlaySlot(region) {
+                InfoPanel(
+                    title = "Параметры потока",
+                    text = STATS_HELP,
+                    onClose = { overlays.close(PANEL_STATS_HELP) },
+                )
+            }
         }
     }
 }
+
+private const val PANEL_STATS = "stats"
+private const val PANEL_THERMAL = "thermal"
+private const val PANEL_CAMERAS = "cameras"
+private const val PANEL_STATS_HELP = "stats_help"
 
 private const val STATS_HELP =
     "Цвет точки: зелёная — норма, жёлтая — внимание, красная — проблема. " +
@@ -345,7 +339,9 @@ private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
     val stats by controller.stats.collectAsState()
     val health by controller.health.collectAsState()
     val bitrate by controller.videoBitrateKbps.collectAsState()
-    val s = stats ?: return
+    // вне эфира данных нет — показываем полную раскладку с прочерками,
+    // чтобы панель сразу выглядела так, какой будет в эфире
+    val s = stats
     val h = health
     Spacer(Modifier.height(6.dp))
     Column(
@@ -358,26 +354,24 @@ private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
         ),
     ) {
         Text(
-            text = "↑ ${s.sendRateKbps} kbps" + if (bitrate > 0) " · цель $bitrate" else "",
+            text = "↑ ${s?.sendRateKbps ?: "—"} kbps" + if (bitrate > 0) " · цель $bitrate" else "",
             style = MaterialTheme.typography.bodySmall,
             color = DiscordColors.textPrimary,
         )
-        if (h != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SignalCell(h.rttLevel, "RTT ${s.rttMs}мс")
-                SignalCell(h.bufLevel, "Буфер ${s.sndBufferMs}мс")
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SignalCell(h.lossLevel, "Потери ${h.lossPerSec}/с")
-                SignalCell(h.retransLevel, "Ретр ${h.retransPerSec}/с")
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SignalCell(h.dropLevel, "Дропы ${h.dropPerSec}/с")
-                SignalCell(null, "Полоса ${s.bandwidthKbps}")
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SignalCell(h.encoderLevel, "Энкодер ${formatLag(s.encoderLagMs)}")
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SignalCell(h?.rttLevel, "RTT ${s?.rttMs ?: "—"}мс")
+            SignalCell(h?.bufLevel, "Буфер ${s?.sndBufferMs ?: "—"}мс")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SignalCell(h?.lossLevel, "Потери ${h?.lossPerSec ?: "—"}/с")
+            SignalCell(h?.retransLevel, "Ретр ${h?.retransPerSec ?: "—"}/с")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SignalCell(h?.dropLevel, "Дропы ${h?.dropPerSec ?: "—"}/с")
+            SignalCell(null, "Полоса ${s?.bandwidthKbps ?: "—"}")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SignalCell(h?.encoderLevel, "Энкодер ${s?.let { formatLag(it.encoderLagMs) } ?: "—"}")
         }
     }
 }
