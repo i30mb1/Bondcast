@@ -1,6 +1,8 @@
 package n7.bondcast.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,8 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,13 +26,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import n7.bondcast.DiscordColors
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.settings.VideoCodec
 import n7.bondcast.ui.components.DiscordField
-import n7.bondcast.ui.components.DiscordRangeField
+import n7.bondcast.ui.components.DiscordHint
 import n7.bondcast.ui.components.DiscordSegmentedRow
+import n7.bondcast.ui.components.DiscordStepperField
 import n7.bondcast.ui.components.DiscordSwitchRow
 import n7.bondcast.ui.components.DiscordTopBar
 import n7.bondcast.ui.components.InfoDialog
@@ -52,7 +60,6 @@ public fun SettingsScreen(
     var latency by remember { mutableStateOf(initial.latencyMs.toString()) }
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
-    var codec by remember { mutableStateOf(initial.videoCodec) }
     var bonding by remember { mutableStateOf(initial.bondingEnabled) }
     var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
     var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
@@ -72,6 +79,15 @@ public fun SettingsScreen(
     val valid = streamName.isNotBlank() && bitrateValid &&
         minBitrateValid && latencyValid && destinationValid
 
+    // рекомендации для H.265 по гайду belabox: сложность сцены решает не меньше разрешения —
+    // статичная комната прощает низкий битрейт, улица с листвой и движением просит почти вдвое больше
+    val (recIndoorKbps, recOutdoorKbps) = when {
+        is1080p && is60fps -> 6_500 to 10_000
+        is1080p -> 4_500 to 8_000
+        is60fps -> 3_500 to 5_500
+        else -> 2_500 to 4_000
+    }
+
     BackHandler(onBack = onBack)
 
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -87,7 +103,7 @@ public fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                SectionLabel("Назначение")
+                SectionLabel("Сервер")
                 SettingsCard {
                     DiscordSwitchRow(
                         label = "Бондинг (объединить сети)",
@@ -95,59 +111,94 @@ public fun SettingsScreen(
                         onCheckedChange = { bonding = it },
                         onInfo = {
                             info = "Бондинг (SRTLA)" to
-                                "Объединяет сотовую + Wi-Fi (и доп. линки) в один SRT-поток через srtla_rec. " +
-                                "При включении видео уходит на localhost и раздаётся по линкам — прямой адрес сервера не используется. " +
-                                "Нужен запущенный srtla_rec перед вашим SRT-сервером."
+                                "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
+                                "и если одна прилегла отдохнуть — остальные тащат. " +
+                                "Видео при этом уходит на srtla_rec, а не напрямую на SRT-порт. " +
+                                "Идеально для стрима на ходу. Дома можно и не включать — но кто мы такие, чтобы запрещать."
                         },
                     )
                     RowDivider()
                     if (bonding) {
-                        DiscordField(
-                            label = "Хост srtla_rec",
-                            value = srtlaHost,
-                            onValueChange = { srtlaHost = it },
-                            isError = srtlaHost.isBlank(),
-                        )
-                        RowDivider()
-                        DiscordField(
-                            label = "Порт srtla_rec",
-                            value = srtlaPort,
-                            onValueChange = { srtlaPort = it },
-                            keyboardType = KeyboardType.Number,
-                            isError = !srtlaPortValid,
-                        )
+                        Row {
+                            DiscordField(
+                                label = "Хост srtla_rec",
+                                value = srtlaHost,
+                                onValueChange = { srtlaHost = it },
+                                isError = srtlaHost.isBlank(),
+                                modifier = Modifier.weight(2f),
+                            )
+                            DiscordField(
+                                label = "Порт",
+                                value = srtlaPort,
+                                onValueChange = { srtlaPort = it },
+                                keyboardType = KeyboardType.Number,
+                                isError = !srtlaPortValid,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     } else {
+                        Row {
+                            DiscordField(
+                                label = "Хост SRT-сервера",
+                                value = host,
+                                onValueChange = { host = it },
+                                isError = host.isBlank(),
+                                modifier = Modifier.weight(2f),
+                            )
+                            DiscordField(
+                                label = "Порт",
+                                value = port,
+                                onValueChange = { port = it },
+                                keyboardType = KeyboardType.Number,
+                                isError = !portValid,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    RowDivider()
+                    Row {
                         DiscordField(
-                            label = "Хост SRT-сервера",
-                            value = host,
-                            onValueChange = { host = it },
-                            isError = host.isBlank(),
+                            label = "Имя стрима",
+                            value = streamName,
+                            onValueChange = { streamName = it },
+                            isError = streamName.isBlank(),
+                            modifier = Modifier.weight(1f),
+                            onInfo = {
+                                info = "Имя стрима" to
+                                    "Поток приедет на сервер как live/<имя>. " +
+                                    "Назови как хочешь — «phone» скромно и со вкусом, " +
+                                    "«super_mega_stream_3000» тоже примем без осуждения."
+                            },
                         )
-                        RowDivider()
                         DiscordField(
-                            label = "Порт",
-                            value = port,
-                            onValueChange = { port = it },
-                            keyboardType = KeyboardType.Number,
-                            isError = !portValid,
+                            label = "Passphrase",
+                            value = passphrase,
+                            onValueChange = { passphrase = it },
+                            modifier = Modifier.weight(1f),
+                            onInfo = {
+                                info = "Passphrase" to
+                                    "Секретный стук в дверь (AES-шифрование SRT). " +
+                                    "Пусто — дверь нараспашку, для своего сервера это ок. " +
+                                    "Если задал — сервер должен знать тот же секрет, " +
+                                    "иначе он сделает вид, что впервые тебя видит."
+                            },
                         )
                     }
                     RowDivider()
-                    DiscordField(
-                        label = "Имя стрима (live/<имя>)",
-                        value = streamName,
-                        onValueChange = { streamName = it },
-                        isError = streamName.isBlank(),
-                    )
-                    RowDivider()
-                    DiscordField(
-                        label = "Passphrase",
-                        value = passphrase,
-                        onValueChange = { passphrase = it },
+                    DiscordStepperField(
+                        label = "Latency, мс",
+                        value = latency,
+                        onValueChange = { latency = it },
+                        min = 20,
+                        max = 8_000,
+                        step = 100,
+                        isError = !latencyValid,
                         onInfo = {
-                            info = "Passphrase" to
-                                "AES-шифрование SRT. Пусто — без шифрования; должно совпадать с сервером. " +
-                                "streamid: #!::r=live/<имя>,m=publish."
+                            info = "Latency" to
+                                "Подушка безопасности SRT: сколько миллисекунд у потерянного пакета есть, " +
+                                "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности. " +
+                                "2000 — золотая середина: пара секунд задержки, зато без артефактов. " +
+                                "Меньше 500 ставят только адреналиновые наркоманы."
                         },
                     )
                 }
@@ -168,27 +219,41 @@ public fun SettingsScreen(
                         onSelect = { is60fps = it == 1 },
                     )
                     RowDivider()
-                    DiscordSegmentedRow(
-                        label = "Кодек",
-                        options = VideoCodec.entries.map { it.label },
-                        selectedIndex = codec.ordinal,
-                        onSelect = { codec = VideoCodec.entries[it] },
-                        onInfo = {
-                            info = "Кодек видео" to
-                                "H.265 (HEVC) экономит ~40–50% битрейта при том же качестве — выгодно для бондинга по сотовой. " +
-                                "Но зрителю нужен плеер с H.265 (Safari — ок; desktop Chrome — нужен аппаратный декодер), " +
-                                "а серверу — SRS 6.0+. H.264 играет везде — безопасный выбор."
-                        },
-                    )
-                    RowDivider()
-                    DiscordRangeField(
+                    DiscordStepperField(
                         label = "Битрейт видео, kbps",
                         value = bitrate,
                         onValueChange = { bitrate = it },
                         min = 500,
                         max = 20_000,
+                        step = 100,
                         isError = !bitrateValid,
+                        onInfo = {
+                            info = "Битрейт видео" to
+                                "Сколько мегабит в секунду тратим на красоту. H.265 умеет в магию сжатия, " +
+                                "так что задирать не нужно: выше рекомендации картинка почти не хорошеет, " +
+                                "зато телефон превращается в грелку и начинает ронять кадры. " +
+                                "Сцена решает: статичная комната прощает почти всё, а улица с листвой " +
+                                "и движением — самый прожорливый контент. Жми пресет ниже — мы уже посчитали."
+                        },
                     )
+                    DiscordHint("💡 Пресеты под ${if (is1080p) "1080p" else "720p"}·${if (is60fps) "60" else "30"} fps — тапни, применю:")
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RecommendChip(
+                            text = "🏠 Комната ≈ $recIndoorKbps",
+                            selected = bitrateInt == recIndoorKbps,
+                            onClick = { bitrate = recIndoorKbps.toString() },
+                        )
+                        RecommendChip(
+                            text = "🌳 Улица ≈ $recOutdoorKbps",
+                            selected = bitrateInt == recOutdoorKbps,
+                            onClick = { bitrate = recOutdoorKbps.toString() },
+                        )
+                    }
                     RowDivider()
                     DiscordSwitchRow(
                         label = "Адаптивный битрейт (ABR)",
@@ -196,37 +261,29 @@ public fun SettingsScreen(
                         onCheckedChange = { abr = it },
                         onInfo = {
                             info = "Адаптивный битрейт (ABR)" to
-                                "Роняет качество под ёмкость сети и поднимает при запасе — эфир держится на слабом линке. " +
-                                "Мин. битрейт — нижняя граница."
+                                "Сеть закашляла — качество мягко приседает, сеть ожила — снова красота. " +
+                                "Зрители готовы простить мыльце на пару секунд, " +
+                                "но слайд-шоу не простят никогда. Выключать — только если точно знаешь зачем."
                         },
                     )
                     if (abr) {
                         RowDivider()
-                        DiscordRangeField(
+                        DiscordStepperField(
                             label = "Мин. битрейт, kbps",
                             value = minBitrate,
                             onValueChange = { minBitrate = it },
                             min = 300,
                             max = bitrateInt ?: 20_000,
+                            step = 100,
                             isError = !minBitrateValid,
+                            onInfo = {
+                                info = "Мин. битрейт" to
+                                    "Ниже этой планки ABR не опустится даже в самой грустной сети — " +
+                                    "лучше честные потери, чем каша из пикселей, " +
+                                    "в которой зритель играет в «угадай, что происходит»."
+                            },
                         )
                     }
-                }
-
-                SectionLabel("Соединение")
-                SettingsCard {
-                    DiscordField(
-                        label = "Latency, мс",
-                        value = latency,
-                        onValueChange = { latency = it },
-                        keyboardType = KeyboardType.Number,
-                        isError = !latencyValid,
-                        onInfo = {
-                            info = "Latency, мс" to
-                                "Буфер SRT для сглаживания потерь и джиттера. Больше — устойчивее, но выше задержка. " +
-                                "Для бондинга и слабых сетей ставьте выше (напр. 2000–4000)."
-                        },
-                    )
                 }
 
                 Row(
@@ -243,13 +300,14 @@ public fun SettingsScreen(
                             onSave(
                                 StreamSettings(
                                     host = host.trim(),
-                                    port = requireNotNull(portInt),
+                                    port = portInt ?: initial.port,
                                     streamName = streamName.trim(),
                                     passphrase = passphrase,
                                     width = if (is1080p) 1920 else 1280,
                                     height = if (is1080p) 1080 else 720,
                                     fps = if (is60fps) 60 else 30,
-                                    videoCodec = codec,
+                                    // сервер свой и всегда умеет H.265 — меню кодека не показываем
+                                    videoCodec = VideoCodec.H265,
                                     videoBitrateKbps = requireNotNull(bitrateInt),
                                     abrEnabled = abr,
                                     minVideoBitrateKbps = minBitrateInt ?: 800,
@@ -273,4 +331,22 @@ public fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun RecommendChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        color = if (selected) Color.White else DiscordColors.textSecondary,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) DiscordColors.blurple else DiscordColors.inputBackground)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }

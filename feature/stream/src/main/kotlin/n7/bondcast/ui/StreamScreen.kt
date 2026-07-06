@@ -1,8 +1,15 @@
 package n7.bondcast.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +31,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,17 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.WindowManager
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.delay
@@ -55,11 +55,9 @@ import n7.bondcast.stream.HealthLevel
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamPhase
 import n7.bondcast.stream.USB_CAMERA_ID
-import n7.bondcast.temperatureColor
 import n7.bondcast.thermal.ThermalMitigations
 import n7.bondcast.thermal.ThermalMonitor
 import n7.bondcast.thermal.ThermalState
-import n7.bondcast.uvc.UvcPreviewBus
 import n7.bondcast.ui.components.CameraIcon
 import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.FlameIcon
@@ -68,6 +66,7 @@ import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.ThermalPanel
 import n7.bondcast.ui.components.healthColor
+import n7.bondcast.uvc.UvcPreviewBus
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
 
@@ -229,7 +228,7 @@ public fun StreamScreen(
                 onClick = { showStats = !showStats },
             )
             FlameIcon(
-                color = temperatureColor(thermalState.heat),
+                state = thermalState,
                 onClick = {
                     showThermal = !showThermal
                     showCameras = false

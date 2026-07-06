@@ -3,8 +3,6 @@ package n7.bondcast.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -245,6 +245,91 @@ public fun DiscordRangeField(
             BoundButton(max.toString()) { onValueChange(max.toString()) }
         }
     }
+}
+
+/** Числовое поле с кнопками −/+ по краям (шаг [step], значение зажимается в [min]..[max]). */
+@Composable
+public fun DiscordStepperField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    min: Int,
+    max: Int,
+    modifier: Modifier = Modifier,
+    step: Int = 100,
+    isError: Boolean = false,
+    onInfo: (() -> Unit)? = null,
+) {
+    fun nudge(delta: Int) {
+        val current = value.toIntOrNull() ?: min
+        onValueChange((current + delta).coerceIn(min, max).toString())
+    }
+    Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                color = DiscordColors.textMuted,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            if (onInfo != null) {
+                Spacer(Modifier.width(6.dp))
+                InfoButton(onInfo)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BoundButton("−") { nudge(-step) }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(DiscordColors.inputBackground, RoundedCornerShape(8.dp))
+                    .border(
+                        width = 1.dp,
+                        color = if (isError) MaterialTheme.colorScheme.error else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            ) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = DiscordColors.textPrimary),
+                    cursorBrush = SolidColor(DiscordColors.blurple),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            BoundButton("+") { nudge(step) }
+        }
+    }
+}
+
+/** Приглушённая строка-подсказка под полем; с [onClick] становится тапабельной. */
+@Composable
+public fun DiscordHint(
+    text: String,
+    onClick: (() -> Unit)? = null,
+) {
+    val base = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp)
+        .padding(bottom = 12.dp)
+    Text(
+        text = text,
+        color = if (onClick != null) DiscordColors.blurple else DiscordColors.textMuted,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = if (onClick != null) {
+            Modifier
+                .clickable(onClick = onClick)
+                .then(base)
+        } else {
+            base
+        },
+    )
 }
 
 @Composable

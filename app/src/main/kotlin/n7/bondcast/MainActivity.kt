@@ -1,7 +1,9 @@
 package n7.bondcast
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -119,6 +121,15 @@ private fun App(graph: AppGraph, autostart: Boolean) {
     val settings by graph.settingsRepository.settings.collectAsState(initial = null)
     var showSettings by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // настройки удобнее крутить в портрете, стрим живёт в ландшафте (манифест: sensorLandscape)
+    LaunchedEffect(showSettings) {
+        (context as? Activity)?.requestedOrientation = if (showSettings) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
 
     LaunchedEffect(autostart) {
         if (autostart && !graph.streamController.isSessionActive) {
