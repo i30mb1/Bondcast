@@ -76,6 +76,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             rttMs = stats.msRTT.roundToInt(),
             pktLossTotal = stats.pktSndLossTotal,
             pktRetransTotal = stats.pktRetransTotal,
+            pktDropTotal = stats.pktSndDropTotal,
             sndBufferMs = stats.msSndBuf,
             bandwidthKbps = (stats.mbpsBandwidth * 1000).roundToInt(),
         )

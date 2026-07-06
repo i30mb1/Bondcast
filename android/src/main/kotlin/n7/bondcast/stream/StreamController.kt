@@ -63,6 +63,9 @@ internal class StreamController(
     private val _stats = MutableStateFlow<StreamStats?>(null)
     val stats: StateFlow<StreamStats?> = _stats.asStateFlow()
 
+    private val _health = MutableStateFlow<StreamHealth?>(null)
+    val health: StateFlow<StreamHealth?> = _health.asStateFlow()
+
     private val _videoBitrateKbps = MutableStateFlow(0)
     val videoBitrateKbps: StateFlow<Int> = _videoBitrateKbps.asStateFlow()
 
@@ -169,6 +172,7 @@ internal class StreamController(
                 StreamService.stop(application)
                 setPhase(StreamPhase.Idle)
                 _stats.value = null
+                _health.value = null
                 _videoBitrateKbps.value = 0
             }
         }
@@ -196,6 +200,8 @@ internal class StreamController(
         var wasLive = false
         var desiredKbps = max
         var appliedKbps = 0
+        var prevStats: StreamStats? = null
+        var prevAtMs = 0L
         while (currentCoroutineContext().isActive) {
             val live = _phase.value is StreamPhase.Live
             if (live) {
@@ -223,8 +229,23 @@ internal class StreamController(
                         appliedKbps = effective
                     }
                 }
+                if (stats != null) {
+                    val now = System.currentTimeMillis()
+                    val target = if (_videoBitrateKbps.value > 0) _videoBitrateKbps.value else max
+                    _health.value = streamHealth(
+                        prev = if (wasLive) prevStats else null,
+                        cur = stats,
+                        elapsedMs = now - prevAtMs,
+                        targetKbps = target,
+                        latencyMs = settings.latencyMs,
+                    )
+                    prevStats = stats
+                    prevAtMs = now
+                }
             } else {
                 _stats.value = null
+                _health.value = null
+                prevStats = null
                 appliedKbps = 0
             }
             wasLive = live

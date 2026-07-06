@@ -2,6 +2,7 @@ package n7.bondcast.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,7 @@ import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.delay
 import n7.bondcast.DiscordColors
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.stream.HealthLevel
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamPhase
 import n7.bondcast.stream.USB_CAMERA_ID
@@ -61,8 +63,11 @@ import n7.bondcast.uvc.UvcPreviewBus
 import n7.bondcast.ui.components.CameraIcon
 import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.FlameIcon
+import n7.bondcast.ui.components.InfoDialog
+import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.ThermalPanel
+import n7.bondcast.ui.components.healthColor
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
 
@@ -77,8 +82,11 @@ internal fun StreamScreen(
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
     val cameras by controller.cameras.collectAsState()
+    val health by controller.health.collectAsState()
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
     var showCameras by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(true) }
+    var showStatsHelp by remember { mutableStateOf(false) }
 
     val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
     val thermalState by thermalFlow.collectAsState(initial = ThermalState.UNKNOWN)
@@ -184,8 +192,10 @@ internal fun StreamScreen(
                     color = DiscordColors.textMuted,
                 )
             }
-            HudStats(controller)
-            LinksPanel(controller)
+            if (showStats) {
+                HudStats(controller, onHelp = { showStatsHelp = true })
+                LinksPanel(controller)
+            }
         }
 
         Column(
@@ -214,6 +224,10 @@ internal fun StreamScreen(
                     },
                 )
             }
+            StatsIcon(
+                color = healthColor(health?.overall),
+                onClick = { showStats = !showStats },
+            )
             FlameIcon(
                 color = temperatureColor(thermalState.heat),
                 onClick = {
@@ -299,27 +313,83 @@ internal fun StreamScreen(
                     .padding(12.dp),
             )
         }
+
+        if (showStatsHelp) {
+            InfoDialog(
+                title = "Параметры потока",
+                text = STATS_HELP,
+                onDismiss = { showStatsHelp = false },
+            )
+        }
+    }
+}
+
+private const val STATS_HELP =
+    "Цвет точки: зелёная — норма, жёлтая — внимание, красная — проблема. " +
+        "Цвет иконки статистики = худшая из метрик (видно и со свёрнутой панелью).\n\n" +
+        "RTT — задержка до сервера (туда-обратно). Растёт → сеть далёкая или перегружена. " +
+        "Помогает: сервер ближе, выше latency, сменить сеть/точку.\n\n" +
+        "Буфер отправки — сколько видео скопилось на отправку. Тянется к latency → канал не успевает, " +
+        "дропы вот-вот. Помогает: ниже битрейт (или ABR), выше latency.\n\n" +
+        "Потери/с — пакеты, потерянные в сети; SRT досылает их ретрансмитами. " +
+        "Немного на сотовой — норма, много → слабый линк.\n\n" +
+        "Ретрансмиты/с — повторные отправки из-за потерь. Высокие → сеть теряет, но SRT пока вытягивает.\n\n" +
+        "Дропы/с — пакеты, которые SRT ВЫБРОСИЛ, не успев доставить. Любой дроп = фриз/артефакт у зрителя. " +
+        "Срочно: ниже битрейт, выше latency, включить ABR.\n\n" +
+        "Полоса (SRT) — оценка ёмкости канала. Держи битрейт заметно ниже неё (примерно 70%)."
+
+@Composable
+private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
+    val stats by controller.stats.collectAsState()
+    val health by controller.health.collectAsState()
+    val bitrate by controller.videoBitrateKbps.collectAsState()
+    val s = stats ?: return
+    val h = health
+    Spacer(Modifier.height(6.dp))
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.combinedClickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = {},
+            onLongClick = onHelp,
+        ),
+    ) {
+        Text(
+            text = "↑ ${s.sendRateKbps} kbps" + if (bitrate > 0) " · цель $bitrate" else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = DiscordColors.textPrimary,
+        )
+        if (h != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SignalCell(h.rttLevel, "RTT ${s.rttMs}мс")
+                SignalCell(h.bufLevel, "Буфер ${s.sndBufferMs}мс")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SignalCell(h.lossLevel, "Потери ${h.lossPerSec}/с")
+                SignalCell(h.retransLevel, "Ретр ${h.retransPerSec}/с")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SignalCell(h.dropLevel, "Дропы ${h.dropPerSec}/с")
+                SignalCell(null, "Полоса ${s.bandwidthKbps}")
+            }
+        }
     }
 }
 
 @Composable
-private fun HudStats(controller: StreamController) {
-    val stats by controller.stats.collectAsState()
-    val bitrate by controller.videoBitrateKbps.collectAsState()
-    val liveStats = stats
-    if (liveStats != null) {
+private fun SignalCell(level: HealthLevel?, text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.width(132.dp),
+    ) {
+        StatusDot(healthColor(level))
+        Spacer(Modifier.width(6.dp))
         Text(
-            text = "↑ ${liveStats.sendRateKbps} kbps · RTT ${liveStats.rttMs} мс · потери ${liveStats.pktLossTotal}",
+            text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = DiscordColors.textPrimary,
+            color = DiscordColors.textSecondary,
         )
-        if (bitrate > 0) {
-            Text(
-                text = "битрейт (ABR): $bitrate kbps",
-                style = MaterialTheme.typography.bodySmall,
-                color = DiscordColors.textSecondary,
-            )
-        }
     }
 }
 

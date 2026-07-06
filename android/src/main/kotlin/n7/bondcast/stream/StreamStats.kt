@@ -5,6 +5,7 @@ internal data class StreamStats(
     val rttMs: Int,
     val pktLossTotal: Int,
     val pktRetransTotal: Int,
+    val pktDropTotal: Int,
     val sndBufferMs: Int,
     val bandwidthKbps: Int,
 )
