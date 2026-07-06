@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.datastore.preferences)
 
     implementation(project(":kotlin"))
+    implementation(project(":core:ui"))
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)
