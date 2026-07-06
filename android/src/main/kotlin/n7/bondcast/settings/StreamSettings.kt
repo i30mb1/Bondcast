@@ -1,6 +1,6 @@
 package n7.bondcast.settings
 
-internal data class StreamSettings(
+public data class StreamSettings(
     val host: String = "10.0.2.2",
     val port: Int = 10080,
     val streamName: String = "phone",

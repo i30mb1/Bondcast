@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
 
 @Composable
-internal fun CameraIcon(
+public fun CameraIcon(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     color: Color = DiscordColors.textPrimary,

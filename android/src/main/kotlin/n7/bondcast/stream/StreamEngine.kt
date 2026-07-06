@@ -7,7 +7,7 @@ import n7.bondcast.settings.StreamSettings
  * Шов между приложением и конкретным пайплайном стриминга (сейчас — StreamPack).
  * Меняя реализацию, не трогаем UI и контроллер.
  */
-internal interface StreamEngine {
+public interface StreamEngine {
 
     /** Последняя ошибка пайплайна, если была. */
     val lastError: Throwable?

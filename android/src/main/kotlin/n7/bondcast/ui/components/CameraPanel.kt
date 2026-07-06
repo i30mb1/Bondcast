@@ -23,7 +23,7 @@ import n7.bondcast.DiscordColors
 import n7.bondcast.stream.CameraOption
 
 @Composable
-internal fun CameraPanel(
+public fun CameraPanel(
     cameras: List<CameraOption>,
     current: CameraOption?,
     onSelect: (CameraOption) -> Unit,

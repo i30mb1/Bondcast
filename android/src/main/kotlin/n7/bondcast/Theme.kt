@@ -42,7 +42,7 @@ private val ColorScheme = darkColorScheme(
     outlineVariant = Divider,
 )
 
-internal object DiscordColors {
+public object DiscordColors {
     val background = Background
     val card = CardSurface
     val elevated = Elevated
@@ -59,7 +59,7 @@ internal object DiscordColors {
     fun temperature(heat: Float): Color = temperatureColor(heat)
 }
 
-internal fun temperatureColor(heat: Float): Color {
+public fun temperatureColor(heat: Float): Color {
     val clamped = heat.coerceIn(0f, 1f)
     return Color.hsv(240f - clamped * 240f, 0.9f, 1f)
 }

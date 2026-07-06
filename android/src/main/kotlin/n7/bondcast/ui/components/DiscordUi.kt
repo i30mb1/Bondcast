@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.sp
 import n7.bondcast.DiscordColors
 
 @Composable
-internal fun DiscordTopBar(
+public fun DiscordTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
 ) {
@@ -72,7 +72,7 @@ internal fun DiscordTopBar(
 }
 
 @Composable
-internal fun SectionLabel(text: String) {
+public fun SectionLabel(text: String) {
     Text(
         text = text,
         color = DiscordColors.textMuted,
@@ -84,7 +84,7 @@ internal fun SectionLabel(text: String) {
 }
 
 @Composable
-internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+public fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -94,7 +94,7 @@ internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-internal fun RowDivider() {
+public fun RowDivider() {
     HorizontalDivider(
         thickness = 1.dp,
         color = DiscordColors.divider,
@@ -103,7 +103,7 @@ internal fun RowDivider() {
 }
 
 @Composable
-internal fun InfoButton(onClick: () -> Unit) {
+public fun InfoButton(onClick: () -> Unit) {
     Text(
         text = "ⓘ",
         color = DiscordColors.textMuted,
@@ -116,7 +116,7 @@ internal fun InfoButton(onClick: () -> Unit) {
 }
 
 @Composable
-internal fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
+public fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -145,7 +145,7 @@ internal fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-internal fun DiscordField(
+public fun DiscordField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -192,7 +192,7 @@ internal fun DiscordField(
 }
 
 @Composable
-internal fun DiscordRangeField(
+public fun DiscordRangeField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -266,7 +266,7 @@ private fun BoundButton(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun DiscordSegmentedRow(
+public fun DiscordSegmentedRow(
     label: String,
     options: List<String>,
     selectedIndex: Int,
@@ -319,7 +319,7 @@ internal fun DiscordSegmentedRow(
 }
 
 @Composable
-internal fun DiscordSwitchRow(
+public fun DiscordSwitchRow(
     label: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -357,7 +357,7 @@ internal fun DiscordSwitchRow(
 }
 
 @Composable
-internal fun StatusDot(color: Color) {
+public fun StatusDot(color: Color) {
     Box(
         modifier = Modifier
             .size(10.dp)

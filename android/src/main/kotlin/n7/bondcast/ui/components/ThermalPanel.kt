@@ -29,7 +29,7 @@ import n7.bondcast.thermal.ThermalState
 import kotlin.math.roundToInt
 
 @Composable
-internal fun ThermalPanel(
+public fun ThermalPanel(
     state: ThermalState,
     effectiveBitrateKbps: Int,
     brightness: Float?,

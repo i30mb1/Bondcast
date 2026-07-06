@@ -2,7 +2,7 @@ package n7.bondcast.uvc
 
 import android.view.Surface
 
-internal object UvcPreviewBus {
+public object UvcPreviewBus {
 
     @Volatile
     var surface: Surface? = null

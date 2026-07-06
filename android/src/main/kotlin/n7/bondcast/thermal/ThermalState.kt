@@ -2,7 +2,7 @@ package n7.bondcast.thermal
 
 import android.os.PowerManager
 
-internal data class ThermalState(
+public data class ThermalState(
     val status: Int,
     val headroom: Float?,
     val batteryTempC: Float?,

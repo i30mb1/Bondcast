@@ -37,7 +37,7 @@ import n7.bondcast.ui.components.SectionLabel
 import n7.bondcast.ui.components.SettingsCard
 
 @Composable
-internal fun SettingsScreen(
+public fun SettingsScreen(
     initial: StreamSettings,
     onSave: (StreamSettings) -> Unit,
     onBack: () -> Unit,

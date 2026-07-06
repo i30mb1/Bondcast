@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "stream_settings")
 
-internal class SettingsRepository(private val context: Context) {
+public class SettingsRepository(private val context: Context) {
 
     val settings: Flow<StreamSettings> = context.dataStore.data.map { preferences ->
         val default = StreamSettings()

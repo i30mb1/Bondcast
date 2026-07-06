@@ -4,7 +4,7 @@ import android.content.Context
 import io.github.thibaultbee.streampack.core.elements.sources.video.IVideoSourceInternal
 import io.github.thibaultbee.streampack.core.pipelines.IVideoDispatcherProvider
 
-internal class UvcVideoSourceFactory : IVideoSourceInternal.Factory {
+public class UvcVideoSourceFactory : IVideoSourceInternal.Factory {
 
     override suspend fun create(
         context: Context,

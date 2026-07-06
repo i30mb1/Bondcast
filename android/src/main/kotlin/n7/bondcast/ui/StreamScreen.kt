@@ -72,7 +72,7 @@ import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
 
 @Composable
-internal fun StreamScreen(
+public fun StreamScreen(
     controller: StreamController,
     settings: StreamSettings?,
     onOpenSettings: () -> Unit,

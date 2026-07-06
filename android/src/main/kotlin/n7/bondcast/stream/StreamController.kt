@@ -37,7 +37,7 @@ import n7.srtla.abr.abrController
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-internal sealed interface StreamPhase {
+public sealed interface StreamPhase {
     data object Idle : StreamPhase
     data object Connecting : StreamPhase
     data class Live(val sinceEpochMs: Long) : StreamPhase
@@ -48,7 +48,7 @@ internal sealed interface StreamPhase {
  * Оркестратор стрим-сессии: держит фазу, крутит реконнект с backoff,
  * поднимает и опускает foreground-сервис.
  */
-internal class StreamController(
+public class StreamController(
     private val application: Application,
     private val settingsRepository: SettingsRepository,
     private val srtlaClient: SrtlaClient,

@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
 
 @Composable
-internal fun FlameIcon(
+public fun FlameIcon(
     color: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,

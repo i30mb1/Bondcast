@@ -2,9 +2,9 @@ package n7.bondcast.stream
 
 import kotlin.math.roundToInt
 
-internal enum class HealthLevel { OK, WARN, BAD }
+public enum class HealthLevel { OK, WARN, BAD }
 
-internal data class StreamHealth(
+public data class StreamHealth(
     val lossPerSec: Int,
     val retransPerSec: Int,
     val dropPerSec: Int,
@@ -17,7 +17,7 @@ internal data class StreamHealth(
     val overall: HealthLevel,
 )
 
-internal fun streamHealth(
+public fun streamHealth(
     prev: StreamStats?,
     cur: StreamStats,
     elapsedMs: Long,

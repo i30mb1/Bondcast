@@ -35,10 +35,6 @@ java {
     }
 }
 
-kotlin {
-    explicitApi()
-}
-
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.runtime)

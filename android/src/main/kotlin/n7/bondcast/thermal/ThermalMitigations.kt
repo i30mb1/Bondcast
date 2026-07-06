@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-internal class ThermalMitigations {
+public class ThermalMitigations {
 
     private val _screenBrightness = MutableStateFlow<Float?>(null)
     val screenBrightness: StateFlow<Float?> = _screenBrightness.asStateFlow()

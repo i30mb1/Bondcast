@@ -12,11 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-internal interface UsbCameraMonitor {
+public interface UsbCameraMonitor {
     val connected: StateFlow<Boolean>
 }
 
-internal fun usbCameraMonitor(context: Context): UsbCameraMonitor =
+public fun usbCameraMonitor(context: Context): UsbCameraMonitor =
     UsbCameraMonitorImpl(context.applicationContext)
 
 private class UsbCameraMonitorImpl(private val context: Context) : UsbCameraMonitor {
