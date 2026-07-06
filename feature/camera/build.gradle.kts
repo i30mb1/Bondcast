@@ -23,7 +23,7 @@ java {
 }
 
 dependencies {
-    implementation(project(":libuvccamera"))
+    implementation(project(":feature:camera:libuvccamera"))
     implementation(project(":core:ui"))
 
     api(libs.streampack.core)

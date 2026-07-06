@@ -17,8 +17,8 @@ dependencyResolutionManagement {
     }
 }
 
-include("libuvccamera")
 include("benchmark")
+include(":feature:camera:libuvccamera")
 include(":core:ui")
 include(":feature:bonding:domain")
 include(":feature:bonding:impl")
