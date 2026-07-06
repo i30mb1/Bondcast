@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":feature:settings"))
     implementation(project(":feature:thermal"))
     implementation(project(":feature:camera"))
+    implementation(project(":feature:stream"))
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)
