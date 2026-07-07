@@ -1,5 +1,6 @@
 package n7.bondcast.ui
 
+import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +51,8 @@ public fun SettingsScreen(
     onSave: (StreamSettings) -> Unit,
     onBack: () -> Unit,
 ) {
+    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
     var streamName by remember { mutableStateOf(initial.streamName) }

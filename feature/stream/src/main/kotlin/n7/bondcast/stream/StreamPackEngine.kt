@@ -9,17 +9,16 @@ import io.github.thibaultbee.srtdroid.core.models.Stats
 import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.createDefaultTsServiceInfo
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.CompositeEndpointFactory
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.muxers.ts.TsMuxer
-import io.github.thibaultbee.streampack.core.elements.sources.video.camera.CameraSourceFactory
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
 import io.github.thibaultbee.streampack.core.streamers.single.cameraSingleStreamer
 import io.github.thibaultbee.streampack.ext.srt.configuration.mediadescriptor.SrtMediaDescriptor
-import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import n7.bondcast.camerax.CameraXVideoSourceFactory
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.uvc.UvcVideoSourceFactory
 import kotlin.math.roundToInt
@@ -47,6 +46,9 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             ).also {
                 streamer = it
                 sink = newSink
+                val camId = defaultCameraId()
+                val res = runCatching { it.setVideoSource(CameraXVideoSourceFactory(camId)) }
+                Log.i("StreamCamera", "init setVideoSource(camerax=$camId) -> ${res.exceptionOrNull()?.toString() ?: "ok"}")
             }
         }
         if (appliedSettings == settings) return
@@ -139,7 +141,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             val factory = if (cameraId == USB_CAMERA_ID) {
                 UvcVideoSourceFactory()
             } else {
-                CameraSourceFactory(cameraId)
+                CameraXVideoSourceFactory(cameraId)
             }
             runCatching { current.setVideoSource(factory) }
                 .onFailure { Log.w("StreamCamera", "switchCamera($cameraId): $it") }
@@ -147,6 +149,13 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
     }
 
     private fun cameraManager(): CameraManager? = context.getSystemService(CameraManager::class.java)
+
+    private fun defaultCameraId(): String {
+        val manager = cameraManager() ?: return "0"
+        val ids = runCatching { manager.cameraIdList.toList() }.getOrDefault(emptyList())
+        val back = ids.firstOrNull { facingOf(manager, it) == CameraCharacteristics.LENS_FACING_BACK }
+        return back ?: ids.firstOrNull() ?: "0"
+    }
 
     private fun facingOf(manager: CameraManager, id: String): Int? = runCatching {
         manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
@@ -185,10 +194,6 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             runCatching { current.close() }
             appliedSettings = null
         }
-    }
-
-    override suspend fun bindPreview(view: PreviewView) {
-        view.setVideoSourceProvider(streamer)
     }
 
     override suspend fun release() = streamerLock.withLock {

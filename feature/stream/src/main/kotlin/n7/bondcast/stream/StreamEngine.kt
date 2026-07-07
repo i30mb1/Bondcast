@@ -1,6 +1,5 @@
 package n7.bondcast.stream
 
-import io.github.thibaultbee.streampack.ui.views.PreviewView
 import n7.bondcast.settings.StreamSettings
 
 /**
@@ -30,9 +29,6 @@ public interface StreamEngine {
     suspend fun switchCamera(cameraId: String)
 
     suspend fun stopStream()
-
-    /** Привязывает превью камеры к View. */
-    suspend fun bindPreview(view: PreviewView)
 
     suspend fun release()
 }

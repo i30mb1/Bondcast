@@ -30,6 +30,11 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.effects)
+
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui)

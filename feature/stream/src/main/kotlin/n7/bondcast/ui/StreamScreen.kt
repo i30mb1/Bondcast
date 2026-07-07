@@ -52,8 +52,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.delay
+import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.DiscordColors
 import n7.bondcast.obs.ObsController
 import n7.bondcast.settings.StreamSettings
@@ -91,7 +91,6 @@ public fun StreamScreen(
     val currentCamera by controller.currentCamera.collectAsState()
     val cameras by controller.cameras.collectAsState()
     val health by controller.health.collectAsState()
-    var previewView by remember { mutableStateOf<PreviewView?>(null) }
     // карточка статистики — обычное окно менеджера, открыта с самого начала
     val overlays = remember { OverlayManager().apply { toggle(PANEL_STATS) } }
 
@@ -129,11 +128,9 @@ public fun StreamScreen(
         }
     }
 
-    LaunchedEffect(previewView, settings) {
-        val view = previewView ?: return@LaunchedEffect
+    LaunchedEffect(settings) {
         val current = settings ?: return@LaunchedEffect
         controller.engine.prepare(current)
-        controller.engine.bindPreview(view)
     }
 
     Box(
@@ -141,18 +138,6 @@ public fun StreamScreen(
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(
-            factory = { context ->
-                PreviewView(context).apply {
-                    keepScreenOn = true
-                    enableZoomOnPinch = true
-                    enableTapToFocus = true
-                }
-            },
-            update = { view -> if (previewView !== view) previewView = view },
-            modifier = Modifier.fillMaxSize(),
-        )
-
         if (currentCamera?.id == USB_CAMERA_ID && previewEnabled) {
             AndroidView(
                 factory = { context ->
@@ -166,6 +151,27 @@ public fun StreamScreen(
 
                             override fun surfaceDestroyed(holder: SurfaceHolder) =
                                 UvcPreviewBus.set(null)
+                        })
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        if (currentCamera?.id != USB_CAMERA_ID && previewEnabled) {
+            AndroidView(
+                factory = { context ->
+                    SurfaceView(context).apply {
+                        keepScreenOn = true
+                        holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(holder: SurfaceHolder) =
+                                CameraXPreviewBus.set(holder.surface)
+
+                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
+                                CameraXPreviewBus.set(holder.surface)
+
+                            override fun surfaceDestroyed(holder: SurfaceHolder) =
+                                CameraXPreviewBus.set(null)
                         })
                     }
                 },
