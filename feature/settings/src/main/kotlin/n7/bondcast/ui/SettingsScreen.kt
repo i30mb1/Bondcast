@@ -62,18 +62,26 @@ public fun SettingsScreen(
     var hints by remember { mutableStateOf(initial.hintsEnabled) }
     var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
     var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
+    var obsEnabled by remember { mutableStateOf(initial.obsEnabled) }
+    var obsHost by remember { mutableStateOf(initial.obsHost) }
+    var obsPort by remember { mutableStateOf(initial.obsPort.toString()) }
+    var obsPassword by remember { mutableStateOf(initial.obsPassword) }
     var info by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val portInt = port.toIntOrNull()
     val bitrateInt = bitrate.toIntOrNull()
     val latencyInt = latency.toIntOrNull()
     val srtlaPortInt = srtlaPort.toIntOrNull()
+    val obsPortInt = obsPort.toIntOrNull()
     val portValid = portInt != null && portInt in 1..65535
     val bitrateValid = bitrateInt != null && bitrateInt in 500..20_000
     val latencyValid = latencyInt != null && latencyInt in 20..8_000
     val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
+    // пульт выключен — его поля скрыты и не проверяются
+    val obsPortValid = obsPortInt != null && obsPortInt in 1..65535
+    val obsValid = !obsEnabled || (obsHost.isNotBlank() && obsPortValid)
     val destinationValid = if (bonding) srtlaHost.isNotBlank() && srtlaPortValid else host.isNotBlank() && portValid
-    val valid = streamName.isNotBlank() && bitrateValid && latencyValid && destinationValid
+    val valid = streamName.isNotBlank() && bitrateValid && latencyValid && destinationValid && obsValid
 
     // рекомендации для H.265 по гайду belabox: сложность сцены решает не меньше разрешения —
     // статичная комната прощает низкий битрейт, улица с листвой и движением просит почти вдвое больше
@@ -120,6 +128,8 @@ public fun SettingsScreen(
                                 label = "Хост srtla_rec",
                                 value = srtlaHost,
                                 onValueChange = { srtlaHost = it },
+                                // хост — это IP: Decimal даёт цифровую панель с точкой
+                                keyboardType = KeyboardType.Decimal,
                                 isError = srtlaHost.isBlank(),
                                 modifier = Modifier.weight(2f),
                             )
@@ -138,6 +148,7 @@ public fun SettingsScreen(
                                 label = "Хост SRT-сервера",
                                 value = host,
                                 onValueChange = { host = it },
+                                keyboardType = KeyboardType.Decimal,
                                 isError = host.isBlank(),
                                 modifier = Modifier.weight(2f),
                             )
@@ -264,6 +275,58 @@ public fun SettingsScreen(
                     )
                 }
 
+                SectionLabel("OBS")
+                SettingsCard {
+                    DiscordSwitchRow(
+                        label = "Пульт OBS",
+                        checked = obsEnabled,
+                        onCheckedChange = { obsEnabled = it },
+                        onInfo = {
+                            info = "Пульт OBS" to
+                                "Панель на стрим-экране, которая командует OBS на компе: " +
+                                "сцены, эфир, запись.\n\n" +
+                                "Где что искать: в OBS открой Сервис → Настройка сервера WebSocket, " +
+                                "поставь галочку «Включить сервер WebSocket» — порт и пароль написаны " +
+                                "прямо там (кнопка «Показать сведения о подключении»). " +
+                                "Хост — это IP компа в локальной сети (ipconfig → IPv4).\n\n" +
+                                "Выключен — ни настроек, ни иконки, ничто не мозолит глаза."
+                        },
+                    )
+                    if (obsEnabled) {
+                        RowDivider()
+                        Row {
+                            DiscordField(
+                                label = "Хост OBS",
+                                value = obsHost,
+                                onValueChange = { obsHost = it },
+                                keyboardType = KeyboardType.Decimal,
+                                isError = obsHost.isBlank(),
+                                modifier = Modifier.weight(2f),
+                            )
+                            DiscordField(
+                                label = "Порт",
+                                value = obsPort,
+                                onValueChange = { obsPort = it },
+                                keyboardType = KeyboardType.Number,
+                                isError = !obsPortValid,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        RowDivider()
+                        DiscordField(
+                            label = "Пароль WebSocket",
+                            value = obsPassword,
+                            onValueChange = { obsPassword = it },
+                            onInfo = {
+                                info = "Пароль WebSocket" to
+                                    "Тот же, что в OBS: Сервис → Настройка сервера WebSocket → «Пароль сервера» " +
+                                    "(или кнопка «Показать сведения о подключении»). " +
+                                    "Если галочка «Включить аутентификацию» снята — оставь пустым."
+                            },
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -295,6 +358,10 @@ public fun SettingsScreen(
                                     srtlaHost = srtlaHost.trim(),
                                     srtlaPort = srtlaPortInt ?: 5000,
                                     hintsEnabled = hints,
+                                    obsEnabled = obsEnabled,
+                                    obsHost = obsHost.trim(),
+                                    obsPort = obsPortInt ?: 4455,
+                                    obsPassword = obsPassword,
                                 ),
                             )
                         },

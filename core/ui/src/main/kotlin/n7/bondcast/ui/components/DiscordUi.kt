@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -144,6 +145,28 @@ public fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
     )
 }
 
+/**
+ * Строка-подпись поля с опциональной ⓘ. Минимальная высота = высоте ⓘ,
+ * чтобы соседние поля в Row не разъезжались по вертикали, когда ⓘ есть не у всех.
+ */
+@Composable
+private fun FieldLabel(label: String, onInfo: (() -> Unit)?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.heightIn(min = 32.dp),
+    ) {
+        Text(
+            text = label,
+            color = DiscordColors.textMuted,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        if (onInfo != null) {
+            Spacer(Modifier.width(6.dp))
+            InfoButton(onInfo)
+        }
+    }
+}
+
 @Composable
 public fun DiscordField(
     label: String,
@@ -155,17 +178,7 @@ public fun DiscordField(
     onInfo: (() -> Unit)? = null,
 ) {
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            if (onInfo != null) {
-                Spacer(Modifier.width(6.dp))
-                InfoButton(onInfo)
-            }
-        }
+        FieldLabel(label, onInfo)
         Spacer(Modifier.height(6.dp))
         Box(
             modifier = Modifier
@@ -204,17 +217,7 @@ public fun DiscordRangeField(
     onInfo: (() -> Unit)? = null,
 ) {
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            if (onInfo != null) {
-                Spacer(Modifier.width(6.dp))
-                InfoButton(onInfo)
-            }
-        }
+        FieldLabel(label, onInfo)
         Spacer(Modifier.height(6.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -265,17 +268,7 @@ public fun DiscordStepperField(
         onValueChange((current + delta).coerceIn(min, max).toString())
     }
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            if (onInfo != null) {
-                Spacer(Modifier.width(6.dp))
-                InfoButton(onInfo)
-            }
-        }
+        FieldLabel(label, onInfo)
         Spacer(Modifier.height(6.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,

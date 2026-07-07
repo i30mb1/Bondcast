@@ -40,6 +40,7 @@ dependencies {
     implementation(project(":feature:bonding:impl"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:thermal"))
+    implementation(project(":feature:obs"))
     implementation(project(":feature:stream"))
 
     implementation(platform(libs.compose.bom))

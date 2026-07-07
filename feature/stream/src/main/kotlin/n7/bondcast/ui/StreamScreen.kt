@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
@@ -55,6 +55,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import io.github.thibaultbee.streampack.ui.views.PreviewView
 import kotlinx.coroutines.delay
 import n7.bondcast.DiscordColors
+import n7.bondcast.obs.ObsController
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.HealthLevel
 import n7.bondcast.stream.StreamController
@@ -66,6 +67,8 @@ import n7.bondcast.thermal.ThermalState
 import n7.bondcast.ui.components.CameraIcon
 import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.FlameIcon
+import n7.bondcast.ui.components.ObsIcon
+import n7.bondcast.ui.components.ObsPanel
 import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.ThermalPanel
@@ -82,6 +85,7 @@ public fun StreamScreen(
     onUpdateSettings: (StreamSettings) -> Unit,
     thermalMonitor: ThermalMonitor,
     mitigations: ThermalMitigations,
+    obsController: ObsController,
 ) {
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
@@ -97,6 +101,15 @@ public fun StreamScreen(
     val brightness by mitigations.screenBrightness.collectAsState()
     val bitrateCap by mitigations.bitrateCapFraction.collectAsState()
     val effectiveBitrate by controller.videoBitrateKbps.collectAsState()
+
+    val obsConfigured = settings?.obsEnabled == true && settings.obsHost.isNotBlank()
+    val obsPhase by obsController.phase.collectAsState()
+    // соединение живёт, только пока окно открыто; isOpen ловит и ✕, и скрим, и вытеснение третьим окном
+    val obsOpen = overlays.isOpen(PANEL_OBS)
+    LaunchedEffect(obsOpen) { obsController.setPanelVisible(obsOpen) }
+    DisposableEffect(obsController) {
+        onDispose { obsController.setPanelVisible(false) }
+    }
 
     val context = LocalContext.current
     val window = remember(context) { context.findActivity()?.window }
@@ -213,6 +226,12 @@ public fun StreamScreen(
                 state = thermalState,
                 onClick = { overlays.toggle(PANEL_THERMAL) },
             )
+            if (obsConfigured) {
+                ObsIcon(
+                    phase = obsPhase,
+                    onClick = { overlays.toggle(PANEL_OBS) },
+                )
+            }
         }
 
         val streaming = phase !is StreamPhase.Idle
@@ -417,6 +436,29 @@ public fun StreamScreen(
             }
         }
 
+        overlays.regionOf(PANEL_OBS)?.let { region ->
+            val obsScenes by obsController.scenes.collectAsState()
+            val obsCurrentScene by obsController.currentScene.collectAsState()
+            val obsStreamStatus by obsController.streamStatus.collectAsState()
+            val obsRecordStatus by obsController.recordStatus.collectAsState()
+            val obsStats by obsController.stats.collectAsState()
+            OverlaySlot(region) {
+                ObsPanel(
+                    phase = obsPhase,
+                    scenes = obsScenes,
+                    currentScene = obsCurrentScene,
+                    streamStatus = obsStreamStatus,
+                    recordStatus = obsRecordStatus,
+                    stats = obsStats,
+                    onSelectScene = { obsController.selectScene(it) },
+                    onToggleStream = { obsController.toggleStream() },
+                    onToggleRecord = { obsController.toggleRecord() },
+                    showHints = settings?.hintsEnabled != false,
+                    onClose = { overlays.close(PANEL_OBS) },
+                )
+            }
+        }
+
         overlays.regionOf(PANEL_STATS_HELP)?.let { region ->
             OverlaySlot(region) {
                 InfoPanel(
@@ -433,6 +475,7 @@ private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"
 private const val PANEL_CAMERAS = "cameras"
 private const val PANEL_STATS_HELP = "stats_help"
+private const val PANEL_OBS = "obs"
 
 private const val STATS_HELP =
     "Цвет точки: зелёная — норма, жёлтая — внимание, красная — проблема. " +

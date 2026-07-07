@@ -155,6 +155,7 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             onUpdateSettings = { new -> scope.launch { graph.settingsRepository.save(new) } },
             thermalMonitor = graph.thermalMonitor,
             mitigations = graph.thermalMitigations,
+            obsController = graph.obsController,
         )
     }
 }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- obs-websocket умеет только ws:// без TLS, а хост — произвольный LAN IP из настроек,
+     поэтому cleartext разрешён глобально. Единственный HTTP-трафик приложения — этот
+     локальный WebSocket; SRT/SRTLA ходят по сырому UDP и этой политики не касаются. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

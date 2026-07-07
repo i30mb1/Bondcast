@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "n7.bondcast.feature.stream"
+    namespace = "n7.bondcast.feature.obs"
     compileSdk = 36
 
     defaultConfig {
@@ -23,27 +23,20 @@ java {
 }
 
 dependencies {
-    implementation(project(":feature:bonding:impl"))
-    implementation(project(":feature:settings"))
-    implementation(project(":feature:thermal"))
-    implementation(project(":feature:obs"))
-    implementation(project(":feature:camera"))
     implementation(project(":core:ui"))
-    implementation(project(":feature:bonding:domain"))
+    implementation(project(":feature:settings"))
 
-    implementation(libs.streampack.core)
-    implementation(libs.streampack.srt)
-    implementation(libs.streampack.ui)
-    implementation(libs.srtdroid.core)
-    implementation(libs.srtdroid.ktx)
-
-    implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.okhttp)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    implementation(libs.activity.compose)
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.0")
+    // в android.jar org.json — заглушки, для JVM-тестов нужна настоящая реализация
+    testImplementation("org.json:json:20250107")
 }

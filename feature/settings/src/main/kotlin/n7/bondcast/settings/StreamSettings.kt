@@ -19,6 +19,11 @@ public data class StreamSettings(
     val srtlaPort: Int = 5000,
     /** Шуточные подписи-объяснения в карточках; ветераны могут выключить. */
     val hintsEnabled: Boolean = true,
+    /** Пульт OBS (obs-websocket v5): выключен — ни настроек, ни иконки на стрим-экране. */
+    val obsEnabled: Boolean = false,
+    val obsHost: String = "",
+    val obsPort: Int = 4455,
+    val obsPassword: String = "",
 ) {
     /** streamid в формате SRS: поток попадёт в live/<streamName>. */
     val streamId: String get() = "#!::r=live/$streamName,m=publish"

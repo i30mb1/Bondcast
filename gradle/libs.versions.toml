@@ -9,6 +9,7 @@ coroutines = "1.10.2"
 datastore = "1.2.1"
 streampack = "3.1.2"
 srtdroid = "1.9.5"
+okhttp = "4.12.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -26,6 +27,7 @@ streampack-srt = { group = "io.github.thibaultbee.streampack", name = "streampac
 streampack-ui = { group = "io.github.thibaultbee.streampack", name = "streampack-ui", version.ref = "streampack" }
 srtdroid-core = { group = "io.github.thibaultbee.srtdroid", name = "srtdroid-core", version.ref = "srtdroid" }
 srtdroid-ktx = { group = "io.github.thibaultbee.srtdroid", name = "srtdroid-ktx", version.ref = "srtdroid" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

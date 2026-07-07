@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import n7.bondcast.bonding.srtlaClient
+import n7.bondcast.obs.ObsController
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
 import n7.bondcast.stream.StreamController
@@ -15,6 +16,7 @@ internal class AppGraph(application: Application) {
     val settingsRepository = SettingsRepository(application)
     val thermalMonitor = thermalMonitor(application) { Log.i("Thermal", it) }
     val thermalMitigations = ThermalMitigations()
+    val obsController = ObsController(settingsRepository)
     val streamController =
         StreamController(
             application,
