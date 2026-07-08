@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "n7.bondcast.feature.stream"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 35
@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":feature:thermal"))
     implementation(project(":feature:obs"))
     implementation(project(":feature:camera"))
+    api(project(":feature:overlay"))
     implementation(project(":core:ui"))
     implementation(project(":feature:bonding:domain"))
 

@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "n7.bondcast.feature.obs"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 35

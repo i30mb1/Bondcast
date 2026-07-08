@@ -19,11 +19,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import n7.bondcast.camerax.CameraXVideoSourceFactory
+import n7.bondcast.overlay.OverlayCompositor
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.uvc.UvcVideoSourceFactory
 import kotlin.math.roundToInt
 
-internal class StreamPackEngine(private val context: Context) : StreamEngine {
+internal class StreamPackEngine(
+    private val context: Context,
+    private val overlayCompositor: OverlayCompositor,
+) : StreamEngine {
 
     private var streamer: SingleStreamer? = null
     private var sink: SendTimeSrtSink? = null
@@ -47,7 +51,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
                 streamer = it
                 sink = newSink
                 val camId = defaultCameraId()
-                val res = runCatching { it.setVideoSource(CameraXVideoSourceFactory(camId)) }
+                val res = runCatching { it.setVideoSource(CameraXVideoSourceFactory(camId, overlayCompositor)) }
                 Log.i("StreamCamera", "init setVideoSource(camerax=$camId) -> ${res.exceptionOrNull()?.toString() ?: "ok"}")
             }
         }
@@ -141,7 +145,7 @@ internal class StreamPackEngine(private val context: Context) : StreamEngine {
             val factory = if (cameraId == USB_CAMERA_ID) {
                 UvcVideoSourceFactory()
             } else {
-                CameraXVideoSourceFactory(cameraId)
+                CameraXVideoSourceFactory(cameraId, overlayCompositor)
             }
             runCatching { current.setVideoSource(factory) }
                 .onFailure { Log.w("StreamCamera", "switchCamera($cameraId): $it") }

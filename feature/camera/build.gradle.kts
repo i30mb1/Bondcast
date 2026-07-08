@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "n7.bondcast.feature.camera"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 35
@@ -25,6 +25,7 @@ java {
 dependencies {
     implementation(project(":feature:camera:libuvccamera"))
     implementation(project(":core:ui"))
+    api(project(":feature:overlay"))
 
     api(libs.streampack.core)
     implementation(libs.core.ktx)

@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import n7.bondcast.bonding.srtlaClient
 import n7.bondcast.obs.ObsController
+import n7.bondcast.overlay.overlayCompositor
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
 import n7.bondcast.stream.StreamController
@@ -17,6 +18,7 @@ internal class AppGraph(application: Application) {
     val thermalMonitor = thermalMonitor(application) { Log.i("Thermal", it) }
     val thermalMitigations = ThermalMitigations()
     val obsController = ObsController(settingsRepository)
+    val overlayCompositor = overlayCompositor()
     val streamController =
         StreamController(
             application,
@@ -27,6 +29,7 @@ internal class AppGraph(application: Application) {
                 override fun start() = StreamService.start(application)
                 override fun stop() = StreamService.stop(application)
             },
+            overlayCompositor,
         )
 }
 

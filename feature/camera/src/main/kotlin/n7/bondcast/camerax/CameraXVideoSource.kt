@@ -1,18 +1,24 @@
 package n7.bondcast.camerax
 
 import android.content.Context
+import android.graphics.Color
+import android.graphics.PorterDuff
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.camera.effects.OverlayEffect
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -26,10 +32,12 @@ import io.github.thibaultbee.streampack.core.elements.utils.time.Timebase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import n7.bondcast.overlay.OverlayCompositor
 
 internal class CameraXVideoSource(
     private val context: Context,
     val cameraId: String,
+    private val compositor: OverlayCompositor,
 ) : IVideoSourceInternal, ISurfaceSourceInternal {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -43,6 +51,9 @@ internal class CameraXVideoSource(
 
     private var cameraProvider: ProcessCameraProvider? = null
     private val lifecycleOwner = SourceLifecycleOwner()
+
+    private var overlayThread: HandlerThread? = null
+    private var overlayEffect: OverlayEffect? = null
 
     override val timebase: Timebase = Timebase.UPTIME
     override val infoProviderFlow: StateFlow<ISourceInfoProvider> = _infoProviderFlow.asStateFlow()
@@ -84,6 +95,10 @@ internal class CameraXVideoSource(
         mainHandler.post {
             unbind()
             lifecycleOwner.destroy()
+            overlayEffect?.close()
+            overlayEffect = null
+            overlayThread?.quitSafely()
+            overlayThread = null
         }
     }
 
@@ -118,10 +133,14 @@ internal class CameraXVideoSource(
                 }
 
                 val useCases: Array<UseCase> = listOfNotNull(encoderPreview, displayPreview).toTypedArray()
+                val group = UseCaseGroup.Builder().apply {
+                    useCases.forEach { addUseCase(it) }
+                    if (compositor.hasOverlays()) addEffect(overlayEffect())
+                }.build()
                 runCatching {
                     cameraProvider.unbindAll()
                     lifecycleOwner.resume()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(cameraId), *useCases)
+                    cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(cameraId), group)
                     Log.i(TAG, "bound cameraId=$cameraId size=$size preview=${displayPreview != null}")
                 }.onFailure { Log.w(TAG, "bind failed: $it") }
             }, mainExecutor)
@@ -131,6 +150,26 @@ internal class CameraXVideoSource(
     private fun unbind() {
         runCatching { cameraProvider?.unbindAll() }
         lifecycleOwner.pause()
+    }
+
+    private fun overlayEffect(): OverlayEffect {
+        overlayEffect?.let { return it }
+        val thread = HandlerThread("camerax-overlay").apply { start() }
+        val effect = OverlayEffect(
+            CameraEffect.PREVIEW,
+            4,
+            Handler(thread.looper),
+            { Log.w(TAG, "overlay error: $it") },
+        )
+        effect.setOnDrawListener { frame ->
+            val canvas = frame.overlayCanvas
+            canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+            compositor.drawAll(canvas, frame.size)
+            true
+        }
+        overlayThread = thread
+        overlayEffect = effect
+        return effect
     }
 
     @OptIn(ExperimentalCamera2Interop::class)

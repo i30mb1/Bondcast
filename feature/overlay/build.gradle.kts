@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "n7.bondcast.feature.bonding"
+    namespace = "n7.bondcast.feature.overlay"
     compileSdk = 37
 
     defaultConfig {
@@ -18,7 +18,5 @@ java {
 }
 
 dependencies {
-    implementation(project(":feature:bonding:domain"))
     implementation(libs.core.ktx)
-    implementation(libs.kotlinx.coroutines.android)
 }

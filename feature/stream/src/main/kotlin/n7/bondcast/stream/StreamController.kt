@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import n7.bondcast.bonding.LinkInfo
 import n7.bondcast.bonding.SrtlaClient
 import n7.bondcast.bonding.SrtlaTarget
+import n7.bondcast.overlay.OverlayCompositor
 import n7.bondcast.settings.SettingsRepository
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.thermal.ThermalMitigations
@@ -54,10 +55,11 @@ public class StreamController(
     private val srtlaClient: SrtlaClient,
     private val mitigations: ThermalMitigations,
     private val foreground: StreamForeground,
+    overlayCompositor: OverlayCompositor,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val engine: StreamEngine = StreamPackEngine(application)
+    val engine: StreamEngine = StreamPackEngine(application, overlayCompositor)
 
     private val _phase = MutableStateFlow<StreamPhase>(StreamPhase.Idle)
     val phase: StateFlow<StreamPhase> = _phase.asStateFlow()

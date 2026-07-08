@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "n7.bondcast"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 35
@@ -41,6 +41,7 @@ dependencies {
     implementation(project(":feature:settings"))
     implementation(project(":feature:thermal"))
     implementation(project(":feature:obs"))
+    implementation(project(":feature:overlay"))
     implementation(project(":feature:stream"))
 
     implementation(platform(libs.compose.bom))
