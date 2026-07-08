@@ -32,6 +32,7 @@ camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.r
 camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camera" }
 camera-effects = { group = "androidx.camera", name = "camera-effects", version.ref = "camera" }
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
+camera-compose = { group = "androidx.camera", name = "camera-compose", version.ref = "camera" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]

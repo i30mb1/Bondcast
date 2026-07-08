@@ -53,13 +53,14 @@ internal class CameraXVideoSource(
     override suspend fun setOutput(surface: Surface) {
         outputSurface = surface
         Log.i(TAG, "setOutput streaming=${_isStreamingFlow.value} valid=${surface.isValid}")
-        CameraXPreviewBus.listener = { mainHandler.post { bind() } }
+        CameraXPreviewBus.onWantChanged = { mainHandler.post { bind() } }
         bind()
     }
 
     override suspend fun resetOutput() {
         outputSurface = null
-        CameraXPreviewBus.listener = null
+        CameraXPreviewBus.onWantChanged = null
+        CameraXPreviewBus.offerRequest(null)
         mainHandler.post { unbind() }
     }
 
@@ -78,6 +79,8 @@ internal class CameraXVideoSource(
     }
 
     override suspend fun release() {
+        CameraXPreviewBus.onWantChanged = null
+        CameraXPreviewBus.offerRequest(null)
         mainHandler.post {
             unbind()
             lifecycleOwner.destroy()
@@ -105,10 +108,13 @@ internal class CameraXVideoSource(
                     request.provideSurface(encoder, mainExecutor) { }
                 }
 
-                val displayPreview = CameraXPreviewBus.provider?.let { provider ->
+                val displayPreview = if (CameraXPreviewBus.wantPreview) {
                     Preview.Builder().setResolutionSelector(selector).build().apply {
-                        setSurfaceProvider(provider)
+                        setSurfaceProvider(mainExecutor) { request -> CameraXPreviewBus.offerRequest(request) }
                     }
+                } else {
+                    CameraXPreviewBus.offerRequest(null)
+                    null
                 }
 
                 val useCases: Array<UseCase> = listOfNotNull(encoderPreview, displayPreview).toTypedArray()

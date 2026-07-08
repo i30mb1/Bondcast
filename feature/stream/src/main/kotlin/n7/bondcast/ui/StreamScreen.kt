@@ -52,7 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.camera.view.PreviewView
+import androidx.camera.compose.CameraXViewfinder
 import kotlinx.coroutines.delay
 import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.DiscordColors
@@ -160,18 +160,21 @@ public fun StreamScreen(
         }
 
         if (currentCamera?.id != USB_CAMERA_ID && previewEnabled) {
-            AndroidView(
-                factory = { context ->
-                    PreviewView(context).apply {
-                        keepScreenOn = true
-                        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-                        scaleType = PreviewView.ScaleType.FIT_CENTER
-                        CameraXPreviewBus.set(surfaceProvider)
-                    }
-                },
-                onRelease = { CameraXPreviewBus.set(null) },
-                modifier = Modifier.fillMaxSize(),
-            )
+            val surfaceRequest by CameraXPreviewBus.request.collectAsState()
+            DisposableEffect(Unit) {
+                CameraXPreviewBus.setWantPreview(true)
+                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                onDispose {
+                    CameraXPreviewBus.setWantPreview(false)
+                    window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+            surfaceRequest?.let { request ->
+                CameraXViewfinder(
+                    surfaceRequest = request,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         if (!previewEnabled) {

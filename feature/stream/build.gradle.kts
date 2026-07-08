@@ -39,7 +39,7 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    implementation(libs.camera.view)
+    implementation(libs.camera.compose)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.runtime)
