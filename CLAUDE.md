@@ -37,18 +37,19 @@ Android CLI 1.0 — основной инструмент для агентно�
 
 ## Android Skills MCP
 
-**android-skills-mcp** (`@android/mcp`) — MCP-сервер для AI-ассистентов. Предоставляет прямой доступ к документации и лучшим практикам Android-разработки через Model Context Protocol.
-
-**Зачем:** Уменьшает галлюцинации AI при работе с Android API, даёт доступ к актуальной документации и примерам кода.
+**android-skills-mcp** (github.com/skydoves/android-skills-mcp) — MCP-сервер поверх официальной библиотеки Android skills от Google. Даёт AI-ассистентам доступ к документации и лучшим практикам Android-разработки без копипаста.
 
 **Установка:**
 ```bash
-npx @android/mcp
-# или через npm
-npm install -g @android/mcp
+claude mcp add android-skills -- npx -y android-skills-mcp
 ```
 
-**Использование:** Подключается как MCP-сервер в конфигурации AI-клиента. Не требуется для работы Android CLI.
+**Использование агентом.** Сервер отдаёт три MCP tool-вызова — вызывай их напрямую, не через `android` CLI:
+- `search_skills(query)` — найти релевантный skill по ключевым словам (например, «camerax preview» или «edge to edge»)
+- `list_skills()` — список всех доступных skill'ов от `android/skills`
+- `get_skill(name)` — полный текст `SKILL.md` найденного/выбранного skill'а
+
+Порядок: сначала `search_skills` или `list_skills`, чтобы найти подходящий skill, затем `get_skill` за его содержимым — и уже по нему делать правки в коде. Также доступны как ресурсы `skill://<name>`.
 
 ## Архитектура модулей
 

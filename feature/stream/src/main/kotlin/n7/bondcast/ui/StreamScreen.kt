@@ -7,6 +7,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.camera.compose.CameraXViewfinder
+import androidx.camera.core.NightModeIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -41,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,9 +54,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Observer
 import kotlinx.coroutines.delay
 import n7.bondcast.DiscordColors
+import n7.bondcast.camerax.CameraControlBus
 import n7.bondcast.camerax.CameraXPreviewBus
+import n7.bondcast.camerax.setAeAwbLock
+import n7.bondcast.camerax.setLowLightBoost
 import n7.bondcast.obs.ObsController
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.HealthLevel
@@ -97,6 +103,39 @@ public fun StreamScreen(
     val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
     val thermalState by thermalFlow.collectAsState(initial = ThermalState.UNKNOWN)
     val previewEnabled by mitigations.previewEnabled.collectAsState()
+
+    // управление CameraX (стабилизация/AE-AWB/LLB/зум) — недоступно для USB-камеры
+    val camera by CameraControlBus.camera.collectAsState()
+    val stabilizationWanted by CameraControlBus.stabilizationWanted.collectAsState()
+    val stabilizationActive by CameraControlBus.stabilizationActive.collectAsState()
+    val stabilizationSupported by CameraControlBus.stabilizationSupported.collectAsState()
+    var aeAwbLocked by remember { mutableStateOf(false) }
+    var llbEnabled by remember { mutableStateOf(false) }
+    val cameraControlsAvailable = currentCamera?.id != USB_CAMERA_ID && camera != null
+    val llbAvailable = camera?.cameraInfo?.isLowLightBoostSupported() == true
+    LaunchedEffect(camera, aeAwbLocked) { camera?.let { setAeAwbLock(it, aeAwbLocked) } }
+    LaunchedEffect(camera, llbEnabled) { camera?.let { setLowLightBoost(it, llbEnabled) } }
+
+    // экспозиция: индекс сбрасывается на новой камере (после переключения/ребайнда), поэтому переприменяем при каждой смене camera
+    var exposureIndex by remember { mutableStateOf(0) }
+    val exposureState = camera?.cameraInfo?.exposureState
+    val exposureSupported = exposureState?.isExposureCompensationSupported() == true
+    val exposureRange = exposureState?.exposureCompensationRange?.let { it.lower..it.upper } ?: 0..0
+    val exposureStepEv = exposureState?.exposureCompensationStep?.toFloat() ?: 0f
+    LaunchedEffect(camera, exposureIndex) {
+        camera?.cameraControl?.setExposureCompensationIndex(exposureIndex.coerceIn(exposureRange))
+    }
+
+    // «сцена тёмная — включить ночной режим?» — LiveData без доп. зависимости на lifecycle-livedata-ktx
+    var nightModeIndicator by remember { mutableStateOf(NightModeIndicator.UNKNOWN) }
+    DisposableEffect(camera) {
+        val liveData = camera?.cameraInfo?.nightModeIndicator
+        val observer = Observer<Int> { nightModeIndicator = it }
+        liveData?.observeForever(observer)
+        onDispose { liveData?.removeObserver(observer) }
+    }
+    val nightModeSuggested = nightModeIndicator == NightModeIndicator.RECOMMENDED && !llbEnabled
+
     val brightness by mitigations.screenBrightness.collectAsState()
     val bitrateCap by mitigations.bitrateCapFraction.collectAsState()
     val effectiveBitrate by controller.videoBitrateKbps.collectAsState()
@@ -169,6 +208,10 @@ public fun StreamScreen(
                 CameraXViewfinder(
                     surfaceRequest = request,
                     modifier = Modifier.fillMaxSize(),
+                    // встроенные жесты вьюфайндера (camera-compose 1.7) — учитывают sensor-to-buffer
+                    // трансформ (crop/поворот/зеркало), в отличие от нашей прежней ручной обвязки
+                    isTapToFocusEnabled = true,
+                    isPinchToZoomEnabled = true,
                 )
             }
         }
@@ -215,6 +258,7 @@ public fun StreamScreen(
             if (cameras.size >= 2) {
                 CameraIcon(
                     onClick = { overlays.toggle(PANEL_CAMERAS) },
+                    showBadge = nightModeSuggested,
                 )
             }
             StatsIcon(
@@ -431,6 +475,22 @@ public fun StreamScreen(
                     onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
                     showHint = settings?.hintsEnabled != false,
                     onClose = { overlays.close(PANEL_CAMERAS) },
+                    cameraControlsAvailable = cameraControlsAvailable,
+                    stabilizationSupported = stabilizationSupported,
+                    stabilizationEnabled = stabilizationWanted,
+                    stabilizationActive = stabilizationActive,
+                    onStabilizationEnabled = { CameraControlBus.setStabilizationWanted(it) },
+                    aeAwbLocked = aeAwbLocked,
+                    onAeAwbLocked = { aeAwbLocked = it },
+                    exposureSupported = exposureSupported,
+                    exposureIndex = exposureIndex,
+                    exposureRange = exposureRange,
+                    exposureStepEv = exposureStepEv,
+                    onExposureIndexChange = { exposureIndex = it },
+                    llbAvailable = llbAvailable,
+                    llbEnabled = llbEnabled,
+                    onLlbEnabled = { llbEnabled = it },
+                    nightModeSuggested = nightModeSuggested,
                 )
             }
         }

@@ -33,26 +33,16 @@
 
 ## Фаза 0 — каркас проекта
 
-- [x] Gradle-скелет: AGP 9, version catalog, toolchain, R8 + proguard
-- [x] Compose + Material3 тема, edge-to-edge
-- [x] Android CLI 1.0 инициализирован (`android init`), скиллы agentов: `android-cli`, `camera1-to-camerax`, `testing-setup` → `~/.claude/skills`
-- [x] Доделать переименование: пакет `n7.bondcast`, манифест на относительных `.MainActivity` / `.BondcastApp`
-- [x] Закоммитить каркас
+Готово: Gradle-скелет (AGP 9, version catalog, R8+proguard), Compose+Material3, Android CLI 1.0, переименование в `n7.bondcast`.
+
 - [ ] GitHub Actions: сборка + тесты на PR
 
 ## Фаза 1 — MVP: камера → SRT на сервер
 
 Критерий готовности: 1080p30 @ 4.5 Mbps H.264 + AAC летит час без падения на SRS (просмотр по HTTP-FLV), задержка ~2 с, стрим переживает сворачивание приложения.
 
-- [x] Разрешения: CAMERA, RECORD_AUDIO, POST_NOTIFICATIONS (экран-заглушка при отказе)
-- [x] Полноэкранное превью камеры на CameraX (landscape-first)
-- [x] Спайк: видеоисточник CameraX для StreamPack (кастомный source, API v3); если связка хрупкая — свой GL-фан-аут (экран + surface энкодера), от StreamPack остаются муксер/эндпоинт
-- [x] `StreamEngine` — свой интерфейс поверх StreamPack: `prepare / startStream / awaitDisconnect / stopStream / bindPreview / readStats`
-- [x] Кодирование H.264 + AAC → MPEG-TS → SRT caller (streamid, passphrase, latency настраиваемые)
-- [x] Экран настроек: адрес `srt://<IP>:10080`, streamid `#!::r=live/<name>,m=publish`, passphrase, разрешение / fps / битрейт / latency (по умолчанию 1500 — как на сервере) (DataStore)
-- [x] Foreground service + нотификация с кнопкой Stop; keep screen on
-- [x] HUD поверх превью: статус соединения, таймер, текущий битрейт, RTT, потерянные пакеты (SRT-статистика, сэмпл раз в секунду)
-- [x] Реконнект с экспоненциальным backoff (переживает пропажу сети на 30 с)
+Готово: разрешения, полноэкранное превью, видеоисточник для StreamPack, `StreamEngine` (prepare/startStream/awaitDisconnect/stopStream/bindPreview/readStats), кодирование H.264+AAC → MPEG-TS → SRT caller, экран настроек (DataStore), foreground service, HUD со статистикой, реконнект с exponential backoff.
+
 - [ ] Поднять SRS по инструкции из `D:\AndroidProject\docs\stream`, прогнать стрим: с эмулятора сервер = `10.0.2.2`, просмотр `http://localhost:8080/live/<name>.flv`; здоровье связи — ровный `ikbps` в `docker logs -f srs`
 - [ ] Ручной прогон: час стрима на реальном устройстве
 
@@ -71,15 +61,11 @@
 
 Подход: своя Kotlin-реализация srtla в `:kotlin` (без NDK — `Network.bindSocket` закрывает привязку сокета к сети). Два уровня: сети телефона + Bondlink (соседнее устройство). Детальный план и этапы M0–M5 — [docs/srtla-plan.md](docs/srtla-plan.md).
 
-- [x] M0: протокол-слой + шедулер в `:kotlin` (порт с BELABOX/srtla, 20 unit-тестов, сверено с C)
-- [x] M1: локальный UDP-relay + IO-цикл (1 линк) + проводка в сессию + UI бондинга (e2e через реальный srtla_rec прогнан 2026-07-03: группа и линк регистрируются, поток доходит до SRS)
-- [x] M2: захват сетей `requestNetwork(CELLULAR/WIFI/ETHERNET)` + `Network.bindSocket` + failover (код адверсариал-верифицирован; failover на устройстве не прогонялся)
-- [x] M3a: per-link панель в HUD — статус регистрации (точка), исходящий битрейт и доля трафика полоской; `LinkInfo` публикуется io-циклом раз в секунду через StateFlow
+Готово: M0 (протокол-слой + шедулер, сверено с C), M1 (локальный UDP-relay + IO-цикл + UI бондинга), M2 (захват сетей + `Network.bindSocket` + failover), M3a (per-link панель в HUD); e2e-стенд с `srtla_rec` перед SRS поднят ([docs/srtla-rec.md](docs/srtla-rec.md)) и прогнан с телефона (WiFi-линк регистрируется и несёт поток).
+
 - [ ] M3b: вкл/выкл линка и приоритеты из UI (scheduler API уже есть), per-link RTT/loss (нужны таймстампы в keepalive)
 - [ ] M4: Bondlink — соседнее устройство как relay-аплинк (NSD + pairing + прозрачный форвардер)
 - [ ] M5: бондированный спидтест перед стримом + ABR v2 (битрейт от суммарной полосы всех линков)
-- [x] e2e-стенд поднят: docker `srtla_rec` перед SRS на общей сети `bondcast-net` ([docs/srtla-rec.md](docs/srtla-rec.md)), хендшейк REG1→REG2 проверен с хоста
-- [x] e2e с телефона: бондированный стрим через srtla_rec до SRS (WiFi-линк регистрируется и несёт поток; cellular до LAN-адреса недостижим — ожидаемо для локальной топологии)
 - [ ] Тест деградации на публично доступном srtla_rec (отключаем WiFi посреди стрима — cellular подхватывает): нужен проброс UDP 5000 до 93.84.96.193 или VPS
 - [ ] Проверка совместимости с BELABOX Cloud
 
@@ -113,9 +99,9 @@
 
 ## Бэклог / идеи без фазы
 
+- [ ] **Concurrent Camera** (CameraX 1.7): одновременно фронт+тыл через `bindToLifecycle(List<SingleCameraConfig>)`, есть визуальный стайлинг рамок (`setRoundedCornerRatio`, `setBorderWidthRatio`/`setBorderColor` из 1.7.0-alpha02) — «reaction cam» a-ля TikTok LIVE dual. Не проверено на железе, отдельная фича, не инкремент к текущей камера-панели.
 - [ ] Следить за srtla2 и RIST-бондингом — добавить, когда стабилизируются
 - [ ] AV1 hw encode на новых SoC
-- [x] Своя Kotlin-реализация srtla-клиента в `:kotlin` (кастомный шедулинг линков, полные unit-тесты) вместо NDK-порта — принято как основной путь (см. Фаза 3 / Лог решений)
 - [ ] Экспорт логов сессии для разбора проблем
 - [ ] Геймпад/BT-пульт: маппинг кнопок (старт, privacy, маркер)
 - [ ] Пресеты под площадки (Twitch 6 Mbps cap и т.д.)
@@ -132,6 +118,7 @@
 
 ## Лог решений
 
+- **2026-07-08**: **Камера-панель: стабилизация/AE-AWB-lock/LLB/экспозиция/тап-фокус/pinch-zoom добавлены поверх CameraX 1.7.0-alpha02**, миграция `UseCaseGroup`→`SessionConfig`. По ходу разобрали официальный changelog CameraX и перепроверили API по sources jar (не по javap/доке — доке верить нельзя не глядя): (1) `CameraXViewfinder` из `camera-compose` **умеет** встроенные жесты через параметры `isTapToFocusEnabled`/`isPinchToZoomEnabled` (вторая, не-deprecated перегрузка) — используем их вместо своей обвязки на `detectTapGestures`/`detectTransformGestures` (у библиотеки корректный sensor-to-buffer трансформ через `CameraInfoInternal.sensorRect`, наша ручная версия игнорировала crop/поворот). (2) `FocusMeteringAction.setLockingMode` — не отдельный enum, а те же `FLAG_AF/FLAG_AE/FLAG_AWB`; AE/AWB-lock теперь через это (стабильный публичный API), не через `Camera2CameraControl`+`CaptureRequestOptions` (экспериментальный camera2-interop). (3) **CameraX Extensions** (`ExtensionsManager`, `ExtensionMode.HDR/NIGHT/BOKEH`) — судя по докам в sources jar, эффект применяется и к живому `Preview`, не только к `ImageCapture` (`VideoCapture` может забрать тот же улучшенный Preview-стрим) — потенциально применимо к нашему пайплайну (кодируем именно Preview). Но: HDR/NIGHT исторически заточены под фото (мульти-кадровая склейка, может быть медленно на превью), доступность по вендорам не гарантирована, и не проверена совместимость с нашей связкой 2×`Preview`+feature-group — нужен спайк на реальном железе, не коммитим вслепую.
 - **2026-07-03**: StreamPack + srtdroid вместо своего пайплайна — скорость MVP; изолируем за `StreamEngine`, чтобы можно было заменить. Бондинг — SRTLA (совместимость с belabox-экосистемой), реализация NDK-портом `srtla_send`; своя Kotlin-реализация — возможная v2. SRT socket groups отклонены (experimental, нет серверов).
 - **2026-07-03**: Дев/прод-сервер — **SRS v6** с готовым конфигом из `D:\AndroidProject\docs\stream` (вместо MediaMTX); для бондинга `srtla_rec` встанет перед SRS. Камера — **CameraX** (решение владельца); StreamPack остаётся слоем энкодер/муксер/SRT, интеграция через кастомный видеоисточник проверяется спайком. Исследование Android — через Android CLI 1.0 (`android` + агентские скиллы) и adb/gradlew, не через Studio.
 - **2026-07-03**: Найден и починен deadlock регистрации srtla: `pendingReg2` навсегда прилипал к первому линку (cellular, недостижимый до LAN), т.к. дедлайн обновлялся каждым ресендом REG1. Теперь дедлайн фиксируется при выборе кандидата, REG1 ротируется по линкам (тест `reg1RotatesToNextLinkWhenRegistrationStalls`). Для CLI-прогонов добавлены intent-extras `cfg_*` + `autostart` (заливают настройки без UI). HUD показывает srtla-адрес при включённом бондинге.

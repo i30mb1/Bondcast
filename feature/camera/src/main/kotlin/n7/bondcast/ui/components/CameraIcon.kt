@@ -24,6 +24,8 @@ public fun CameraIcon(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     color: Color = DiscordColors.textPrimary,
+    // например, «сцена тёмная — включить ночной режим?»
+    showBadge: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -56,6 +58,15 @@ public fun CameraIcon(
                 radius = w * 0.16f,
                 center = Offset(w * 0.5f, h * 0.57f),
                 style = stroke,
+            )
+        }
+        if (showBadge) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(DiscordColors.yellow),
             )
         }
     }

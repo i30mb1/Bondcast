@@ -7,14 +7,17 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
+import android.util.Range
 import android.view.Surface
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraEffect
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
-import androidx.camera.core.UseCase
-import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.SessionConfig
+import androidx.camera.core.featuregroup.GroupableFeature
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -51,6 +54,7 @@ internal class CameraXVideoSource(
     private val _infoProviderFlow = MutableStateFlow<ISourceInfoProvider>(CameraXSourceInfoProvider(context, cameraId))
 
     private var cameraProvider: ProcessCameraProvider? = null
+    private var camera: Camera? = null
     private val lifecycleOwner = SourceLifecycleOwner()
 
     private var overlayThread: HandlerThread? = null
@@ -66,6 +70,10 @@ internal class CameraXVideoSource(
         outputSurface = surface
         Log.i(TAG, "setOutput streaming=${_isStreamingFlow.value} valid=${surface.isValid}")
         CameraXPreviewBus.onWantChanged = { mainHandler.post { bind() } }
+        // claim ДО bind(): при свитче камеры StreamPack держит старый источник живым ещё какое-то
+        // время, и его resetOutput()/release() не должны затирать то, что публикует этот источник
+        CameraControlBus.claim(this)
+        CameraControlBus.onStabilizationChanged = { mainHandler.post { bind() } }
         bind()
     }
 
@@ -73,6 +81,7 @@ internal class CameraXVideoSource(
         outputSurface = null
         CameraXPreviewBus.onWantChanged = null
         CameraXPreviewBus.offerRequest(null)
+        CameraControlBus.release(this)
         mainHandler.post { unbind() }
     }
 
@@ -93,6 +102,7 @@ internal class CameraXVideoSource(
     override suspend fun release() {
         CameraXPreviewBus.onWantChanged = null
         CameraXPreviewBus.offerRequest(null)
+        CameraControlBus.release(this)
         mainHandler.post {
             unbind()
             lifecycleOwner.destroy()
@@ -106,26 +116,28 @@ internal class CameraXVideoSource(
     private fun bind() {
         mainHandler.post {
             val size = config?.resolution ?: return@post
+            val fps = config?.fps
             val encoder = outputSurface ?: return@post
             val future = ProcessCameraProvider.getInstance(context)
             future.addListener({
                 val cameraProvider = runCatching { future.get() }.getOrNull() ?: return@addListener
                 this.cameraProvider = cameraProvider
-                val selector = ResolutionSelector.Builder()
+                val cameraSelector = selectorFor(cameraId)
+                val resolutionSelector = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
                     .setResolutionStrategy(
                         ResolutionStrategy(size, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
                     )
                     .build()
 
-                val encoderPreview = Preview.Builder().setResolutionSelector(selector).build()
+                val encoderPreview = Preview.Builder().setResolutionSelector(resolutionSelector).build()
                 encoderPreview.setSurfaceProvider(mainExecutor) { request ->
                     Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
                     request.provideSurface(encoder, mainExecutor) { }
                 }
 
                 val displayPreview = if (CameraXPreviewBus.wantPreview) {
-                    Preview.Builder().setResolutionSelector(selector).build().apply {
+                    Preview.Builder().setResolutionSelector(resolutionSelector).build().apply {
                         setSurfaceProvider(mainExecutor) { request -> CameraXPreviewBus.offerRequest(request) }
                     }
                 } else {
@@ -133,24 +145,69 @@ internal class CameraXVideoSource(
                     null
                 }
 
-                val useCases: Array<UseCase> = listOfNotNull(encoderPreview, displayPreview).toTypedArray()
-                val group = UseCaseGroup.Builder().apply {
-                    useCases.forEach { addUseCase(it) }
-                    if (compositor.hasOverlays()) addEffect(overlayEffect())
-                }.build()
+                val cameraInfo = runCatching { cameraProvider.getCameraInfo(cameraSelector) }.getOrNull()
+                val frameRateRange = fps?.let { cameraInfo?.pickFrameRateRange(it) }
+                val useCases = listOfNotNull(encoderPreview, displayPreview)
+                val effects = if (compositor.hasOverlays()) listOf(overlayEffect()) else emptyList()
+
+                // умеет ли камера в принципе (напр. фронталка часто не умеет) — до бинда, чтобы UI мог скрыть тумблер
+                val stabilizationSupported = cameraInfo?.let { info ->
+                    runCatching {
+                        info.isSessionConfigSupported(
+                            SessionConfig(useCases = useCases, requiredFeatureGroup = setOf(GroupableFeature.PREVIEW_STABILIZATION)),
+                        )
+                    }.getOrDefault(false)
+                } ?: false
+                CameraControlBus.publishStabilizationSupported(this, stabilizationSupported)
+
+                val preferredFeatures = if (CameraControlBus.stabilizationWanted.value) {
+                    listOf(GroupableFeature.PREVIEW_STABILIZATION)
+                } else {
+                    emptyList()
+                }
+                // frameRateRange без дефолта-null — если камера не подтвердила диапазон, не передаём его вовсе
+                val sessionConfig = if (frameRateRange != null) {
+                    SessionConfig(
+                        useCases = useCases,
+                        effects = effects,
+                        frameRateRange = frameRateRange,
+                        preferredFeatureGroup = preferredFeatures,
+                    )
+                } else {
+                    SessionConfig(
+                        useCases = useCases,
+                        effects = effects,
+                        preferredFeatureGroup = preferredFeatures,
+                    )
+                }
+                // предпочтительная фича — CameraX сам решит, влезла ли стабилизация в комбинацию
+                sessionConfig.setFeatureSelectionListener(mainExecutor) { selected ->
+                    CameraControlBus.publishStabilizationActive(this, selected.contains(GroupableFeature.PREVIEW_STABILIZATION))
+                }
+
                 runCatching {
                     cameraProvider.unbindAll()
                     lifecycleOwner.resume()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(cameraId), group)
-                    Log.i(TAG, "bound cameraId=$cameraId size=$size preview=${displayPreview != null}")
+                    val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, sessionConfig)
+                    this.camera = camera
+                    CameraControlBus.publishCamera(this, camera)
+                    Log.i(TAG, "bound cameraId=$cameraId size=$size preview=${displayPreview != null} fps=$frameRateRange")
                 }.onFailure { Log.w(TAG, "bind failed: $it") }
             }, mainExecutor)
         }
     }
 
+    /** Подбирает диапазон, реально поддерживаемый камерой, под целевой fps энкодера. */
+    private fun CameraInfo.pickFrameRateRange(fps: Int): Range<Int>? {
+        val desired = Range(fps, fps)
+        val ranges = runCatching { supportedFrameRateRanges }.getOrNull() ?: return null
+        return ranges.firstOrNull { it == desired } ?: ranges.firstOrNull { it.contains(fps) }
+    }
+
     private fun unbind() {
         runCatching { cameraProvider?.unbindAll() }
         lifecycleOwner.pause()
+        camera = null
     }
 
     private fun overlayEffect(): OverlayEffect {
