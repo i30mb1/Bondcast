@@ -1,6 +1,8 @@
 package n7.bondcast.uvc
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
@@ -8,8 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
-import android.graphics.Bitmap
-import android.graphics.Rect
 import com.herohan.uvcapp.CameraException
 import com.herohan.uvcapp.CameraHelper
 import com.herohan.uvcapp.ICameraHelper
@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-internal class UvcVideoSource(private val context: Context) : IVideoSourceInternal, ISurfaceSourceInternal {
+internal class UvcVideoSource(private val context: Context) :
+    IVideoSourceInternal,
+    ISurfaceSourceInternal {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 

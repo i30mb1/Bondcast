@@ -61,34 +61,33 @@ private const val OUTER_PATH = "M220.9,164.81C218.8,214.87 177.57,254.81 127,254
 private const val MIDDLE_PATH = "M127,254.81C91.1,254.81 62,225.71 62,189.81C62,168.15 70.73,155 88.9,137.17C100.53,125.75 111.42,111.72 116.04,102.17C116.95,100.29 119.03,90.5 127.02,101.97C131.21,107.98 137.79,118.68 142,127.81C149.27,143.55 151,158.81 151,158.81C151,158.81 158.12,154.62 163,143.81C164.57,140.33 167.75,127.15 176.64,140.33C183.17,150 192.13,167.39 192,189.81C192,225.71 162.9,254.81 127,254.81Z"
 private const val INNER_PATH = "M128,183.81C137.25,183.81 137.25,200.94 149,223.81C156.82,239.04 145.12,254.81 128,254.81C110.88,254.81 102,240.93 102,223.81C102,206.69 118.75,183.81 128,183.81Z"
 
-private fun flameVector(palette: FlamePalette): ImageVector =
-    ImageVector.Builder(
-        name = "fire",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 255f,
-        viewportHeight = 255f,
-    ).apply {
-        addPath(
-            pathData = addPathNodes(OUTER_PATH),
-            pathFillType = PathFillType.EvenOdd,
-            fill = Brush.linearGradient(
-                colors = listOf(palette.outerBottom, palette.outerTop),
-                start = Offset(127.14f, 255f),
-                end = Offset(127.14f, 0.19f),
-            ),
-        )
-        addPath(
-            pathData = addPathNodes(MIDDLE_PATH),
-            pathFillType = PathFillType.EvenOdd,
-            fill = SolidColor(palette.middle),
-        )
-        addPath(
-            pathData = addPathNodes(INNER_PATH),
-            pathFillType = PathFillType.EvenOdd,
-            fill = SolidColor(palette.inner),
-        )
-    }.build()
+private fun flameVector(palette: FlamePalette): ImageVector = ImageVector.Builder(
+    name = "fire",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 255f,
+    viewportHeight = 255f,
+).apply {
+    addPath(
+        pathData = addPathNodes(OUTER_PATH),
+        pathFillType = PathFillType.EvenOdd,
+        fill = Brush.linearGradient(
+            colors = listOf(palette.outerBottom, palette.outerTop),
+            start = Offset(127.14f, 255f),
+            end = Offset(127.14f, 0.19f),
+        ),
+    )
+    addPath(
+        pathData = addPathNodes(MIDDLE_PATH),
+        pathFillType = PathFillType.EvenOdd,
+        fill = SolidColor(palette.middle),
+    )
+    addPath(
+        pathData = addPathNodes(INNER_PATH),
+        pathFillType = PathFillType.EvenOdd,
+        fill = SolidColor(palette.inner),
+    )
+}.build()
 
 /** Кнопка термопанели: пламя перекрашивается по нагреву — синее/оранжевое/багровое. */
 @Composable

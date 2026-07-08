@@ -15,6 +15,5 @@ public class CameraXVideoSourceFactory(
         dispatcherProvider: IVideoDispatcherProvider,
     ): IVideoSourceInternal = CameraXVideoSource(context.applicationContext, cameraId, compositor)
 
-    override fun isSourceEquals(source: IVideoSourceInternal?): Boolean =
-        source is CameraXVideoSource && source.cameraId == cameraId
+    override fun isSourceEquals(source: IVideoSourceInternal?): Boolean = source is CameraXVideoSource && source.cameraId == cameraId
 }

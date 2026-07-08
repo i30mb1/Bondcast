@@ -5,5 +5,4 @@ public interface AbrController {
     public fun reset(startKbps: Int)
 }
 
-public fun abrController(config: AbrConfig, log: (String) -> Unit = {}): AbrController =
-    AbrControllerWithLogging(AbrControllerImpl(config), log)
+public fun abrController(config: AbrConfig, log: (String) -> Unit = {}): AbrController = AbrControllerWithLogging(AbrControllerImpl(config), log)

@@ -75,8 +75,7 @@ internal class SendTimeSrtSink(private val coroutineDispatcher: CoroutineDispatc
         bitrate = config.streamConfigs.sumOf { it.startBitrate.toLong() }
     }
 
-    override suspend fun openImpl(mediaDescriptor: MediaDescriptor) =
-        open(SrtMediaDescriptor(mediaDescriptor))
+    override suspend fun openImpl(mediaDescriptor: MediaDescriptor) = open(SrtMediaDescriptor(mediaDescriptor))
 
     private suspend fun open(mediaDescriptor: SrtMediaDescriptor) {
         if (mediaDescriptor.srtUrl.mode != null) {

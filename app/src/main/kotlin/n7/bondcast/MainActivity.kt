@@ -74,7 +74,12 @@ internal class MainActivity : ComponentActivity() {
          *   --ez cfg_bonding true --es cfg_srtla_host 192.168.31.133 --ei cfg_srtla_port 5000
          */
         private val SEED_KEYS = listOf(
-            "cfg_host", "cfg_port", "cfg_stream_name", "cfg_bonding", "cfg_srtla_host", "cfg_srtla_port",
+            "cfg_host",
+            "cfg_port",
+            "cfg_stream_name",
+            "cfg_bonding",
+            "cfg_srtla_host",
+            "cfg_srtla_port",
         )
 
         private fun hasSeedExtras(intent: Intent): Boolean = SEED_KEYS.any(intent::hasExtra)

@@ -13,5 +13,4 @@ public interface SrtlaClient {
     suspend fun stop()
 }
 
-public fun srtlaClient(context: Context): SrtlaClient =
-    SrtlaClientWithLogging(SrtlaClientWithMutex(SrtlaClientImpl(context)))
+public fun srtlaClient(context: Context): SrtlaClient = SrtlaClientWithLogging(SrtlaClientWithMutex(SrtlaClientImpl(context)))

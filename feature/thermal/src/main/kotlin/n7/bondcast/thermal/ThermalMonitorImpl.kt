@@ -58,9 +58,8 @@ internal class ThermalMonitorImpl(private val context: Context) : ThermalMonitor
         }
     }
 
-    private fun readHeadroom(powerManager: PowerManager): Float? =
-        runCatching { powerManager.getThermalHeadroom(0) }.getOrNull()
-            ?.takeIf { !it.isNaN() && it > 0f }
+    private fun readHeadroom(powerManager: PowerManager): Float? = runCatching { powerManager.getThermalHeadroom(0) }.getOrNull()
+        ?.takeIf { !it.isNaN() && it > 0f }
 
     private fun readBatteryTemp(): Float? {
         val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

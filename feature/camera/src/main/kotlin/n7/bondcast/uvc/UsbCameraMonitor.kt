@@ -16,8 +16,7 @@ public interface UsbCameraMonitor {
     val connected: StateFlow<Boolean>
 }
 
-public fun usbCameraMonitor(context: Context): UsbCameraMonitor =
-    UsbCameraMonitorImpl(context.applicationContext)
+public fun usbCameraMonitor(context: Context): UsbCameraMonitor = UsbCameraMonitorImpl(context.applicationContext)
 
 private class UsbCameraMonitorImpl(private val context: Context) : UsbCameraMonitor {
 

@@ -7,5 +7,4 @@ public interface ThermalMonitor {
     fun states(): Flow<ThermalState>
 }
 
-public fun thermalMonitor(context: Context, log: (String) -> Unit = {}): ThermalMonitor =
-    ThermalMonitorWithLogging(ThermalMonitorImpl(context), log)
+public fun thermalMonitor(context: Context, log: (String) -> Unit = {}): ThermalMonitor = ThermalMonitorWithLogging(ThermalMonitorImpl(context), log)

@@ -28,8 +28,7 @@ class AbrControllerTest {
 
     private fun controller(): AbrController = abrController(config).also { it.reset(config.maxKbps) }
 
-    private fun AbrController.sample(nowMs: Long, sndBufferMs: Int, pktLossTotal: Int) =
-        onSample(AbrSample(at(nowMs), sndBufferMs, pktLossTotal))
+    private fun AbrController.sample(nowMs: Long, sndBufferMs: Int, pktLossTotal: Int) = onSample(AbrSample(at(nowMs), sndBufferMs, pktLossTotal))
 
     @Test
     fun dropOnHighSndBuf() {

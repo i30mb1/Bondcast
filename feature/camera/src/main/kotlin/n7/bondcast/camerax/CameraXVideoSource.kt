@@ -38,7 +38,8 @@ internal class CameraXVideoSource(
     private val context: Context,
     val cameraId: String,
     private val compositor: OverlayCompositor,
-) : IVideoSourceInternal, ISurfaceSourceInternal {
+) : IVideoSourceInternal,
+    ISurfaceSourceInternal {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = ContextCompat.getMainExecutor(context)
@@ -173,12 +174,11 @@ internal class CameraXVideoSource(
     }
 
     @OptIn(ExperimentalCamera2Interop::class)
-    private fun selectorFor(id: String): CameraSelector =
-        CameraSelector.Builder()
-            .addCameraFilter { infos ->
-                infos.filter { runCatching { Camera2CameraInfo.from(it).cameraId == id }.getOrDefault(false) }
-            }
-            .build()
+    private fun selectorFor(id: String): CameraSelector = CameraSelector.Builder()
+        .addCameraFilter { infos ->
+            infos.filter { runCatching { Camera2CameraInfo.from(it).cameraId == id }.getOrDefault(false) }
+        }
+        .build()
 
     private companion object {
         const val TAG = "CameraXSource"
@@ -188,7 +188,13 @@ internal class CameraXVideoSource(
 private class SourceLifecycleOwner : LifecycleOwner {
     private val registry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle get() = registry
-    fun resume() { registry.currentState = Lifecycle.State.RESUMED }
-    fun pause() { registry.currentState = Lifecycle.State.CREATED }
-    fun destroy() { registry.currentState = Lifecycle.State.DESTROYED }
+    fun resume() {
+        registry.currentState = Lifecycle.State.RESUMED
+    }
+    fun pause() {
+        registry.currentState = Lifecycle.State.CREATED
+    }
+    fun destroy() {
+        registry.currentState = Lifecycle.State.DESTROYED
+    }
 }

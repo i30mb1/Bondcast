@@ -78,6 +78,5 @@ internal class AbrControllerImpl(private val config: AbrConfig) : AbrController 
         return ((sample.pktLossTotal - prevTotal) * 1_000_000_000.0 / elapsedNanos).roundToInt()
     }
 
-    private fun elapsed(since: Long?, now: Long, interval: Long): Boolean =
-        since == null || now - since >= interval
+    private fun elapsed(since: Long?, now: Long, interval: Long): Boolean = since == null || now - since >= interval
 }

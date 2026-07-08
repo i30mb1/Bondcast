@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
+import androidx.camera.compose.CameraXViewfinder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -40,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,10 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.camera.compose.CameraXViewfinder
 import kotlinx.coroutines.delay
-import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.DiscordColors
+import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.obs.ObsController
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.HealthLevel
@@ -144,14 +143,11 @@ public fun StreamScreen(
                 factory = { context ->
                     SurfaceView(context).apply {
                         holder.addCallback(object : SurfaceHolder.Callback {
-                            override fun surfaceCreated(holder: SurfaceHolder) =
-                                UvcPreviewBus.set(holder.surface)
+                            override fun surfaceCreated(holder: SurfaceHolder) = UvcPreviewBus.set(holder.surface)
 
-                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
-                                UvcPreviewBus.set(holder.surface)
+                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = UvcPreviewBus.set(holder.surface)
 
-                            override fun surfaceDestroyed(holder: SurfaceHolder) =
-                                UvcPreviewBus.set(null)
+                            override fun surfaceDestroyed(holder: SurfaceHolder) = UvcPreviewBus.set(null)
                         })
                     }
                 },
@@ -197,7 +193,6 @@ public fun StreamScreen(
                     ) { overlays.closeAll() },
             )
         }
-
 
         Column(
             modifier = Modifier
@@ -615,11 +610,9 @@ private fun Transport.label(): String = when (this) {
     Transport.UNKNOWN -> "Сеть"
 }
 
-private fun formatRate(kbps: Int): String =
-    if (kbps >= 1000) "${kbps / 1000}.${kbps % 1000 / 100} Mbps" else "$kbps kbps"
+private fun formatRate(kbps: Int): String = if (kbps >= 1000) "${kbps / 1000}.${kbps % 1000 / 100} Mbps" else "$kbps kbps"
 
-private fun formatLag(ms: Int): String =
-    if (ms >= 1000) "+${ms / 1000}.${ms % 1000 / 100}с" else "${ms}мс"
+private fun formatLag(ms: Int): String = if (ms >= 1000) "+${ms / 1000}.${ms % 1000 / 100}с" else "${ms}мс"
 
 @Composable
 private fun RowScope.BoolChip(

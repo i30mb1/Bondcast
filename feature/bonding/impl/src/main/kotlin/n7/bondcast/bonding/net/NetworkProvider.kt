@@ -11,5 +11,4 @@ internal interface NetworkProvider {
     fun stop()
 }
 
-internal fun networkProvider(context: Context): NetworkProvider =
-    NetworkProviderWithLogging(ConnectivityNetworkProvider(context.applicationContext))
+internal fun networkProvider(context: Context): NetworkProvider = NetworkProviderWithLogging(ConnectivityNetworkProvider(context.applicationContext))
