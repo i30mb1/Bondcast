@@ -1,21 +1,15 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
+    id("convention.android-application")
+    id("convention.compose")
 }
 
 android {
     namespace = "n7.bondcast"
-    compileSdk = 37
 
     defaultConfig {
-        minSdk = 35
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
-    }
-
-    buildFeatures {
-        compose = true
+        versionCode = getVersionCode()
+        versionName = getVersionName()
     }
 
     buildTypes {
@@ -29,12 +23,6 @@ android {
     }
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
-
 dependencies {
     implementation(project(":core:ui"))
     implementation(project(":feature:bonding:impl"))
@@ -44,11 +32,6 @@ dependencies {
     implementation(project(":feature:overlay"))
     implementation(project(":feature:stream"))
 
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.runtime)
-    implementation(libs.compose.ui)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.material3)
     implementation(libs.activity.compose)
     implementation(libs.material)
 

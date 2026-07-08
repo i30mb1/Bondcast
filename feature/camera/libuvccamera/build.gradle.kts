@@ -22,50 +22,47 @@
  */
 
 plugins {
-    alias(libs.plugins.android.library)
+    id("com.android.library")
+    id("convention.android-base")
 }
 
 android {
-    namespace = 'com.serenegiant.uvccamera'
-    compileSdk = 37
+    namespace = "com.serenegiant.uvccamera"
     ndkVersion = "28.2.13676358"
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     defaultConfig {
         minSdk = 21
-        targetSdk = 36
 
         ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
     }
 
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            consumerProguardFiles 'consumer-rules.pro'
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            consumerProguardFiles("consumer-rules.pro")
         }
     }
     buildFeatures {
-        buildConfig true
+        buildConfig = true
     }
     externalNativeBuild {
         ndkBuild {
-            path file('src/main/jni/Android.mk')
+            path = file("src/main/jni/Android.mk")
         }
     }
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-
-    implementation 'androidx.core:core:1.13.1'
-    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.annotation:annotation:1.8.0'
+    implementation("androidx.core:core:1.13.1")
+    implementation("androidx.legacy:legacy-support-v4:1.0.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.annotation:annotation:1.8.0")
 }

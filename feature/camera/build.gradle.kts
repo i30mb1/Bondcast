@@ -1,25 +1,6 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.compose)
-}
-
-android {
-    namespace = "n7.bondcast.feature.camera"
-    compileSdk = 37
-
-    defaultConfig {
-        minSdk = 35
-    }
-
-    buildFeatures {
-        compose = true
-    }
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
+    id("convention.android-library")
+    id("convention.compose")
 }
 
 dependencies {
@@ -35,10 +16,4 @@ dependencies {
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.effects)
-
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.runtime)
-    implementation(libs.compose.ui)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.material3)
 }

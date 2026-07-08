@@ -11,8 +11,26 @@ streampack = "3.1.2"
 srtdroid = "1.9.5"
 okhttp = "4.12.0"
 camera = "1.7.0-alpha02"
+jmh = "1.37"
+json = "20250107"
+junit = "4.13.2"
+ksp = "2.3.0"
+kover = "0.9.8"
+detekt = "2.0.0-alpha.5"
+spotless = "7.2.1"
+kotlinxSerializationJson = "1.9.0"
 
 [libraries]
+androidGradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
+kotlinGradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlinGradlePluginApi = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin-api", version.ref = "kotlin" }
+kotlinComposeCompilerPlugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
+kspGradlePlugin = { module = "com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
+koverGradlePlugin = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.ref = "kover" }
+kotlinSerializationPlugin = { module = "org.jetbrains.kotlin:kotlin-serialization", version.ref = "kotlin" }
+kotlinSerialization = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+detektPlugin = { module = "dev.detekt:detekt-gradle-plugin", version.ref = "detekt" }
+spotlessPlugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
 compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
@@ -34,6 +52,14 @@ camera-effects = { group = "androidx.camera", name = "camera-effects", version.r
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
 camera-compose = { group = "androidx.camera", name = "camera-compose", version.ref = "camera" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+test-junit = { module = "junit:junit", version.ref = "junit" }
+test-kotlin-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+test-json = { module = "org.json:json", version.ref = "json" }
+jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
+jmh-generator = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh" }
+
+[bundles]
+compose = ["compose-runtime", "compose-ui", "compose-foundation", "compose-material3"]
 
 [plugins]
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

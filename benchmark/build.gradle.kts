@@ -1,8 +1,8 @@
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.1.21"
-    id("org.jetbrains.kotlin.kapt") version "2.1.21"
+    id("convention.kotlin-jvm")
+    id("n7.plugins.kotlin-kapt")
 }
 
 kotlin {
@@ -11,8 +11,8 @@ kotlin {
 
 dependencies {
     implementation(project(":feature:bonding:domain"))
-    implementation("org.openjdk.jmh:jmh-core:1.37")
-    kapt("org.openjdk.jmh:jmh-generator-annprocess:1.37")
+    implementation(libs.jmh.core)
+    kapt(libs.jmh.generator)
 }
 
 tasks.register<JavaExec>("jmh") {

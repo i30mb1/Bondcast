@@ -1,5 +1,5 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.1.21"
+    id("convention.kotlin-jvm")
 }
 
 kotlin {
@@ -7,6 +7,6 @@ kotlin {
 }
 
 dependencies {
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.1.21")
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.test.kotlin.junit)
+    testImplementation(libs.test.junit)
 }
