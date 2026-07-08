@@ -1,18 +1,18 @@
 package n7.bondcast.camerax
 
-import android.view.Surface
+import androidx.camera.core.Preview
 
 public object CameraXPreviewBus {
 
     @Volatile
-    var surface: Surface? = null
+    var provider: Preview.SurfaceProvider? = null
         private set
 
     @Volatile
-    var listener: ((Surface?) -> Unit)? = null
+    var listener: (() -> Unit)? = null
 
-    fun set(value: Surface?) {
-        surface = value
-        listener?.invoke(value)
+    fun set(value: Preview.SurfaceProvider?) {
+        provider = value
+        listener?.invoke()
     }
 }

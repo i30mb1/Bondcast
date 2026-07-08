@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.camera.view.PreviewView
 import kotlinx.coroutines.delay
 import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.DiscordColors
@@ -161,20 +162,14 @@ public fun StreamScreen(
         if (currentCamera?.id != USB_CAMERA_ID && previewEnabled) {
             AndroidView(
                 factory = { context ->
-                    SurfaceView(context).apply {
+                    PreviewView(context).apply {
                         keepScreenOn = true
-                        holder.addCallback(object : SurfaceHolder.Callback {
-                            override fun surfaceCreated(holder: SurfaceHolder) =
-                                CameraXPreviewBus.set(holder.surface)
-
-                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
-                                CameraXPreviewBus.set(holder.surface)
-
-                            override fun surfaceDestroyed(holder: SurfaceHolder) =
-                                CameraXPreviewBus.set(null)
-                        })
+                        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+                        scaleType = PreviewView.ScaleType.FIT_CENTER
+                        CameraXPreviewBus.set(surfaceProvider)
                     }
                 },
+                onRelease = { CameraXPreviewBus.set(null) },
                 modifier = Modifier.fillMaxSize(),
             )
         }

@@ -9,6 +9,7 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -39,11 +40,8 @@ internal class CameraXVideoSource(
 
     private val _isStreamingFlow = MutableStateFlow(false)
     private val _infoProviderFlow = MutableStateFlow<ISourceInfoProvider>(CameraXSourceInfoProvider(context, cameraId))
-    private val previewRotation: Int get() = _infoProviderFlow.value.rotationDegrees
 
     private var cameraProvider: ProcessCameraProvider? = null
-    private var preview: Preview? = null
-    private var glTee: GlTee? = null
     private val lifecycleOwner = SourceLifecycleOwner()
 
     override val timebase: Timebase = Timebase.UPTIME
@@ -55,7 +53,7 @@ internal class CameraXVideoSource(
     override suspend fun setOutput(surface: Surface) {
         outputSurface = surface
         Log.i(TAG, "setOutput streaming=${_isStreamingFlow.value} valid=${surface.isValid}")
-        CameraXPreviewBus.listener = { preview -> mainHandler.post { preview?.let { glTee?.addOutput(it, previewRotation) } } }
+        CameraXPreviewBus.listener = { mainHandler.post { bind() } }
         bind()
     }
 
@@ -90,35 +88,35 @@ internal class CameraXVideoSource(
         mainHandler.post {
             val size = config?.resolution ?: return@post
             val encoder = outputSurface ?: return@post
-            val tee = glTee ?: GlTee(size.width, size.height).also { glTee = it }
-            tee.addOutput(encoder)
-            CameraXPreviewBus.surface?.let { tee.addOutput(it, previewRotation) }
             val future = ProcessCameraProvider.getInstance(context)
             future.addListener({
                 val cameraProvider = runCatching { future.get() }.getOrNull() ?: return@addListener
                 this.cameraProvider = cameraProvider
-                val useCase = Preview.Builder()
-                    .setResolutionSelector(
-                        ResolutionSelector.Builder()
-                            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
-                            .setResolutionStrategy(
-                                ResolutionStrategy(size, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
-                            )
-                            .build(),
+                val selector = ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                    .setResolutionStrategy(
+                        ResolutionStrategy(size, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
                     )
                     .build()
-                useCase.setSurfaceProvider(mainExecutor) { request ->
-                    Log.i(TAG, "surfaceRequest ${request.resolution} target=$size")
-                    tee.provideInputSurfaceTo { input ->
-                        request.provideSurface(input, mainExecutor) { }
+
+                val encoderPreview = Preview.Builder().setResolutionSelector(selector).build()
+                encoderPreview.setSurfaceProvider(mainExecutor) { request ->
+                    Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
+                    request.provideSurface(encoder, mainExecutor) { }
+                }
+
+                val displayPreview = CameraXPreviewBus.provider?.let { provider ->
+                    Preview.Builder().setResolutionSelector(selector).build().apply {
+                        setSurfaceProvider(provider)
                     }
                 }
-                preview = useCase
+
+                val useCases: Array<UseCase> = listOfNotNull(encoderPreview, displayPreview).toTypedArray()
                 runCatching {
                     cameraProvider.unbindAll()
                     lifecycleOwner.resume()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(cameraId), useCase)
-                    Log.i(TAG, "bound cameraId=$cameraId size=$size")
+                    cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(cameraId), *useCases)
+                    Log.i(TAG, "bound cameraId=$cameraId size=$size preview=${displayPreview != null}")
                 }.onFailure { Log.w(TAG, "bind failed: $it") }
             }, mainExecutor)
         }
@@ -127,9 +125,6 @@ internal class CameraXVideoSource(
     private fun unbind() {
         runCatching { cameraProvider?.unbindAll() }
         lifecycleOwner.pause()
-        preview = null
-        glTee?.release()
-        glTee = null
     }
 
     @OptIn(ExperimentalCamera2Interop::class)

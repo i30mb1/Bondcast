@@ -33,7 +33,6 @@ dependencies {
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)
-    implementation(libs.streampack.ui)
     implementation(libs.srtdroid.core)
     implementation(libs.srtdroid.ktx)
 
