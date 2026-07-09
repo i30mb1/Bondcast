@@ -38,6 +38,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import n7.bondcast.DiscordColors
+import n7.bondcast.ui.street.streetLabel
+import n7.bondcast.ui.street.streetTitle
+import n7.bondcast.ui.street.upper
 
 @Composable
 public fun DiscordTopBar(
@@ -64,10 +67,9 @@ public fun DiscordTopBar(
             Spacer(Modifier.width(8.dp))
         }
         Text(
-            text = title,
+            text = title.upper(),
             color = DiscordColors.textPrimary,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
+            style = streetTitle.copy(fontSize = 22.sp),
         )
     }
 }
@@ -75,11 +77,9 @@ public fun DiscordTopBar(
 @Composable
 public fun SectionLabel(text: String) {
     Text(
-        text = text,
-        color = DiscordColors.textMuted,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.5.sp,
+        text = text.upper(),
+        color = DiscordColors.accent,
+        style = streetLabel.copy(fontSize = 12.sp),
         modifier = Modifier.padding(start = 8.dp, bottom = 8.dp, top = 8.dp),
     )
 }
@@ -89,7 +89,9 @@ public fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(DiscordColors.card, RoundedCornerShape(16.dp)),
+            .clip(RoundedCornerShape(8.dp))
+            .background(DiscordColors.card)
+            .border(1.dp, DiscordColors.divider, RoundedCornerShape(8.dp)),
         content = content,
     )
 }
@@ -367,7 +369,7 @@ public fun DiscordSegmentedRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DiscordColors.inputBackground, RoundedCornerShape(10.dp))
+                .background(DiscordColors.inputBackground, RoundedCornerShape(6.dp))
                 .padding(3.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
@@ -378,7 +380,7 @@ public fun DiscordSegmentedRow(
                         .weight(1f)
                         .background(
                             color = if (selected) DiscordColors.blurple else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(4.dp),
                         )
                         .clickable { onSelect(index) }
                         .padding(vertical = 8.dp),

@@ -1,31 +1,22 @@
 package n7.bondcast.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
 import n7.bondcast.stream.CameraOption
+import n7.bondcast.ui.street.StreetChip
+import n7.bondcast.ui.street.StreetPanelScaffold
+import n7.bondcast.ui.street.streetLabel
+import n7.bondcast.ui.street.upper
 
 @Composable
 public fun CameraPanel(
@@ -55,146 +46,72 @@ public fun CameraPanel(
     onLlbEnabled: (Boolean) -> Unit = {},
     nightModeSuggested: Boolean = false,
 ) {
-    Column(
-        modifier = modifier
-            .width(220.dp)
-            .heightIn(max = 420.dp)
-            .background(DiscordColors.background.copy(alpha = 0.92f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Камера",
-                color = DiscordColors.textPrimary,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "✕",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onClose)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            )
-        }
+    StreetPanelScaffold(title = "Камера", onClose = onClose, modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             cameras.forEach { cam ->
-                val selected = cam == current
-                Text(
-                    text = cam.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected) Color.White else DiscordColors.textSecondary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) DiscordColors.blurple else DiscordColors.elevated)
-                        .clickable { onSelect(cam) }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                )
+                StreetChip(cam.label, cam == current, Modifier.fillMaxWidth()) { onSelect(cam) }
             }
         }
 
-        Text(
-            text = "Превью на экране",
-            color = DiscordColors.textMuted,
-            style = MaterialTheme.typography.labelMedium,
-        )
+        PanelLabel("Превью на экране")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ToggleChip("Вкл", previewEnabled) { onPreviewEnabled(true) }
-            ToggleChip("Выкл", !previewEnabled) { onPreviewEnabled(false) }
+            StreetChip("Вкл", previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(true) }
+            StreetChip("Выкл", !previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(false) }
         }
         if (showHint) {
-            Text(
-                text = "Выкл — экран отдыхает, телефон холоднее. Зрители разницы не заметят 😉",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            PanelHint("Выкл — экран отдыхает, телефон холоднее. Зрители разницы не заметят 😉")
         }
 
         if (cameraControlsAvailable && stabilizationSupported) {
-            Text(
-                text = "Стабилизация",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            PanelLabel("Стабилизация")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ToggleChip("Вкл", stabilizationEnabled) { onStabilizationEnabled(true) }
-                ToggleChip("Выкл", !stabilizationEnabled) { onStabilizationEnabled(false) }
+                StreetChip("Вкл", stabilizationEnabled, Modifier.weight(1f)) { onStabilizationEnabled(true) }
+                StreetChip("Выкл", !stabilizationEnabled, Modifier.weight(1f)) { onStabilizationEnabled(false) }
             }
             if (stabilizationEnabled && !stabilizationActive) {
-                Text(
-                    text = "Не влезла в текущий режим съёмки (разрешение/fps).",
-                    color = DiscordColors.textMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                PanelHint("Не влезла в текущий режим съёмки (разрешение/fps).")
             } else if (showHint && stabilizationEnabled) {
-                Text(
-                    text = "Гасит тряску, но чуть подрезает края кадра.",
-                    color = DiscordColors.textMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                PanelHint("Гасит тряску, но чуть подрезает края кадра.")
             }
         }
 
         if (cameraControlsAvailable) {
-            Text(
-                text = "Заморозить экспозицию/ЦТ",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            PanelLabel("Заморозить экспозицию/ЦТ")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ToggleChip("Вкл", aeAwbLocked) { onAeAwbLocked(true) }
-                ToggleChip("Выкл", !aeAwbLocked) { onAeAwbLocked(false) }
+                StreetChip("Вкл", aeAwbLocked, Modifier.weight(1f)) { onAeAwbLocked(true) }
+                StreetChip("Выкл", !aeAwbLocked, Modifier.weight(1f)) { onAeAwbLocked(false) }
             }
             if (showHint && aeAwbLocked) {
-                Text(
-                    text = "Картинка не «дышит» при панораме — экспозиция и цвет зафиксированы.",
-                    color = DiscordColors.textMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                PanelHint("Картинка не «дышит» при панораме — экспозиция и цвет зафиксированы.")
             }
 
             if (exposureSupported) {
-                Text(
-                    text = "Экспозиция",
-                    color = DiscordColors.textMuted,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                PanelLabel("Экспозиция")
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ToggleChip("−", false, enabled = exposureIndex > exposureRange.first) {
+                    StreetChip("−", false, Modifier.weight(1f), enabled = exposureIndex > exposureRange.first) {
                         onExposureIndexChange((exposureIndex - 1).coerceIn(exposureRange))
                     }
                     Text(
                         text = formatEv(exposureIndex * exposureStepEv),
                         color = DiscordColors.textSecondary,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = streetLabel,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.weight(1f),
                     )
-                    ToggleChip("+", false, enabled = exposureIndex < exposureRange.last) {
+                    StreetChip("+", false, Modifier.weight(1f), enabled = exposureIndex < exposureRange.last) {
                         onExposureIndexChange((exposureIndex + 1).coerceIn(exposureRange))
                     }
                 }
             }
 
             if (llbAvailable) {
-                Text(
-                    text = "Ночной режим",
-                    color = DiscordColors.textMuted,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                PanelLabel("Ночной режим")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ToggleChip("Вкл", llbEnabled) { onLlbEnabled(true) }
-                    ToggleChip("Выкл", !llbEnabled) { onLlbEnabled(false) }
+                    StreetChip("Вкл", llbEnabled, Modifier.weight(1f)) { onLlbEnabled(true) }
+                    StreetChip("Выкл", !llbEnabled, Modifier.weight(1f)) { onLlbEnabled(false) }
                 }
                 if (nightModeSuggested) {
                     Text(
@@ -208,34 +125,21 @@ public fun CameraPanel(
     }
 }
 
-private fun formatEv(value: Float): String {
-    if (value == 0f) return "0 EV"
-    return (if (value > 0) "+" else "") + "%.1f EV".format(java.util.Locale.US, value)
+@Composable
+internal fun PanelLabel(text: String) {
+    Text(text = text.upper(), color = DiscordColors.accent, style = streetLabel)
 }
 
 @Composable
-private fun RowScope.ToggleChip(text: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun PanelHint(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = when {
-            !enabled -> DiscordColors.textMuted
-            selected -> Color.White
-            else -> DiscordColors.textSecondary
-        },
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                when {
-                    selected && enabled -> DiscordColors.blurple
-                    selected -> DiscordColors.blurple.copy(alpha = 0.4f)
-                    else -> DiscordColors.elevated
-                },
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 8.dp),
+        color = DiscordColors.textMuted,
+        style = MaterialTheme.typography.bodySmall,
     )
+}
+
+private fun formatEv(value: Float): String {
+    if (value == 0f) return "0 EV"
+    return (if (value > 0) "+" else "") + "%.1f EV".format(java.util.Locale.US, value)
 }

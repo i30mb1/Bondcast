@@ -394,8 +394,8 @@ private fun RecommendChip(
         color = if (selected) Color.White else DiscordColors.textSecondary,
         style = MaterialTheme.typography.labelLarge,
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (selected) DiscordColors.blurple else DiscordColors.inputBackground)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (selected) DiscordColors.accent else DiscordColors.inputBackground)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )

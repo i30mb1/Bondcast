@@ -7,25 +7,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val White = Color(0xFFFFFFFF)
-private val Blurple = Color(0xFF5865F2)
-private val BlurplePressed = Color(0xFF4752C4)
-private val Green = Color(0xFF23A55A)
-private val Red = Color(0xFFDA373C)
+private val Accent = Color(0xFFFF3C3C)
+private val AccentPressed = Color(0xFFD42F2F)
+private val Green = Color(0xFF2FBF5B)
+private val Red = Color(0xFFFF3C3C)
 private val Yellow = Color(0xFFF0B232)
-private val Background = Color(0xFF0B0B0D)
-private val CardSurface = Color(0xFF1E1F22)
-private val Elevated = Color(0xFF2B2D31)
-private val InputBackground = Color(0xFF111214)
-private val TextPrimary = Color(0xFFF2F3F5)
-private val TextSecondary = Color(0xFFB5BAC1)
-private val TextMuted = Color(0xFF80848E)
-private val Link = Color(0xFF00A8FC)
-private val Divider = Color(0xFF2B2D31)
+private val Background = Color(0xFF0E0E0E)
+private val CardSurface = Color(0xFF0E0E0E)
+private val Elevated = Color(0xFF232323)
+private val InputBackground = Color(0xFF161616)
+private val TextPrimary = Color(0xFFEEEEEE)
+private val TextSecondary = Color(0xFFAAAAAA)
+private val TextMuted = Color(0xFF666666)
+private val Link = Color(0xFFFF6B6B)
+private val Divider = Color(0xFF2A2A2A)
+private val GroupDivider = Color(0xFF3A3A3A)
+private val Sticker = Color(0xFFFFFFFF)
+private val Stripe = Color(0xFF161616)
 
 private val ColorScheme = darkColorScheme(
-    primary = Blurple,
+    primary = Accent,
     onPrimary = White,
-    primaryContainer = BlurplePressed,
+    primaryContainer = AccentPressed,
     secondary = Elevated,
     onSecondary = TextPrimary,
     tertiary = Green,
@@ -52,10 +55,16 @@ public object DiscordColors {
     val textMuted = TextMuted
     val link = Link
     val divider = Divider
-    val blurple = Blurple
+    val blurple = Accent
     val green = Green
     val danger = Red
     val yellow = Yellow
+    val accent = Accent
+    val plate = Elevated
+    val panel = Background
+    val groupDivider = GroupDivider
+    val sticker = Sticker
+    val stripe = Stripe
     fun temperature(heat: Float): Color = temperatureColor(heat)
 }
 

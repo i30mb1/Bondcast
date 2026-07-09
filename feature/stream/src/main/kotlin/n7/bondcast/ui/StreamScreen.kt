@@ -3,6 +3,7 @@ package n7.bondcast.ui
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.PowerManager
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
@@ -23,17 +24,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,7 +36,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,18 +44,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Observer
-import kotlinx.coroutines.delay
 import n7.bondcast.DiscordColors
 import n7.bondcast.camerax.CameraControlBus
 import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.camerax.setAeAwbLock
 import n7.bondcast.camerax.setLowLightBoost
 import n7.bondcast.obs.ObsController
+import n7.bondcast.obs.ObsPhase
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.stream.HealthLevel
 import n7.bondcast.stream.StreamController
@@ -70,15 +63,27 @@ import n7.bondcast.stream.USB_CAMERA_ID
 import n7.bondcast.thermal.ThermalMitigations
 import n7.bondcast.thermal.ThermalMonitor
 import n7.bondcast.thermal.ThermalState
+import n7.bondcast.ui.components.AttentionLevel
 import n7.bondcast.ui.components.CameraIcon
 import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.FlameIcon
+import n7.bondcast.ui.components.GearIcon
+import n7.bondcast.ui.components.GoLiveButton
 import n7.bondcast.ui.components.ObsIcon
 import n7.bondcast.ui.components.ObsPanel
+import n7.bondcast.ui.components.RailButton
+import n7.bondcast.ui.components.RailFadeColumn
+import n7.bondcast.ui.components.RailGroupDivider
 import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
+import n7.bondcast.ui.components.StickerBadge
 import n7.bondcast.ui.components.ThermalPanel
 import n7.bondcast.ui.components.healthColor
+import n7.bondcast.ui.street.StreetChip
+import n7.bondcast.ui.street.StreetPanelScaffold
+import n7.bondcast.ui.street.StreetStatCard
+import n7.bondcast.ui.street.streetLabel
+import n7.bondcast.ui.street.upper
 import n7.bondcast.uvc.UvcPreviewBus
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
@@ -97,8 +102,7 @@ public fun StreamScreen(
     val currentCamera by controller.currentCamera.collectAsState()
     val cameras by controller.cameras.collectAsState()
     val health by controller.health.collectAsState()
-    // карточка статистики — обычное окно менеджера, открыта с самого начала
-    val overlays = remember { OverlayManager().apply { toggle(PANEL_STATS) } }
+    val panels = remember { PanelManager() }
 
     val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
     val thermalState by thermalFlow.collectAsState(initial = ThermalState.UNKNOWN)
@@ -142,8 +146,8 @@ public fun StreamScreen(
 
     val obsConfigured = settings?.obsEnabled == true && settings.obsHost.isNotBlank()
     val obsPhase by obsController.phase.collectAsState()
-    // соединение живёт, только пока окно открыто; isOpen ловит и ✕, и скрим, и вытеснение третьим окном
-    val obsOpen = overlays.isOpen(PANEL_OBS)
+    // соединение живёт, только пока окно открыто; isOpen ловит и ✕, и скрим, и вытеснение другим окном
+    val obsOpen = panels.isOpen(PANEL_OBS)
     LaunchedEffect(obsOpen) { obsController.setPanelVisible(obsOpen) }
     DisposableEffect(obsController) {
         onDispose { obsController.setPanelVisible(false) }
@@ -170,6 +174,33 @@ public fun StreamScreen(
     LaunchedEffect(settings) {
         val current = settings ?: return@LaunchedEffect
         controller.engine.prepare(current)
+    }
+
+    val statsAttention = when (health?.overall) {
+        HealthLevel.BAD -> AttentionLevel.BAD
+        HealthLevel.WARN -> AttentionLevel.WARN
+        else -> AttentionLevel.NONE
+    }
+    val thermalAttention = when {
+        thermalState.status >= PowerManager.THERMAL_STATUS_SEVERE || thermalState.heat >= 0.95f -> AttentionLevel.BAD
+        thermalState.status >= PowerManager.THERMAL_STATUS_MODERATE || thermalState.heat >= 0.65f -> AttentionLevel.WARN
+        else -> AttentionLevel.NONE
+    }
+    val obsAttention = when (obsPhase) {
+        ObsPhase.AuthFailed -> AttentionLevel.BAD
+        is ObsPhase.Retrying -> AttentionLevel.WARN
+        else -> AttentionLevel.NONE
+    }
+    val live = phase is StreamPhase.Live
+    val flameFlicker = when (thermalAttention) {
+        AttentionLevel.BAD -> 1f
+        AttentionLevel.WARN -> 0.6f
+        else -> 0.28f
+    }
+    val statsAgitation = when (statsAttention) {
+        AttentionLevel.BAD -> 1f
+        AttentionLevel.WARN -> 0.55f
+        else -> 0.25f
     }
 
     Box(
@@ -224,311 +255,188 @@ public fun StreamScreen(
             )
         }
 
-        // скрим лежит ПОД кнопками и панелями: тап мимо закрывает все окна,
+        // скрим лежит ПОД рейлом и панелями: тап мимо закрывает окно,
         // а иконки справа остаются кликабельными для переключения панелей
-        if (overlays.anyOpen) {
+        if (panels.anyOpen) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) { overlays.closeAll() },
+                    ) { panels.closeAll() },
             )
         }
 
-        Column(
+        StickerBadge(
+            phase = phase,
             modifier = Modifier
-                .align(Alignment.TopEnd)
+                .align(Alignment.TopStart)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "⚙",
-                color = DiscordColors.textPrimary,
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(DiscordColors.background.copy(alpha = 0.72f))
-                    .clickable(enabled = phase is StreamPhase.Idle, onClick = onOpenSettings)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-            if (cameras.size >= 2) {
-                CameraIcon(
-                    onClick = { overlays.toggle(PANEL_CAMERAS) },
-                    showBadge = nightModeSuggested,
-                )
-            }
-            StatsIcon(
-                color = healthColor(health?.overall),
-                onClick = { overlays.toggle(PANEL_STATS) },
-            )
-            FlameIcon(
-                state = thermalState,
-                onClick = { overlays.toggle(PANEL_THERMAL) },
-            )
-            if (obsConfigured) {
-                ObsIcon(
-                    phase = obsPhase,
-                    onClick = { overlays.toggle(PANEL_OBS) },
-                )
-            }
-        }
+                .padding(16.dp),
+        )
 
         val streaming = phase !is StreamPhase.Idle
-        Column(
+        GoLiveButton(
+            streaming = streaming,
+            onClick = { if (streaming) controller.stop() else controller.start() },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(
-                onClick = { if (streaming) controller.stop() else controller.start() },
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (streaming) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                ),
-            ) {
-                Text(
-                    text = if (streaming) "Стоп" else "В эфир",
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
+                .padding(bottom = 20.dp),
+        )
 
-        overlays.regionOf(PANEL_STATS)?.let { region ->
-            OverlaySlot(region) {
-                Column(
-                    modifier = Modifier
-                        // фиксированная ширина: иначе полоски линков (fillMaxWidth) раздувают карточку
-                        .width(308.dp)
-                        .heightIn(max = 330.dp)
-                        .background(DiscordColors.background.copy(alpha = 0.72f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                        .verticalScroll(rememberScrollState()),
+        RailFadeColumn(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(top = 4.dp, end = 16.dp, bottom = 60.dp)
+                .fillMaxHeight(),
+        ) {
+            var index = 0
+            if (cameras.size >= 2) {
+                val camActive = panels.isOpen(PANEL_CAMERAS)
+                RailButton(
+                    active = camActive,
+                    onClick = { panels.toggle(PANEL_CAMERAS) },
+                    appearDelay = index++ * 45L,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            StatusLine(phase)
-                        }
-                        Text(
-                            text = "✕",
-                            color = DiscordColors.textMuted,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable { overlays.close(PANEL_STATS) }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
-                    if (settings != null) {
-                        Text(
-                            text = "${settings.width}×${settings.height}@${settings.fps} • ${settings.videoBitrateKbps} kbps",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = DiscordColors.textSecondary,
-                        )
-                        val destination = if (settings.bondingEnabled) {
-                            "srtla://${settings.srtlaHost}:${settings.srtlaPort}"
-                        } else {
-                            settings.url
-                        }
-                        Text(
-                            text = "$destination → live/${settings.streamName}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = DiscordColors.textMuted,
-                        )
-                    }
-                    HudStats(
-                        controller,
-                        onHelp = { overlays.toggle(PANEL_STATS_HELP) },
+                    CameraIcon(
+                        color = glyphColor(camActive),
+                        showBadge = nightModeSuggested,
+                        flipKey = currentCamera?.id,
                     )
-                    LinksPanel(controller)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "Потолок битрейта",
-                        color = DiscordColors.textMuted,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        CapChip("Макс", null, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-                        CapChip("75%", 0.75f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-                        CapChip("50%", 0.5f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-                        CapChip("25%", 0.25f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-                    }
-                    if (settings?.hintsEnabled != false) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Ручник для энкодера: 50% — это половина максимума.\n" +
-                                "Прижал — телефон остывает, картинка чуть мылит, зато эфир живёт 🧯",
-                            color = DiscordColors.textMuted,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (settings != null) {
-                        // ABR применяется на старте сессии, поэтому в эфире переключение заперто
-                        val live = phase !is StreamPhase.Idle
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "Адаптивный битрейт (ABR)",
-                            color = DiscordColors.textMuted,
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            BoolChip("Вкл", settings.abrEnabled, enabled = !live) {
-                                onUpdateSettings(settings.copy(abrEnabled = true))
-                            }
-                            BoolChip("Выкл", !settings.abrEnabled, enabled = !live) {
-                                onUpdateSettings(settings.copy(abrEnabled = false))
-                            }
-                        }
-                        if (settings.abrEnabled) {
-                            Spacer(Modifier.height(6.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                BoolChip("−", false, enabled = !live) {
-                                    onUpdateSettings(
-                                        settings.copy(
-                                            minVideoBitrateKbps = (settings.minVideoBitrateKbps - 100).coerceAtLeast(300),
-                                        ),
-                                    )
-                                }
-                                Text(
-                                    text = "мин ${settings.minVideoBitrateKbps}",
-                                    color = DiscordColors.textSecondary,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.weight(2f),
-                                )
-                                BoolChip("+", false, enabled = !live) {
-                                    onUpdateSettings(
-                                        settings.copy(
-                                            minVideoBitrateKbps = (settings.minVideoBitrateKbps + 100)
-                                                .coerceAtMost(settings.videoBitrateKbps),
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-                        // подпись про блокировку в эфире — функциональная, живёт и без подсказок
-                        if (live || settings.hintsEnabled) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = if (live) {
-                                    "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅"
-                                } else {
-                                    "Мягко приседает качеством вместо слайд-шоу."
-                                },
-                                color = DiscordColors.textMuted,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
                 }
             }
-        }
-
-        overlays.regionOf(PANEL_THERMAL)?.let { region ->
-            OverlaySlot(region) {
-                ThermalPanel(
-                    state = thermalState,
-                    effectiveBitrateKbps = if (effectiveBitrate > 0) effectiveBitrate else settings?.videoBitrateKbps ?: 0,
-                    brightness = brightness,
-                    onBrightness = { mitigations.setScreenBrightness(it) },
-                    bitrateCapFraction = bitrateCap,
-                    showHints = settings?.hintsEnabled != false,
-                    onOpenCameras = { overlays.open(PANEL_CAMERAS) },
-                    onOpenStats = { overlays.open(PANEL_STATS) },
-                    onClose = { overlays.close(PANEL_THERMAL) },
-                )
+            val statsActive = panels.isOpen(PANEL_STATS)
+            RailButton(
+                active = statsActive,
+                onClick = { panels.toggle(PANEL_STATS) },
+                attention = statsAttention,
+                appearDelay = index++ * 45L,
+            ) {
+                StatsIcon(color = glyphColor(statsActive), live = live, agitation = statsAgitation)
+            }
+            RailGroupDivider()
+            val thermalActive = panels.isOpen(PANEL_THERMAL)
+            RailButton(
+                active = thermalActive,
+                onClick = { panels.toggle(PANEL_THERMAL) },
+                attention = thermalAttention,
+                appearDelay = index++ * 45L,
+            ) {
+                FlameIcon(color = glyphColor(thermalActive), flicker = flameFlicker)
+            }
+            if (obsConfigured) {
+                val obsActive = panels.isOpen(PANEL_OBS)
+                RailButton(
+                    active = obsActive,
+                    onClick = { panels.toggle(PANEL_OBS) },
+                    attention = obsAttention,
+                    appearDelay = index++ * 45L,
+                ) {
+                    ObsIcon(color = glyphColor(obsActive))
+                }
+            }
+            RailButton(
+                active = false,
+                onClick = onOpenSettings,
+                enabled = phase is StreamPhase.Idle,
+                appearDelay = index++ * 45L,
+            ) {
+                GearIcon(color = if (phase is StreamPhase.Idle) DiscordColors.accent else DiscordColors.textMuted)
             }
         }
 
-        overlays.regionOf(PANEL_CAMERAS)?.let { region ->
-            OverlaySlot(region) {
-                CameraPanel(
-                    cameras = cameras,
-                    current = currentCamera,
-                    onSelect = {
-                        controller.selectCamera(it)
-                        overlays.close(PANEL_CAMERAS)
-                    },
-                    previewEnabled = previewEnabled,
-                    onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
-                    showHint = settings?.hintsEnabled != false,
-                    onClose = { overlays.close(PANEL_CAMERAS) },
-                    cameraControlsAvailable = cameraControlsAvailable,
-                    stabilizationSupported = stabilizationSupported,
-                    stabilizationEnabled = stabilizationWanted,
-                    stabilizationActive = stabilizationActive,
-                    onStabilizationEnabled = { CameraControlBus.setStabilizationWanted(it) },
-                    aeAwbLocked = aeAwbLocked,
-                    onAeAwbLocked = { aeAwbLocked = it },
-                    exposureSupported = exposureSupported,
-                    exposureIndex = exposureIndex,
-                    exposureRange = exposureRange,
-                    exposureStepEv = exposureStepEv,
-                    onExposureIndexChange = { exposureIndex = it },
-                    llbAvailable = llbAvailable,
-                    llbEnabled = llbEnabled,
-                    onLlbEnabled = { llbEnabled = it },
-                    nightModeSuggested = nightModeSuggested,
-                )
-            }
+        PanelSlot(panels.isOpen(PANEL_STATS)) {
+            StatsPanel(
+                controller = controller,
+                settings = settings,
+                phase = phase,
+                bitrateCap = bitrateCap,
+                mitigations = mitigations,
+                onUpdateSettings = onUpdateSettings,
+                onHelp = { panels.toggle(PANEL_STATS_HELP) },
+                onClose = { panels.close(PANEL_STATS) },
+            )
         }
 
-        overlays.regionOf(PANEL_OBS)?.let { region ->
+        PanelSlot(panels.isOpen(PANEL_THERMAL)) {
+            ThermalPanel(
+                state = thermalState,
+                effectiveBitrateKbps = if (effectiveBitrate > 0) effectiveBitrate else settings?.videoBitrateKbps ?: 0,
+                brightness = brightness,
+                onBrightness = { mitigations.setScreenBrightness(it) },
+                bitrateCapFraction = bitrateCap,
+                showHints = settings?.hintsEnabled != false,
+                onOpenCameras = { panels.open(PANEL_CAMERAS) },
+                onOpenStats = { panels.open(PANEL_STATS) },
+                onClose = { panels.close(PANEL_THERMAL) },
+            )
+        }
+
+        PanelSlot(panels.isOpen(PANEL_CAMERAS)) {
+            CameraPanel(
+                cameras = cameras,
+                current = currentCamera,
+                onSelect = {
+                    controller.selectCamera(it)
+                },
+                previewEnabled = previewEnabled,
+                onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
+                showHint = settings?.hintsEnabled != false,
+                onClose = { panels.close(PANEL_CAMERAS) },
+                cameraControlsAvailable = cameraControlsAvailable,
+                stabilizationSupported = stabilizationSupported,
+                stabilizationEnabled = stabilizationWanted,
+                stabilizationActive = stabilizationActive,
+                onStabilizationEnabled = { CameraControlBus.setStabilizationWanted(it) },
+                aeAwbLocked = aeAwbLocked,
+                onAeAwbLocked = { aeAwbLocked = it },
+                exposureSupported = exposureSupported,
+                exposureIndex = exposureIndex,
+                exposureRange = exposureRange,
+                exposureStepEv = exposureStepEv,
+                onExposureIndexChange = { exposureIndex = it },
+                llbAvailable = llbAvailable,
+                llbEnabled = llbEnabled,
+                onLlbEnabled = { llbEnabled = it },
+                nightModeSuggested = nightModeSuggested,
+            )
+        }
+
+        PanelSlot(panels.isOpen(PANEL_OBS)) {
             val obsScenes by obsController.scenes.collectAsState()
             val obsCurrentScene by obsController.currentScene.collectAsState()
             val obsStreamStatus by obsController.streamStatus.collectAsState()
             val obsRecordStatus by obsController.recordStatus.collectAsState()
             val obsStats by obsController.stats.collectAsState()
-            OverlaySlot(region) {
-                ObsPanel(
-                    phase = obsPhase,
-                    scenes = obsScenes,
-                    currentScene = obsCurrentScene,
-                    streamStatus = obsStreamStatus,
-                    recordStatus = obsRecordStatus,
-                    stats = obsStats,
-                    onSelectScene = { obsController.selectScene(it) },
-                    onToggleStream = { obsController.toggleStream() },
-                    onToggleRecord = { obsController.toggleRecord() },
-                    showHints = settings?.hintsEnabled != false,
-                    onClose = { overlays.close(PANEL_OBS) },
-                )
-            }
+            ObsPanel(
+                phase = obsPhase,
+                scenes = obsScenes,
+                currentScene = obsCurrentScene,
+                streamStatus = obsStreamStatus,
+                recordStatus = obsRecordStatus,
+                stats = obsStats,
+                onSelectScene = { obsController.selectScene(it) },
+                onToggleStream = { obsController.toggleStream() },
+                onToggleRecord = { obsController.toggleRecord() },
+                showHints = settings?.hintsEnabled != false,
+                onClose = { panels.close(PANEL_OBS) },
+            )
         }
 
-        overlays.regionOf(PANEL_STATS_HELP)?.let { region ->
-            OverlaySlot(region) {
-                InfoPanel(
-                    title = "Параметры потока",
-                    text = STATS_HELP,
-                    onClose = { overlays.close(PANEL_STATS_HELP) },
-                )
-            }
+        PanelSlot(panels.isOpen(PANEL_STATS_HELP)) {
+            InfoPanel(
+                title = "Параметры потока",
+                text = STATS_HELP,
+                onClose = { panels.close(PANEL_STATS_HELP) },
+            )
         }
     }
 }
+
+private fun glyphColor(active: Boolean): Color = if (active) Color.White else DiscordColors.accent
 
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"
@@ -554,6 +462,125 @@ private const val STATS_HELP =
         "Помогает: ниже битрейт (потолок в термопанели 🔥), остудить телефон, выключить превью."
 
 @Composable
+private fun StatsPanel(
+    controller: StreamController,
+    settings: StreamSettings?,
+    phase: StreamPhase,
+    bitrateCap: Float?,
+    mitigations: ThermalMitigations,
+    onUpdateSettings: (StreamSettings) -> Unit,
+    onHelp: () -> Unit,
+    onClose: () -> Unit,
+) {
+    StreetPanelScaffold(title = "Статистика", onClose = onClose) {
+        if (settings != null) {
+            Text(
+                text = "${settings.width}×${settings.height}@${settings.fps} • ${settings.videoBitrateKbps} kbps",
+                style = MaterialTheme.typography.bodySmall,
+                color = DiscordColors.textSecondary,
+            )
+            val destination = if (settings.bondingEnabled) {
+                "srtla://${settings.srtlaHost}:${settings.srtlaPort}"
+            } else {
+                settings.url
+            }
+            Text(
+                text = "$destination → live/${settings.streamName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = DiscordColors.textMuted,
+            )
+        }
+        HudStats(controller, onHelp = onHelp)
+        LinksPanel(controller)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "Потолок битрейта".upper(),
+            color = DiscordColors.accent,
+            style = streetLabel,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            CapChip("Макс", null, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+            CapChip("75%", 0.75f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+            CapChip("50%", 0.5f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+            CapChip("25%", 0.25f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
+        }
+        if (settings?.hintsEnabled != false) {
+            Text(
+                text = "Ручник для энкодера: 50% — это половина максимума.\n" +
+                    "Прижал — телефон остывает, картинка чуть мылит, зато эфир живёт 🧯",
+                color = DiscordColors.textMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (settings != null) {
+            // ABR применяется на старте сессии, поэтому в эфире переключение заперто
+            val live = phase !is StreamPhase.Idle
+            Text(
+                text = "Адаптивный битрейт (ABR)".upper(),
+                color = DiscordColors.accent,
+                style = streetLabel,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                StreetChip("Вкл", settings.abrEnabled, Modifier.weight(1f), enabled = !live) {
+                    onUpdateSettings(settings.copy(abrEnabled = true))
+                }
+                StreetChip("Выкл", !settings.abrEnabled, Modifier.weight(1f), enabled = !live) {
+                    onUpdateSettings(settings.copy(abrEnabled = false))
+                }
+            }
+            if (settings.abrEnabled) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    StreetChip("−", false, Modifier.weight(1f), enabled = !live) {
+                        onUpdateSettings(
+                            settings.copy(
+                                minVideoBitrateKbps = (settings.minVideoBitrateKbps - 100).coerceAtLeast(300),
+                            ),
+                        )
+                    }
+                    Text(
+                        text = "мин ${settings.minVideoBitrateKbps}",
+                        color = DiscordColors.textSecondary,
+                        style = MaterialTheme.typography.labelMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(2f),
+                    )
+                    StreetChip("+", false, Modifier.weight(1f), enabled = !live) {
+                        onUpdateSettings(
+                            settings.copy(
+                                minVideoBitrateKbps = (settings.minVideoBitrateKbps + 100)
+                                    .coerceAtMost(settings.videoBitrateKbps),
+                            ),
+                        )
+                    }
+                }
+            }
+            // подпись про блокировку в эфире — функциональная, живёт и без подсказок
+            if (live || settings.hintsEnabled) {
+                Text(
+                    text = if (live) {
+                        "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅"
+                    } else {
+                        "Мягко приседает качеством вместо слайд-шоу."
+                    },
+                    color = DiscordColors.textMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
     val stats by controller.stats.collectAsState()
     val health by controller.health.collectAsState()
@@ -562,9 +589,8 @@ private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
     // чтобы панель сразу выглядела так, какой будет в эфире
     val s = stats
     val h = health
-    Spacer(Modifier.height(6.dp))
     Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
@@ -572,41 +598,30 @@ private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
             onLongClick = onHelp,
         ),
     ) {
-        Text(
-            text = "↑ ${s?.sendRateKbps ?: "—"} kbps" + if (bitrate > 0) " · цель $bitrate" else "",
-            style = MaterialTheme.typography.bodySmall,
-            color = DiscordColors.textPrimary,
+        StreetStatCard(
+            label = "Исходящий битрейт",
+            value = s?.sendRateKbps?.toString() ?: "—",
+            unit = "kbps",
+            sub = if (bitrate > 0) "цель $bitrate kbps" else null,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SignalCell(h?.rttLevel, "RTT ${s?.rttMs ?: "—"}мс")
-            SignalCell(h?.bufLevel, "Буфер ${s?.sndBufferMs ?: "—"}мс")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StreetStatCard("RTT", s?.rttMs?.toString() ?: "—", Modifier.weight(1f), unit = "мс", labelColor = healthColor(h?.rttLevel))
+            StreetStatCard("Буфер", s?.sndBufferMs?.toString() ?: "—", Modifier.weight(1f), unit = "мс", labelColor = healthColor(h?.bufLevel))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SignalCell(h?.lossLevel, "Потери ${h?.lossPerSec ?: "—"}/с")
-            SignalCell(h?.retransLevel, "Ретр ${h?.retransPerSec ?: "—"}/с")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StreetStatCard("Потери", h?.lossPerSec?.toString() ?: "—", Modifier.weight(1f), unit = "/с", labelColor = healthColor(h?.lossLevel))
+            StreetStatCard("Дропы", h?.dropPerSec?.toString() ?: "—", Modifier.weight(1f), unit = "/с", labelColor = healthColor(h?.dropLevel))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SignalCell(h?.dropLevel, "Дропы ${h?.dropPerSec ?: "—"}/с")
-            SignalCell(null, "Полоса ${s?.bandwidthKbps ?: "—"}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StreetStatCard("Ретр", h?.retransPerSec?.toString() ?: "—", Modifier.weight(1f), unit = "/с", labelColor = healthColor(h?.retransLevel))
+            StreetStatCard("Полоса", s?.bandwidthKbps?.toString() ?: "—", Modifier.weight(1f), unit = "kbps")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SignalCell(h?.encoderLevel, "Энкодер ${s?.let { formatLag(it.encoderLagMs) } ?: "—"}")
-        }
-    }
-}
-
-@Composable
-private fun SignalCell(level: HealthLevel?, text: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.width(132.dp),
-    ) {
-        StatusDot(healthColor(level))
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = DiscordColors.textSecondary,
+        StreetStatCard(
+            label = "Энкодер",
+            value = s?.let { formatLag(it.encoderLagMs) } ?: "—",
+            modifier = Modifier.fillMaxWidth(),
+            labelColor = healthColor(h?.encoderLevel),
         )
     }
 }
@@ -616,10 +631,9 @@ private fun LinksPanel(controller: StreamController) {
     val links by controller.links.collectAsState()
     if (links.isEmpty()) return
     val totalKbps = links.sumOf { it.sendRateKbps }.coerceAtLeast(1)
-    Spacer(Modifier.height(6.dp))
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.width(280.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         links.forEach { link ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -635,26 +649,26 @@ private fun LinksPanel(controller: StreamController) {
                     text = link.transport.label(),
                     style = MaterialTheme.typography.bodySmall,
                     color = DiscordColors.textSecondary,
-                    modifier = Modifier.width(72.dp),
+                    modifier = Modifier.width(60.dp),
                 )
                 Text(
                     text = formatRate(link.sendRateKbps),
                     style = MaterialTheme.typography.bodySmall,
                     color = DiscordColors.textPrimary,
-                    modifier = Modifier.width(86.dp),
+                    modifier = Modifier.width(72.dp),
                 )
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(DiscordColors.elevated),
+                        .background(DiscordColors.plate),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth((link.sendRateKbps.toFloat() / totalKbps).coerceIn(0f, 1f))
                             .fillMaxHeight()
-                            .background(DiscordColors.blurple, RoundedCornerShape(2.dp)),
+                            .background(DiscordColors.accent, RoundedCornerShape(2.dp)),
                     )
                 }
             }
@@ -675,58 +689,13 @@ private fun formatRate(kbps: Int): String = if (kbps >= 1000) "${kbps / 1000}.${
 private fun formatLag(ms: Int): String = if (ms >= 1000) "+${ms / 1000}.${ms % 1000 / 100}с" else "${ms}мс"
 
 @Composable
-private fun RowScope.BoolChip(
-    text: String,
-    selected: Boolean,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = when {
-            !enabled -> DiscordColors.textMuted
-            selected -> Color.White
-            else -> DiscordColors.textSecondary
-        },
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                when {
-                    selected && enabled -> DiscordColors.blurple
-                    selected -> DiscordColors.blurple.copy(alpha = 0.4f)
-                    else -> DiscordColors.elevated
-                },
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 6.dp),
-    )
-}
-
-@Composable
 private fun RowScope.CapChip(
     label: String,
     value: Float?,
     selected: Float?,
     onSelect: (Float?) -> Unit,
 ) {
-    val active = selected == value
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (active) Color.White else DiscordColors.textSecondary,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (active) DiscordColors.blurple else DiscordColors.elevated)
-            .clickable { onSelect(value) }
-            .padding(vertical = 6.dp),
-    )
+    StreetChip(label, selected == value, Modifier.weight(1f)) { onSelect(value) }
 }
 
 private fun Context.findActivity(): Activity? {
@@ -736,49 +705,4 @@ private fun Context.findActivity(): Activity? {
         current = current.baseContext
     }
     return null
-}
-
-@Composable
-private fun StatusLine(phase: StreamPhase) {
-    val (color, label) = when (phase) {
-        is StreamPhase.Idle -> DiscordColors.textMuted to "Не в эфире"
-        is StreamPhase.Connecting -> DiscordColors.yellow to "Подключение…"
-        is StreamPhase.Live -> DiscordColors.green to "В ЭФИРЕ"
-        is StreamPhase.Retrying ->
-            DiscordColors.danger to "Реконнект #${phase.attempt}${phase.cause?.let { ": $it" } ?: ""}"
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(color)
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = label,
-            color = DiscordColors.textPrimary,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (phase is StreamPhase.Live) {
-            Spacer(Modifier.width(12.dp))
-            LiveTimer(phase.sinceEpochMs)
-        }
-    }
-}
-
-@Composable
-private fun LiveTimer(sinceEpochMs: Long) {
-    var elapsedSeconds by remember(sinceEpochMs) { mutableLongStateOf(0L) }
-    LaunchedEffect(sinceEpochMs) {
-        while (true) {
-            elapsedSeconds = (System.currentTimeMillis() - sinceEpochMs) / 1000
-            delay(1_000)
-        }
-    }
-    val hours = elapsedSeconds / 3600
-    val minutes = (elapsedSeconds % 3600) / 60
-    val seconds = elapsedSeconds % 60
-    fun Long.two(): String = toString().padStart(2, '0')
-    Text(
-        text = "${hours.two()}:${minutes.two()}:${seconds.two()}",
-        color = DiscordColors.textPrimary,
-        style = MaterialTheme.typography.titleSmall,
-    )
 }
