@@ -15,19 +15,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +38,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import n7.bondcast.DiscordColors
+import n7.bondcast.ui.street.InfoIcon
+import n7.bondcast.ui.street.InfoIconSize
+import n7.bondcast.ui.street.StreetTooltip
 import n7.bondcast.ui.street.streetLabel
 import n7.bondcast.ui.street.streetTitle
 import n7.bondcast.ui.street.upper
@@ -105,46 +108,24 @@ public fun RowDivider() {
     )
 }
 
-@Composable
-public fun InfoButton(onClick: () -> Unit) {
-    Text(
-        text = "ⓘ",
-        color = DiscordColors.textMuted,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .clickable(onClick = onClick)
-            .padding(4.dp),
-    )
-}
+private val InfoButtonTouchSize = 28.dp
 
+/** Значок ⓘ, по тапу открывающий всплывающую подсказку с треугольником-указателем на себя. */
 @Composable
-public fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Понятно", color = DiscordColors.blurple)
-            }
-        },
-        title = {
-            Text(
-                text = title,
-                color = DiscordColors.textPrimary,
-                fontWeight = FontWeight.Bold,
-            )
-        },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    text = text,
-                    color = DiscordColors.textSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        },
-        containerColor = DiscordColors.card,
-    )
+public fun InfoButton(info: String, modifier: Modifier = Modifier) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(
+        modifier = modifier
+            .size(InfoButtonTouchSize)
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = { expanded = !expanded }),
+        contentAlignment = Alignment.Center,
+    ) {
+        InfoIcon(color = DiscordColors.textMuted, modifier = Modifier.size(InfoIconSize))
+        if (expanded) {
+            StreetTooltip(text = info, onDismissRequest = { expanded = false })
+        }
+    }
 }
 
 /**
@@ -152,7 +133,7 @@ public fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
  * чтобы соседние поля в Row не разъезжались по вертикали, когда ⓘ есть не у всех.
  */
 @Composable
-private fun FieldLabel(label: String, onInfo: (() -> Unit)?) {
+private fun FieldLabel(label: String, info: String?) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.heightIn(min = 32.dp),
@@ -162,9 +143,9 @@ private fun FieldLabel(label: String, onInfo: (() -> Unit)?) {
             color = DiscordColors.textMuted,
             style = MaterialTheme.typography.labelMedium,
         )
-        if (onInfo != null) {
+        if (info != null) {
             Spacer(Modifier.width(6.dp))
-            InfoButton(onInfo)
+            InfoButton(info)
         }
     }
 }
@@ -177,10 +158,10 @@ public fun DiscordField(
     modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Text,
     isError: Boolean = false,
-    onInfo: (() -> Unit)? = null,
+    info: String? = null,
 ) {
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        FieldLabel(label, onInfo)
+        FieldLabel(label, info)
         Spacer(Modifier.height(6.dp))
         Box(
             modifier = Modifier
@@ -216,10 +197,10 @@ public fun DiscordRangeField(
     modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Number,
     isError: Boolean = false,
-    onInfo: (() -> Unit)? = null,
+    info: String? = null,
 ) {
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        FieldLabel(label, onInfo)
+        FieldLabel(label, info)
         Spacer(Modifier.height(6.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -263,14 +244,14 @@ public fun DiscordStepperField(
     modifier: Modifier = Modifier,
     step: Int = 100,
     isError: Boolean = false,
-    onInfo: (() -> Unit)? = null,
+    info: String? = null,
 ) {
     fun nudge(delta: Int) {
         val current = value.toIntOrNull() ?: min
         onValueChange((current + delta).coerceIn(min, max).toString())
     }
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        FieldLabel(label, onInfo)
+        FieldLabel(label, info)
         Spacer(Modifier.height(6.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -351,7 +332,7 @@ public fun DiscordSegmentedRow(
     options: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    onInfo: (() -> Unit)? = null,
+    info: String? = null,
 ) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -360,9 +341,9 @@ public fun DiscordSegmentedRow(
                 color = DiscordColors.textMuted,
                 style = MaterialTheme.typography.labelMedium,
             )
-            if (onInfo != null) {
+            if (info != null) {
                 Spacer(Modifier.width(6.dp))
-                InfoButton(onInfo)
+                InfoButton(info)
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -403,7 +384,7 @@ public fun DiscordSwitchRow(
     label: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    onInfo: (() -> Unit)? = null,
+    info: String? = null,
 ) {
     Row(
         modifier = Modifier
@@ -417,8 +398,8 @@ public fun DiscordSwitchRow(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f),
         )
-        if (onInfo != null) {
-            InfoButton(onInfo)
+        if (info != null) {
+            InfoButton(info)
             Spacer(Modifier.width(8.dp))
         }
         Switch(

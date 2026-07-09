@@ -11,7 +11,6 @@ import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.NightModeIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,12 +80,12 @@ import n7.bondcast.ui.components.ThermalPanel
 import n7.bondcast.ui.components.healthColor
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
+import n7.bondcast.ui.street.StreetSectionLabel
 import n7.bondcast.ui.street.StreetStatCard
-import n7.bondcast.ui.street.streetLabel
-import n7.bondcast.ui.street.upper
 import n7.bondcast.uvc.UvcPreviewBus
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
+import kotlin.math.roundToInt
 
 @Composable
 public fun StreamScreen(
@@ -356,7 +355,6 @@ public fun StreamScreen(
                 bitrateCap = bitrateCap,
                 mitigations = mitigations,
                 onUpdateSettings = onUpdateSettings,
-                onHelp = { panels.toggle(PANEL_STATS_HELP) },
                 onClose = { panels.close(PANEL_STATS) },
             )
         }
@@ -426,13 +424,6 @@ public fun StreamScreen(
             )
         }
 
-        PanelSlot(panels.isOpen(PANEL_STATS_HELP)) {
-            InfoPanel(
-                title = "Параметры потока",
-                text = STATS_HELP,
-                onClose = { panels.close(PANEL_STATS_HELP) },
-            )
-        }
     }
 }
 
@@ -441,25 +432,53 @@ private fun glyphColor(active: Boolean): Color = if (active) Color.White else Di
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"
 private const val PANEL_CAMERAS = "cameras"
-private const val PANEL_STATS_HELP = "stats_help"
 private const val PANEL_OBS = "obs"
 
-private const val STATS_HELP =
-    "Цвет точки: зелёная — норма, жёлтая — внимание, красная — проблема. " +
-        "Цвет иконки статистики = худшая из метрик (видно и со свёрнутой панелью).\n\n" +
-        "RTT — задержка до сервера (туда-обратно). Растёт → сеть далёкая или перегружена. " +
-        "Помогает: сервер ближе, выше latency, сменить сеть/точку.\n\n" +
-        "Буфер отправки — сколько видео скопилось на отправку. Тянется к latency → канал не успевает, " +
-        "дропы вот-вот. Помогает: ниже битрейт (или ABR), выше latency.\n\n" +
-        "Потери/с — пакеты, потерянные в сети; SRT досылает их ретрансмитами. " +
-        "Немного на сотовой — норма, много → слабый линк.\n\n" +
-        "Ретрансмиты/с — повторные отправки из-за потерь. Высокие → сеть теряет, но SRT пока вытягивает.\n\n" +
-        "Дропы/с — пакеты, которые SRT ВЫБРОСИЛ, не успев доставить. Любой дроп = фриз/артефакт у зрителя. " +
-        "Срочно: ниже битрейт, выше latency, включить ABR.\n\n" +
-        "Полоса (SRT) — оценка ёмкости канала. Держи битрейт заметно ниже неё (примерно 70%).\n\n" +
-        "Энкодер — насколько кодирование видео отстаёт от реального времени. Растёт → телефон не успевает " +
-        "(перегрев или битрейт не по силам), у зрителя рывки и растущая задержка, сеть тут НЕ виновата. " +
-        "Помогает: ниже битрейт (потолок в термопанели 🔥), остудить телефон, выключить превью."
+private const val INFO_BITRATE =
+    "Сколько видео реально улетает в сеть прямо сейчас — сравни с целью в подписи снизу " +
+        "(это твой битрейт из настроек). Держится у цели — всё ок, про это же говорит цвет карточки. " +
+        "Просел — гляди на RTT, Буфер и Энкодер ниже: один из них подскажет, кто тормозит — сеть или телефон."
+private const val INFO_RTT =
+    "Время, за которое сигнал добежал до сервера и обратно — как пинг в игре. " +
+        "До ~120 мс — комфортно, 120–300 — сеть напряжена, больше — уже далеко или забита. " +
+        "Помогает: сервер ближе, выше latency в настройках, сменить сеть или точку, где ловит."
+private const val INFO_BUFFER =
+    "Видео, которое телефон уже подготовил, но сеть ещё не подтвердила приём — копится, " +
+        "если канал не успевает. Почти пустой — хорошо. Подбирается к latency из настроек — " +
+        "дропы вот-вот. Помогает: сбавить битрейт (или включить ABR), поднять latency."
+private const val INFO_LOSS =
+    "Пакеты, которые где-то в сети потерялись; SRT замечает это и досылает их заново " +
+        "(см. Ретр рядом). Немного на сотовой сети — обычное дело, само лечится ретрансмитами. " +
+        "Много — сеть слабая или перегружена, стрим на грани дропов."
+private const val INFO_DROP =
+    "Пакеты, которые SRT сам выбросил, не успев довезти — досылать было уже поздно, " +
+        "зритель их не увидит. Любой дроп = фриз или квадратики в эфире. " +
+        "Срочно: сбавь битрейт, подними latency в настройках, включи ABR."
+private const val INFO_RETRANS =
+    "Сколько раз SRT досылал пакеты повторно из-за потерь (см. Потери рядом) — " +
+        "это защита от потерь, а не отдельная беда. Немного — нормальная работа SRT. " +
+        "Много и постоянно — сети не хватает места под твой битрейт."
+private const val INFO_BANDWIDTH =
+    "Полоса — прикидка SRT, сколько ещё способен пропустить канал сверх того, что ты уже шлёшь. " +
+        "Это не тревога и не здоровье соединения — просто ориентир, потому и без цвета. " +
+        "Держи битрейт заметно (процентов на 30) ниже неё. На мобильном и в бондинге цифра " +
+        "может дрожать и привирать — это нормально, не воспринимай её буквально."
+private const val INFO_ENCODER =
+    "Насколько кодирование видео отстаёт от реального времени — успевает ли телефон сжимать " +
+        "кадры, пока они летят с камеры. Растёт → телефон не тянет (греется или битрейт не по зубам), " +
+        "у зрителя рывки и растущая задержка, сеть тут НЕ виновата. " +
+        "Помогает: ниже битрейт (потолок — в термопанели 🔥), остудить телефон, выключить превью."
+private const val INFO_BITRATE_CAP =
+    "Ручной рычаг, а не автомат: жмёшь — и битрейт мгновенно падает от потолка из настроек " +
+        "(50% значит половину), без раздумий и задержки. Это не то же самое, что ABR ниже — " +
+        "тот следит только за сетью и режет постепенно. Потолок нужен для перегрева " +
+        "(энкодер не тянет — сеть тут ни при чём) или когда хочешь срезать сейчас, а не ждать. " +
+        "Работает и прямо в эфире, без «Стоп»."
+private const val INFO_ABR =
+    "Сам подруливает битрейт под сеть на лету: канал не тянет — снижает, отпустило — поднимает " +
+        "обратно к потолку. Мягко приседает качеством вместо стоп-кадра. " +
+        "Включается один раз при старте эфира и дальше держит курс сама — поэтому вкл/выкл и минимум " +
+        "трогаются только пока не в эфире."
 
 @Composable
 private fun StatsPanel(
@@ -469,35 +488,13 @@ private fun StatsPanel(
     bitrateCap: Float?,
     mitigations: ThermalMitigations,
     onUpdateSettings: (StreamSettings) -> Unit,
-    onHelp: () -> Unit,
     onClose: () -> Unit,
 ) {
     StreetPanelScaffold(title = "Статистика", onClose = onClose) {
-        if (settings != null) {
-            Text(
-                text = "${settings.width}×${settings.height}@${settings.fps} • ${settings.videoBitrateKbps} kbps",
-                style = MaterialTheme.typography.bodySmall,
-                color = DiscordColors.textSecondary,
-            )
-            val destination = if (settings.bondingEnabled) {
-                "srtla://${settings.srtlaHost}:${settings.srtlaPort}"
-            } else {
-                settings.url
-            }
-            Text(
-                text = "$destination → live/${settings.streamName}",
-                style = MaterialTheme.typography.bodySmall,
-                color = DiscordColors.textMuted,
-            )
-        }
-        HudStats(controller, onHelp = onHelp)
+        HudStats(controller)
         LinksPanel(controller)
         Spacer(Modifier.height(2.dp))
-        Text(
-            text = "Потолок битрейта".upper(),
-            color = DiscordColors.accent,
-            style = streetLabel,
-        )
+        StreetSectionLabel("Потолок битрейта", info = INFO_BITRATE_CAP)
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -507,22 +504,18 @@ private fun StatsPanel(
             CapChip("50%", 0.5f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
             CapChip("25%", 0.25f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
         }
-        if (settings?.hintsEnabled != false) {
+        // цифра меняется сразу по тапу — не ждём тика стрима, считаем от потолка из настроек
+        if (bitrateCap != null && settings != null) {
             Text(
-                text = "Ручник для энкодера: 50% — это половина максимума.\n" +
-                    "Прижал — телефон остывает, картинка чуть мылит, зато эфир живёт 🧯",
-                color = DiscordColors.textMuted,
+                text = "Режем до ${(settings.videoBitrateKbps * bitrateCap).roundToInt()} kbps",
+                color = DiscordColors.textSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
         if (settings != null) {
             // ABR применяется на старте сессии, поэтому в эфире переключение заперто
             val live = phase !is StreamPhase.Idle
-            Text(
-                text = "Адаптивный битрейт (ABR)".upper(),
-                color = DiscordColors.accent,
-                style = streetLabel,
-            )
+            StreetSectionLabel("Адаптивный битрейт (ABR)", info = INFO_ABR)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -565,13 +558,9 @@ private fun StatsPanel(
                 }
             }
             // подпись про блокировку в эфире — функциональная, живёт и без подсказок
-            if (live || settings.hintsEnabled) {
+            if (live) {
                 Text(
-                    text = if (live) {
-                        "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅"
-                    } else {
-                        "Мягко приседает качеством вместо слайд-шоу."
-                    },
+                    text = "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅",
                     color = DiscordColors.textMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -581,7 +570,7 @@ private fun StatsPanel(
 }
 
 @Composable
-private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
+private fun HudStats(controller: StreamController) {
     val stats by controller.stats.collectAsState()
     val health by controller.health.collectAsState()
     val bitrate by controller.videoBitrateKbps.collectAsState()
@@ -589,39 +578,55 @@ private fun HudStats(controller: StreamController, onHelp: () -> Unit) {
     // чтобы панель сразу выглядела так, какой будет в эфире
     val s = stats
     val h = health
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.combinedClickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = {},
-            onLongClick = onHelp,
-        ),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StreetStatCard(
             label = "Исходящий битрейт",
             value = s?.sendRateKbps?.toString() ?: "—",
             unit = "kbps",
             sub = if (bitrate > 0) "цель $bitrate kbps" else null,
             modifier = Modifier.fillMaxWidth(),
+            labelColor = healthColor(h?.rateLevel),
+            info = INFO_BITRATE,
         )
+        // база сети рядом: RTT — задержка, Полоса — сколько ещё есть в запасе
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StreetStatCard("RTT", s?.rttMs?.toString() ?: "—", Modifier.weight(1f), unit = "мс", labelColor = healthColor(h?.rttLevel))
-            StreetStatCard("Буфер", s?.sndBufferMs?.toString() ?: "—", Modifier.weight(1f), unit = "мс", labelColor = healthColor(h?.bufLevel))
+            StreetStatCard(
+                "RTT", s?.rttMs?.toString() ?: "—", Modifier.weight(1f),
+                unit = "мс", labelColor = healthColor(h?.rttLevel), info = INFO_RTT,
+            )
+            StreetStatCard(
+                "Полоса", s?.bandwidthKbps?.toString() ?: "—", Modifier.weight(1f),
+                unit = "kbps", labelColor = DiscordColors.textSecondary, info = INFO_BANDWIDTH,
+            )
         }
+        // причина рядом со следствием: Потери → Ретр их же лечит
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StreetStatCard("Потери", h?.lossPerSec?.toString() ?: "—", Modifier.weight(1f), unit = "/с", labelColor = healthColor(h?.lossLevel))
-            StreetStatCard("Дропы", h?.dropPerSec?.toString() ?: "—", Modifier.weight(1f), unit = "/с", labelColor = healthColor(h?.dropLevel))
+            StreetStatCard(
+                "Потери", h?.lossPerSec?.toString() ?: "—", Modifier.weight(1f),
+                unit = "/с", labelColor = healthColor(h?.lossLevel), info = INFO_LOSS,
+            )
+            StreetStatCard(
+                "Ретр", h?.retransPerSec?.toString() ?: "—", Modifier.weight(1f),
+                unit = "/с", labelColor = healthColor(h?.retransLevel), info = INFO_RETRANS,
+            )
         }
+        // причина рядом со следствием: Буфер переполняется → идут Дропы
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StreetStatCard("Ретр", h?.retransPerSec?.toString() ?: "—", Modifier.weight(1f), unit = "/с", labelColor = healthColor(h?.retransLevel))
-            StreetStatCard("Полоса", s?.bandwidthKbps?.toString() ?: "—", Modifier.weight(1f), unit = "kbps")
+            StreetStatCard(
+                "Буфер", s?.sndBufferMs?.toString() ?: "—", Modifier.weight(1f),
+                unit = "мс", labelColor = healthColor(h?.bufLevel), info = INFO_BUFFER,
+            )
+            StreetStatCard(
+                "Дропы", h?.dropPerSec?.toString() ?: "—", Modifier.weight(1f),
+                unit = "/с", labelColor = healthColor(h?.dropLevel), info = INFO_DROP,
+            )
         }
         StreetStatCard(
             label = "Энкодер",
             value = s?.let { formatLag(it.encoderLagMs) } ?: "—",
             modifier = Modifier.fillMaxWidth(),
             labelColor = healthColor(h?.encoderLevel),
+            info = INFO_ENCODER,
         )
     }
 }
