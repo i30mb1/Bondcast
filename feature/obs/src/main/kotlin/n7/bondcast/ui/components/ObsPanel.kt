@@ -34,11 +34,21 @@ public fun ObsPanel(
     onToggleRecord: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    showHints: Boolean = true,
 ) {
     val connected = phase is ObsPhase.Connected
     val leading: @Composable () -> Unit = { StatusDot(obsPhaseColor(phase)) }
-    StreetPanelScaffold(title = "OBS · ${phaseLabel(phase)}", onClose = onClose, modifier = modifier, leading = leading) {
+    StreetPanelScaffold(
+        title = "OBS · ${phaseLabel(phase)}",
+        onClose = onClose,
+        modifier = modifier,
+        leading = leading,
+        info = "Пульт от OBS на компе — прямо из телефона 🎬\n\n" +
+            "Что умеет:\n" +
+            "• тапнуть сцену — она уйдёт в программу\n" +
+            "• запустить/остановить эфир OBS\n" +
+            "• включить/выключить запись\n\n" +
+            "Не подключается? Проверь: OBS запущен, WebSocket включён, фаервол пускает.",
+    ) {
         when (phase) {
             ObsPhase.AuthFailed -> Text(
                 text = "OBS не принял пароль. Проверь его в настройках ⚙ и переоткрой панель.",
@@ -100,14 +110,6 @@ public fun ObsPanel(
             }
         }
 
-        if (showHints && connected) {
-            Text(
-                text = "Пульт от OBS на компе: тапни сцену — и она в программе. " +
-                    "Кнопки командуют эфиром и записью самого OBS 🎬",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
     }
 }
 

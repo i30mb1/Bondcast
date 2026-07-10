@@ -38,6 +38,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import n7.bondcast.DiscordColors
+import n7.bondcast.ui.street.BackIcon
+import n7.bondcast.ui.street.BackIconSize
 import n7.bondcast.ui.street.InfoIcon
 import n7.bondcast.ui.street.InfoIconSize
 import n7.bondcast.ui.street.StreetTooltip
@@ -57,14 +59,14 @@ public fun DiscordTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
-            Text(
-                text = "←",
-                color = DiscordColors.textPrimary,
-                style = MaterialTheme.typography.headlineSmall,
+            Box(
                 modifier = Modifier
+                    .clip(RoundedCornerShape(50))
                     .clickable(onClick = onBack)
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-            )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                BackIcon(color = DiscordColors.textPrimary, modifier = Modifier.size(BackIconSize))
+            }
             Spacer(Modifier.width(4.dp))
         } else {
             Spacer(Modifier.width(8.dp))

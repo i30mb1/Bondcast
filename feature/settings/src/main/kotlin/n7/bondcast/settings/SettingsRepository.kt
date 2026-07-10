@@ -33,7 +33,6 @@ public class SettingsRepository(private val context: Context) {
             bondingEnabled = preferences[BONDING_ENABLED] ?: default.bondingEnabled,
             srtlaHost = preferences[SRTLA_HOST] ?: default.srtlaHost,
             srtlaPort = preferences[SRTLA_PORT] ?: default.srtlaPort,
-            hintsEnabled = preferences[HINTS_ENABLED] ?: default.hintsEnabled,
             obsEnabled = preferences[OBS_ENABLED] ?: default.obsEnabled,
             obsHost = preferences[OBS_HOST] ?: default.obsHost,
             obsPort = preferences[OBS_PORT] ?: default.obsPort,
@@ -58,7 +57,6 @@ public class SettingsRepository(private val context: Context) {
             preferences[BONDING_ENABLED] = settings.bondingEnabled
             preferences[SRTLA_HOST] = settings.srtlaHost
             preferences[SRTLA_PORT] = settings.srtlaPort
-            preferences[HINTS_ENABLED] = settings.hintsEnabled
             preferences[OBS_ENABLED] = settings.obsEnabled
             preferences[OBS_HOST] = settings.obsHost
             preferences[OBS_PORT] = settings.obsPort
@@ -82,7 +80,6 @@ public class SettingsRepository(private val context: Context) {
         val BONDING_ENABLED = booleanPreferencesKey("bonding_enabled")
         val SRTLA_HOST = stringPreferencesKey("srtla_host")
         val SRTLA_PORT = intPreferencesKey("srtla_port")
-        val HINTS_ENABLED = booleanPreferencesKey("hints_enabled")
         val OBS_ENABLED = booleanPreferencesKey("obs_enabled")
         val OBS_HOST = stringPreferencesKey("obs_host")
         val OBS_PORT = intPreferencesKey("obs_port")

@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,24 +24,21 @@ import n7.bondcast.temperatureColor
 import n7.bondcast.thermal.ThermalState
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
+import n7.bondcast.ui.street.StreetSectionLabel
 import n7.bondcast.ui.street.StreetShape
+import n7.bondcast.ui.street.StreetStatCard
 import n7.bondcast.ui.street.pressBounce
-import n7.bondcast.ui.street.streetLabel
-import n7.bondcast.ui.street.upper
 import kotlin.math.roundToInt
 
 @Composable
 public fun ThermalPanel(
     state: ThermalState,
-    effectiveBitrateKbps: Int,
     brightness: Float?,
     onBrightness: (Float?) -> Unit,
-    bitrateCapFraction: Float?,
     onOpenCameras: () -> Unit,
     onOpenStats: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    showHints: Boolean = true,
 ) {
     val leading: @Composable () -> Unit = {
         Box(
@@ -52,20 +48,54 @@ public fun ThermalPanel(
                 .background(temperatureColor(state.heat)),
         )
     }
-    StreetPanelScaffold(title = "Температура", onClose = onClose, modifier = modifier, leading = leading) {
-        InfoLine("Статус: ${state.statusLabel}")
-        state.headroom?.let {
-            InfoLine("Тепловая нагрузка: ${(it * 100).roundToInt()}%")
-        }
-        state.batteryTempC?.let {
-            InfoLine("Батарея: ${"%.1f".format(it)}°C")
-        }
-        InfoLine(
-            text = "Битрейт: $effectiveBitrateKbps kbps" +
-                if (bitrateCapFraction != null) " (придавлен потолком)" else "",
+    StreetPanelScaffold(
+        title = "Температура",
+        onClose = onClose,
+        modifier = modifier,
+        leading = leading,
+        info = INFO_THERMAL,
+    ) {
+        StreetStatCard(
+            label = "Статус",
+            value = state.statusLabel,
+            modifier = Modifier.fillMaxWidth(),
+            labelColor = temperatureColor(state.heat),
+            info = INFO_THERMAL_STATUS,
         )
+        val headroom = state.headroom
+        val battery = state.batteryTempC
+        val loadCard: (@Composable RowScope.() -> Unit)? = headroom?.let {
+            {
+                StreetStatCard(
+                    label = "Нагрузка",
+                    value = (it * 100).roundToInt().toString(),
+                    modifier = Modifier.weight(1f),
+                    unit = "%",
+                    labelColor = temperatureColor(it.coerceIn(0f, 1f)),
+                    info = INFO_THERMAL_LOAD,
+                )
+            }
+        }
+        val batteryCard: (@Composable RowScope.() -> Unit)? = battery?.let {
+            {
+                StreetStatCard(
+                    label = "Батарея",
+                    value = "%.1f".format(it),
+                    modifier = Modifier.weight(1f),
+                    unit = "°C",
+                    labelColor = DiscordColors.textSecondary,
+                    info = INFO_THERMAL_BATTERY,
+                )
+            }
+        }
+        if (loadCard != null || batteryCard != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                loadCard?.invoke(this)
+                batteryCard?.invoke(this)
+            }
+        }
 
-        Text(text = "Яркость экрана".upper(), color = DiscordColors.accent, style = streetLabel)
+        StreetSectionLabel("Яркость экрана")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BrightnessChip("Авто", null, brightness, onBrightness)
             BrightnessChip("50%", 0.5f, brightness, onBrightness)
@@ -76,19 +106,9 @@ public fun ThermalPanel(
         // те же пороги, что красят пламя: до MODERATE телефон справляется сам
         val needsCooling = state.status >= PowerManager.THERMAL_STATUS_MODERATE || state.heat >= 0.65f
         if (needsCooling) {
-            Text(
-                text = "Телефон намекает, что он не гриль. Что поможет:",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            StreetSectionLabel("Что сделать, чтобы остыть")
             AdviceRow("🎥 Вырубить превью — экран греет не хуже энкодера") { onOpenCameras() }
             AdviceRow("📉 Прижать потолок битрейта — энкодер скажет спасибо") { onOpenStats() }
-        } else if (showHints) {
-            Text(
-                text = "Телефону хорошо. Стримь и ни о чём не думай 😎",
-                color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
     }
 }
@@ -112,15 +132,6 @@ private fun AdviceRow(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun InfoLine(text: String) {
-    Text(
-        text = text,
-        color = DiscordColors.textSecondary,
-        style = MaterialTheme.typography.bodySmall,
-    )
-}
-
-@Composable
 private fun RowScope.BrightnessChip(
     label: String,
     value: Float?,
@@ -129,3 +140,29 @@ private fun RowScope.BrightnessChip(
 ) {
     StreetChip(label, selected == value, Modifier.weight(1f)) { onSelect(value) }
 }
+
+private const val INFO_THERMAL =
+    "Термометр телефона в реальном времени. Пока прохладно — стримь и ни о чём не думай 😎\n\n" +
+        "Начнёт греться — цвет поедет к красному, а ниже появятся кнопки-советы, как остыть."
+private const val INFO_THERMAL_STATUS =
+    "Как сам телефон оценивает свой нагрев: от «норма» до «аварийный». " +
+        "С «умеренного» система уже сама придушивает частоты — кадры могут поехать.\n\n" +
+        "Что делать при нагреве:\n" +
+        "• выключить превью экрана (панель камеры)\n" +
+        "• прижать потолок битрейта (панель статистики)\n" +
+        "• снизить яркость кнопками ниже\n" +
+        "• снять чехол, увести от солнца"
+private const val INFO_THERMAL_LOAD =
+    "Тепловой запас: насколько телефон близко к троттлингу. " +
+        "0% — холоден и бодр, 100% — уже у предела и режет производительность.\n\n" +
+        "Что делать, если растёт:\n" +
+        "• убрать превью и лишнюю яркость\n" +
+        "• снизить битрейт или разрешение/fps\n" +
+        "• дать телефону продышаться (тень, обдув)"
+private const val INFO_THERMAL_BATTERY =
+    "Температура батареи — самый честный градусник корпуса. " +
+        "До ~40 °C норма, к 45 °C уже горячо, выше — телефон начнёт спасаться сам.\n\n" +
+        "Что делать, если высоко:\n" +
+        "• отключить зарядку на ходу (пауэрбанк греет)\n" +
+        "• убрать превью и сбавить битрейт\n" +
+        "• проветрить корпус, снять чехол"

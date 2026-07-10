@@ -52,7 +52,8 @@ public fun SettingsScreen(
 ) {
     LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
 
-    var host by remember { mutableStateOf(initial.host) }
+    // один IP на всё: SRT-сервер, srtla_rec и пульт OBS живут на этой машине
+    var host by remember { mutableStateOf(initial.srtlaHost.ifBlank { initial.obsHost.ifBlank { initial.host } }) }
     var port by remember { mutableStateOf(initial.port.toString()) }
     var streamName by remember { mutableStateOf(initial.streamName) }
     var passphrase by remember { mutableStateOf(initial.passphrase) }
@@ -61,11 +62,8 @@ public fun SettingsScreen(
     var is1080p by remember { mutableStateOf(initial.width >= 1920) }
     var is60fps by remember { mutableStateOf(initial.fps >= 60) }
     var bonding by remember { mutableStateOf(initial.bondingEnabled) }
-    var hints by remember { mutableStateOf(initial.hintsEnabled) }
-    var srtlaHost by remember { mutableStateOf(initial.srtlaHost) }
     var srtlaPort by remember { mutableStateOf(initial.srtlaPort.toString()) }
     var obsEnabled by remember { mutableStateOf(initial.obsEnabled) }
-    var obsHost by remember { mutableStateOf(initial.obsHost) }
     var obsPort by remember { mutableStateOf(initial.obsPort.toString()) }
     var obsPassword by remember { mutableStateOf(initial.obsPassword) }
 
@@ -78,10 +76,12 @@ public fun SettingsScreen(
     val bitrateValid = bitrateInt != null && bitrateInt in 500..20_000
     val latencyValid = latencyInt != null && latencyInt in 20..8_000
     val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
+    // порт зависит от режима: бондинг шлёт на srtla_rec, иначе напрямую на SRT
+    val activePortValid = if (bonding) srtlaPortValid else portValid
     // пульт выключен — его поля скрыты и не проверяются
     val obsPortValid = obsPortInt != null && obsPortInt in 1..65535
-    val obsValid = !obsEnabled || (obsHost.isNotBlank() && obsPortValid)
-    val destinationValid = if (bonding) srtlaHost.isNotBlank() && srtlaPortValid else host.isNotBlank() && portValid
+    val obsValid = !obsEnabled || obsPortValid
+    val destinationValid = host.isNotBlank() && activePortValid
     val valid = streamName.isNotBlank() && bitrateValid && latencyValid && destinationValid && obsValid
 
     // рекомендации для H.265 по гайду belabox: сложность сцены решает не меньше разрешения —
@@ -115,50 +115,37 @@ public fun SettingsScreen(
                         checked = bonding,
                         onCheckedChange = { bonding = it },
                         info = "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
-                            "и если одна прилегла отдохнуть — остальные тащат. " +
-                            "Видео при этом уходит на srtla_rec, а не напрямую на SRT-порт. " +
-                            "Идеально для стрима на ходу. Дома можно и не включать — но кто мы такие, чтобы запрещать.",
+                            "и если одна прилегла отдохнуть — остальные тащат.\n\n" +
+                            "Когда включать:\n" +
+                            "• стрим на ходу, где сеть скачет\n" +
+                            "• есть две-три сети сразу (Wi-Fi + SIM)\n\n" +
+                            "Видео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать.",
                     )
                     RowDivider()
-                    if (bonding) {
-                        Row {
-                            DiscordField(
-                                label = "Хост srtla_rec",
-                                value = srtlaHost,
-                                onValueChange = { srtlaHost = it },
-                                // хост — это IP: Decimal даёт цифровую панель с точкой
-                                keyboardType = KeyboardType.Decimal,
-                                isError = srtlaHost.isBlank(),
-                                modifier = Modifier.weight(2f),
-                            )
-                            DiscordField(
-                                label = "Порт",
-                                value = srtlaPort,
-                                onValueChange = { srtlaPort = it },
-                                keyboardType = KeyboardType.Number,
-                                isError = !srtlaPortValid,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    } else {
-                        Row {
-                            DiscordField(
-                                label = "Хост SRT-сервера",
-                                value = host,
-                                onValueChange = { host = it },
-                                keyboardType = KeyboardType.Decimal,
-                                isError = host.isBlank(),
-                                modifier = Modifier.weight(2f),
-                            )
-                            DiscordField(
-                                label = "Порт",
-                                value = port,
-                                onValueChange = { port = it },
-                                keyboardType = KeyboardType.Number,
-                                isError = !portValid,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                    Row {
+                        DiscordField(
+                            label = "Хост сервера",
+                            value = host,
+                            onValueChange = { host = it },
+                            // хост — это IP: Decimal даёт цифровую панель с точкой
+                            keyboardType = KeyboardType.Decimal,
+                            isError = host.isBlank(),
+                            modifier = Modifier.weight(2f),
+                            info = "Один IP на всё: SRT-сервер, srtla_rec для бондинга и пульт OBS " +
+                                "живут на этой машине. Меняешь тут — меняется везде.\n\n" +
+                                "Что вписать:\n" +
+                                "• IP компа в локалке (ipconfig → IPv4)\n" +
+                                "• или адрес облака (belabox, IRLToolkit)\n\n" +
+                                "Порт справа зависит от бондинга: с ним — порт srtla_rec, без — SRT-порт сервера.",
+                        )
+                        DiscordField(
+                            label = "Порт",
+                            value = if (bonding) srtlaPort else port,
+                            onValueChange = { if (bonding) srtlaPort = it else port = it },
+                            keyboardType = KeyboardType.Number,
+                            isError = !activePortValid,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                     RowDivider()
                     Row {
@@ -168,19 +155,22 @@ public fun SettingsScreen(
                             onValueChange = { streamName = it },
                             isError = streamName.isBlank(),
                             modifier = Modifier.weight(1f),
-                            info = "Поток приедет на сервер как live/<имя>. " +
-                                "Назови как хочешь — «phone» скромно и со вкусом, " +
-                                "«super_mega_stream_3000» тоже примем без осуждения.",
+                            info = "Поток приедет на сервер как live/<имя>. Плеер потом ищет его по этому же имени.\n\n" +
+                                "Что вписать:\n" +
+                                "• латиницей, без пробелов\n" +
+                                "• «phone» скромно, «super_mega_stream_3000» тоже примем\n\n" +
+                                "Главное — чтобы совпадало с тем, что ждёт сервер/плеер.",
                         )
                         DiscordField(
                             label = "Passphrase",
                             value = passphrase,
                             onValueChange = { passphrase = it },
                             modifier = Modifier.weight(1f),
-                            info = "Секретный стук в дверь (AES-шифрование SRT). " +
-                                "Пусто — дверь нараспашку, для своего сервера это ок. " +
-                                "Если задал — сервер должен знать тот же секрет, " +
-                                "иначе он сделает вид, что впервые тебя видит.",
+                            info = "Секретный стук в дверь — AES-шифрование SRT.\n\n" +
+                                "Как выбрать:\n" +
+                                "• пусто — дверь нараспашку, для своего сервера ок\n" +
+                                "• задал — сервер должен знать тот же секрет\n\n" +
+                                "Не совпало с сервером — он сделает вид, что впервые тебя видит.",
                         )
                     }
                     RowDivider()
@@ -192,11 +182,49 @@ public fun SettingsScreen(
                         max = 8_000,
                         step = 100,
                         isError = !latencyValid,
-                        info = "Подушка безопасности SRT: сколько миллисекунд у потерянного пакета есть, " +
-                            "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности. " +
-                            "2000 — золотая середина: пара секунд задержки, зато без артефактов. " +
-                            "Меньше 500 ставят только адреналиновые наркоманы.",
+                        info = "Подушка безопасности SRT: сколько у потерянного пакета есть времени, " +
+                            "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\n" +
+                            "Что ставить:\n" +
+                            "• 2000 — золотая середина, пара секунд задержки без артефактов\n" +
+                            "• больше — для слабой/дальней сети\n" +
+                            "• меньше 500 — только адреналиновым наркоманам",
                     )
+                    RowDivider()
+                    DiscordSwitchRow(
+                        label = "Пульт OBS",
+                        checked = obsEnabled,
+                        onCheckedChange = { obsEnabled = it },
+                        info = "Панель на стрим-экране, которая командует OBS на компе: сцены, эфир, запись.\n\n" +
+                            "Как включить в OBS:\n" +
+                            "• Сервис → Настройка сервера WebSocket\n" +
+                            "• галочка «Включить сервер WebSocket»\n" +
+                            "• порт и пароль — там же, кнопка «Показать сведения о подключении»\n\n" +
+                            "Хост берётся общий — тот же IP, что сверху. Выключен — ни настроек, ни иконки.",
+                    )
+                    if (obsEnabled) {
+                        RowDivider()
+                        Row {
+                            DiscordField(
+                                label = "Порт OBS",
+                                value = obsPort,
+                                onValueChange = { obsPort = it },
+                                keyboardType = KeyboardType.Number,
+                                isError = !obsPortValid,
+                                modifier = Modifier.weight(1f),
+                            )
+                            DiscordField(
+                                label = "Пароль WebSocket",
+                                value = obsPassword,
+                                onValueChange = { obsPassword = it },
+                                modifier = Modifier.weight(2f),
+                                info = "Тот же пароль, что в OBS.\n\n" +
+                                    "Где взять:\n" +
+                                    "• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n" +
+                                    "• или кнопка «Показать сведения о подключении»\n\n" +
+                                    "Галочка «Включить аутентификацию» снята — оставь пустым.",
+                            )
+                        }
+                    }
                 }
 
                 SectionLabel("Видео")
@@ -223,11 +251,13 @@ public fun SettingsScreen(
                         max = 20_000,
                         step = 100,
                         isError = !bitrateValid,
-                        info = "Сколько мегабит в секунду тратим на красоту. H.265 умеет в магию сжатия, " +
+                        info = "Сколько килобит в секунду тратим на красоту. H.265 умеет в магию сжатия, " +
                             "так что задирать не нужно: выше рекомендации картинка почти не хорошеет, " +
-                            "зато телефон превращается в грелку и начинает ронять кадры. " +
-                            "Сцена решает: статичная комната прощает почти всё, а улица с листвой " +
-                            "и движением — самый прожорливый контент. Жми пресет ниже — мы уже посчитали.",
+                            "зато телефон греется и роняет кадры.\n\n" +
+                            "Как выбрать:\n" +
+                            "• жми пресет ниже — мы уже посчитали\n" +
+                            "• комната статичная — прощает низкий битрейт\n" +
+                            "• улица с листвой и движением — самый прожорливый контент",
                     )
                     DiscordHint("💡 Пресеты под ${if (is1080p) "1080p" else "720p"}·${if (is60fps) "60" else "30"} fps — тапни, применю:")
                     Row(
@@ -245,61 +275,6 @@ public fun SettingsScreen(
                             text = "🌳 Улица ≈ $recOutdoorKbps",
                             selected = bitrateInt == recOutdoorKbps,
                             onClick = { bitrate = recOutdoorKbps.toString() },
-                        )
-                    }
-                    RowDivider()
-                    DiscordSwitchRow(
-                        label = "Шуточные подсказки",
-                        checked = hints,
-                        onCheckedChange = { hints = it },
-                        info = "Серые подписи-объяснялки в карточках стрим-экрана. " +
-                            "Когда выучишь всё наизусть — выключай, и интерфейс станет " +
-                            "серьёзным, как бухгалтер в понедельник 🤵",
-                    )
-                }
-
-                SectionLabel("OBS")
-                SettingsCard {
-                    DiscordSwitchRow(
-                        label = "Пульт OBS",
-                        checked = obsEnabled,
-                        onCheckedChange = { obsEnabled = it },
-                        info = "Панель на стрим-экране, которая командует OBS на компе: " +
-                            "сцены, эфир, запись.\n\n" +
-                            "Где что искать: в OBS открой Сервис → Настройка сервера WebSocket, " +
-                            "поставь галочку «Включить сервер WebSocket» — порт и пароль написаны " +
-                            "прямо там (кнопка «Показать сведения о подключении»). " +
-                            "Хост — это IP компа в локальной сети (ipconfig → IPv4).\n\n" +
-                            "Выключен — ни настроек, ни иконки, ничто не мозолит глаза.",
-                    )
-                    if (obsEnabled) {
-                        RowDivider()
-                        Row {
-                            DiscordField(
-                                label = "Хост OBS",
-                                value = obsHost,
-                                onValueChange = { obsHost = it },
-                                keyboardType = KeyboardType.Decimal,
-                                isError = obsHost.isBlank(),
-                                modifier = Modifier.weight(2f),
-                            )
-                            DiscordField(
-                                label = "Порт",
-                                value = obsPort,
-                                onValueChange = { obsPort = it },
-                                keyboardType = KeyboardType.Number,
-                                isError = !obsPortValid,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        RowDivider()
-                        DiscordField(
-                            label = "Пароль WebSocket",
-                            value = obsPassword,
-                            onValueChange = { obsPassword = it },
-                            info = "Тот же, что в OBS: Сервис → Настройка сервера WebSocket → «Пароль сервера» " +
-                                "(или кнопка «Показать сведения о подключении»). " +
-                                "Если галочка «Включить аутентификацию» снята — оставь пустым.",
                         )
                     }
                 }
@@ -332,11 +307,10 @@ public fun SettingsScreen(
                                     minVideoBitrateKbps = initial.minVideoBitrateKbps,
                                     latencyMs = requireNotNull(latencyInt),
                                     bondingEnabled = bonding,
-                                    srtlaHost = srtlaHost.trim(),
+                                    srtlaHost = host.trim(),
                                     srtlaPort = srtlaPortInt ?: 5000,
-                                    hintsEnabled = hints,
                                     obsEnabled = obsEnabled,
-                                    obsHost = obsHost.trim(),
+                                    obsHost = host.trim(),
                                     obsPort = obsPortInt ?: 4455,
                                     obsPassword = obsPassword,
                                 ),

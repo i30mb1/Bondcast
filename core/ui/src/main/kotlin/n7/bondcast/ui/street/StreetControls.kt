@@ -389,8 +389,11 @@ public fun StreetPanelScaffold(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     leading: (@Composable () -> Unit)? = null,
+    info: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val infoInteraction = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
             .width(300.dp)
@@ -413,6 +416,20 @@ public fun StreetPanelScaffold(
                 style = streetTitle,
                 modifier = Modifier.weight(1f),
             )
+            if (info != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(StreetShape)
+                        .clickable(interactionSource = infoInteraction, indication = null) { expanded = !expanded }
+                        .padding(6.dp),
+                ) {
+                    InfoIcon(color = DiscordColors.accent, modifier = Modifier.size(InfoIconSize))
+                    if (expanded) {
+                        StreetTooltip(text = info, onDismissRequest = { expanded = false })
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+            }
             StreetCloseButton(onClose)
         }
         Column(
