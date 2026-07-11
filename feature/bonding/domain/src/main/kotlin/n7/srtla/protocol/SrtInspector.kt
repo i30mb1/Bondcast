@@ -30,7 +30,8 @@ public object SrtInspector {
         return out
     }
 
-    public fun srtlaAckSeqnums(buf: ByteArray, len: Int, onSeqnum: (Int) -> Unit) {
+    // inline: тело встраивается в SrtlaScheduler (единственный вызыватель), seqnum не боксится в Integer
+    internal inline fun srtlaAckSeqnums(buf: ByteArray, len: Int, onSeqnum: (Int) -> Unit) {
         val words = len / 4
         var i = 1
         while (i < words) {
@@ -80,7 +81,8 @@ public object SrtInspector {
         return out
     }
 
-    public fun nakLostSeqnums(buf: ByteArray, len: Int, onSeqnum: (Int) -> Unit) {
+    // inline: тело встраивается в SrtlaScheduler (единственный вызыватель), seqnum не боксится в Integer
+    internal inline fun nakLostSeqnums(buf: ByteArray, len: Int, onSeqnum: (Int) -> Unit) {
         val words = len / 4
         var i = 4
         while (i < words) {

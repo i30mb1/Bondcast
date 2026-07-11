@@ -32,6 +32,7 @@ open class SchedulerSendBenchmark {
     private val nowNanos = 1_000_000_000L
     private lateinit var scheduler: SrtlaScheduler
     private lateinit var event: SchedulerEvent.LocalSrtPacket
+    private val sink = CountingSink()
 
     @Setup(Level.Trial)
     fun setup() {
@@ -42,6 +43,7 @@ open class SchedulerSendBenchmark {
 
     @Benchmark
     open fun sendPacket(bh: Blackhole) {
-        bh.consume(scheduler.onEvent(event, nowNanos))
+        scheduler.onEvent(event, nowNanos, sink)
+        bh.consume(sink.count)
     }
 }

@@ -17,6 +17,7 @@ import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.core.SessionConfig
+import androidx.camera.core.UseCase
 import androidx.camera.core.featuregroup.GroupableFeature
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -55,6 +56,9 @@ internal class CameraXVideoSource(
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
+    // свои use-cases: teardown снимает ТОЛЬКО их, а не unbindAll() — иначе старый источник при
+    // switchCamera убивает привязку нового (делят один ProcessCameraProvider), камера гаснет
+    private var boundUseCases: List<UseCase> = emptyList()
     private val lifecycleOwner = SourceLifecycleOwner()
 
     private var overlayThread: HandlerThread? = null
@@ -186,10 +190,13 @@ internal class CameraXVideoSource(
                 }
 
                 runCatching {
+                    // новый источник обязан очистить старую камеру (открыть две сразу нельзя) — здесь
+                    // unbindAll() уместен; опасен именно teardown старого источника, см. unbind()
                     cameraProvider.unbindAll()
                     lifecycleOwner.resume()
                     val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, sessionConfig)
                     this.camera = camera
+                    boundUseCases = useCases
                     CameraControlBus.publishCamera(this, camera)
                     Log.i(TAG, "bound cameraId=$cameraId size=$size preview=${displayPreview != null} fps=$frameRateRange")
                 }.onFailure { Log.w(TAG, "bind failed: $it") }
@@ -205,7 +212,11 @@ internal class CameraXVideoSource(
     }
 
     private fun unbind() {
-        runCatching { cameraProvider?.unbindAll() }
+        // хирургически: снимаем только свои use-cases. unbindAll() убил бы привязку нового источника
+        // при switchCamera (StreamPack биндит новый ДО release() старого — см. CameraControlBus)
+        val toUnbind = boundUseCases
+        if (toUnbind.isNotEmpty()) runCatching { cameraProvider?.unbind(*toUnbind.toTypedArray()) }
+        boundUseCases = emptyList()
         lifecycleOwner.pause()
         camera = null
     }

@@ -33,7 +33,13 @@ internal class SendTimeSrtSink(private val coroutineDispatcher: CoroutineDispatc
     override val supportedSinkTypes: List<MediaSinkType> = listOf(MediaSinkType.SRT)
 
     private var socket: CoroutineSrtSocket? = null
+
+    // пишется из потока завершения сокет-корутины (invokeOnCompletion), читается из потока подачи
+    // энкодера (write) — без @Volatile обрыв виден с задержкой, реконнект стартует позже
+    @Volatile
     private var completionException: Throwable? = null
+
+    @Volatile
     private var isOnError: Boolean = false
 
     private var bitrate = 0L
@@ -102,7 +108,12 @@ internal class SendTimeSrtSink(private val coroutineDispatcher: CoroutineDispatc
             }
             it.connect(mediaDescriptor.srtUrl)
         }
-        _isOpenFlow.emit(true)
+        // не эмитим true безусловно: если сокет умер в окне между invokeOnCompletion и этой строкой
+        // (сервер сразу рвёт по streamId/passphrase), emit(true) затирал бы уже пришедший false и
+        // awaitDisconnect висел бы на true навсегда
+        val alive = completionException == null && socket?.isConnected == true
+        _isOpenFlow.emit(alive)
+        if (!alive) throw ClosedException(completionException ?: IllegalStateException("SRT socket closed during open"))
     }
 
     private fun buildMsgCtrl(packet: Packet): MsgCtrl {
@@ -133,8 +144,10 @@ internal class SendTimeSrtSink(private val coroutineDispatcher: CoroutineDispatc
 
         if (packet.ts > 0) {
             if (firstTsUs == 0L) {
-                firstTsUs = packet.ts
+                // firstWallNanos ПЕРВЫМ: геттер encoderLagMs гейтит на firstTsUs, поэтому к моменту,
+                // когда читатель видит firstTsUs != 0, firstWallNanos уже опубликован (без ложного всплеска)
                 firstWallNanos = System.nanoTime()
+                firstTsUs = packet.ts
             }
             if (packet.ts > latestTsUs) latestTsUs = packet.ts
         }

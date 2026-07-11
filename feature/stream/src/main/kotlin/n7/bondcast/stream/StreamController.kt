@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -59,7 +60,7 @@ public class StreamController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val engine: StreamEngine = StreamPackEngine(application, overlayCompositor)
+    val engine: StreamEngine = StreamPackEngine(application, overlayCompositor) { _desiredCamera.value?.id }
 
     private val _phase = MutableStateFlow<StreamPhase>(StreamPhase.Idle)
     val phase: StateFlow<StreamPhase> = _phase.asStateFlow()
@@ -85,17 +86,31 @@ public class StreamController(
             if (usbMonitor.connected.value) baseCameras + usbOption else baseCameras,
         )
 
-    private val _currentCamera = MutableStateFlow(
-        baseCameras.firstOrNull { !it.isFront } ?: baseCameras.firstOrNull(),
-    )
+    private val defaultCamera = baseCameras.firstOrNull { !it.isFront } ?: baseCameras.firstOrNull()
+
+    // desired — намерение пользователя (последний тап побеждает), current — фактически применённая
+    private val _desiredCamera = MutableStateFlow(defaultCamera)
+    private val _currentCamera = MutableStateFlow(defaultCamera)
     val currentCamera: StateFlow<CameraOption?> = _currentCamera.asStateFlow()
 
     init {
+        // единственная корутина применения: collectLatest отменяет устаревший свитч, финальным
+        // всегда остаётся последний desired — гонки параллельных scope.launch на каждый тап больше нет
+        scope.launch {
+            _desiredCamera.collectLatest { option ->
+                option ?: return@collectLatest
+                // на старте desired==current (стартовый источник ставит prepare) — лишний свитч не нужен;
+                // так же гасим повторный тап той же камеры
+                if (option == _currentCamera.value) return@collectLatest
+                engine.switchCamera(option.id)
+                    .onSuccess { _currentCamera.value = option }
+                    .onFailure { Log.w(TAG, "переключение камеры не удалось: $it") }
+            }
+        }
         scope.launch {
             usbMonitor.connected.collect { connected ->
-                if (!connected && _currentCamera.value?.id == USB_CAMERA_ID) {
-                    (baseCameras.firstOrNull { !it.isFront } ?: baseCameras.firstOrNull())
-                        ?.let { selectCamera(it) }
+                if (!connected && _desiredCamera.value?.id == USB_CAMERA_ID) {
+                    defaultCamera?.let { _desiredCamera.value = it }
                 }
             }
         }
@@ -124,14 +139,13 @@ public class StreamController(
         CoroutineScope(Dispatchers.Default).launch {
             runCatching { job?.join() }
             runCatching { engine.release() }
+            runCatching { usbMonitor.close() }
             scope.cancel()
         }
     }
 
     fun selectCamera(option: CameraOption) {
-        if (option == _currentCamera.value) return
-        _currentCamera.value = option
-        scope.launch { engine.switchCamera(option.id) }
+        _desiredCamera.value = option
     }
 
     private suspend fun runSession() = coroutineScope {

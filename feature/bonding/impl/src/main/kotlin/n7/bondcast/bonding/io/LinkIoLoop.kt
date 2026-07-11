@@ -8,7 +8,7 @@ import n7.bondcast.bonding.net.NetworkProvider
 import n7.srtla.protocol.PacketType
 import n7.srtla.protocol.SrtInspector
 import n7.srtla.scheduler.RegState
-import n7.srtla.scheduler.SchedulerAction
+import n7.srtla.scheduler.SchedulerActionSink
 import n7.srtla.scheduler.SchedulerEvent
 import n7.srtla.scheduler.SrtlaScheduler
 import n7.srtla.scheduler.Transport
@@ -33,7 +33,7 @@ internal class LinkIoLoop(
     private val provider: NetworkProvider,
     private val clock: () -> Long = { System.nanoTime() },
     private val onLinksSnapshot: (List<LinkInfo>) -> Unit = {},
-) {
+) : SchedulerActionSink {
     private val selector: Selector = Selector.open()
     private val local: DatagramChannel = DatagramChannel.open()
     private val links = LinkedHashMap<Int, BondingLink>()
@@ -41,6 +41,9 @@ internal class LinkIoLoop(
     private val pendingEvents = ConcurrentLinkedQueue<NetworkEvent>()
     private val closed = AtomicBoolean(false)
     private val scratch = ByteArray(PacketType.MTU + 512)
+    // единый direct-буфер отправки: sink пишет прямо в сокет без ByteBuffer.wrap на каждый пакет.
+    // io-поток однопоточный, put/flip/write синхронны — можно переиспользовать между действиями
+    private val sendBuf = ByteBuffer.allocateDirect(PacketType.MTU + 512)
     private var nextLinkId = 1
     private var thread: Thread? = null
     private var lastSnapshotNanos = 0L
@@ -87,6 +90,9 @@ internal class LinkIoLoop(
         running = false
         runCatching { provider.stop() }
         runCatching { selector.wakeup() }
+        // ждём завершения io-потока (закрытие Selector/каналов идёт в нём) — иначе при stop→start
+        // старый Selector и local-канал кратко живут рядом с новым. stop зовётся на Dispatchers.IO
+        runCatching { thread?.join(JOIN_TIMEOUT_MS) }
     }
 
     private fun loop() {
@@ -106,7 +112,7 @@ internal class LinkIoLoop(
                 if (key.channel() === local) readLocal(buf, now) else readLink(key, buf, now)
             }
             if (now - lastTickNanos >= TICK_NANOS) {
-                dispatch(scheduler.onEvent(SchedulerEvent.Tick(now), now))
+                scheduler.onEvent(SchedulerEvent.Tick(now), now, this)
                 lastTickNanos = now
                 if (now - lastSnapshotNanos >= SNAPSHOT_NANOS) {
                     publishSnapshot(now)
@@ -145,7 +151,7 @@ internal class LinkIoLoop(
             links[id] = link
             networkToId[network] = id
             Log.i(TAG, "link #$id up: $transport → $remote")
-            dispatch(scheduler.onEvent(SchedulerEvent.LinkUp(id, transport), now))
+            scheduler.onEvent(SchedulerEvent.LinkUp(id, transport), now, this)
             publishSnapshot(now)
         } catch (t: Throwable) {
             Log.w(TAG, "addLink failed for $transport", t)
@@ -156,7 +162,7 @@ internal class LinkIoLoop(
         val id = networkToId[network] ?: return
         val link = links.remove(id)
         networkToId.remove(network)
-        scheduler.onEvent(SchedulerEvent.LinkDown(id), now)
+        scheduler.onEvent(SchedulerEvent.LinkDown(id), now, this)
         if (link != null) {
             runCatching { link.key.cancel() }
             runCatching { link.channel.close() }
@@ -173,7 +179,7 @@ internal class LinkIoLoop(
             buf.flip()
             val n = buf.remaining()
             buf.get(scratch, 0, n)
-            dispatch(scheduler.onEvent(SchedulerEvent.LocalSrtPacket(scratch, n), now))
+            scheduler.onEvent(SchedulerEvent.LocalSrtPacket(scratch, n), now, this)
         } catch (t: Throwable) {
             Log.w(TAG, "readLocal failed", t)
         }
@@ -189,7 +195,7 @@ internal class LinkIoLoop(
             val count = buf.remaining()
             buf.get(scratch, 0, count)
             logRegPacket("←", link, scratch, count)
-            dispatch(scheduler.onEvent(SchedulerEvent.LinkPacket(link.id, scratch, count), now))
+            scheduler.onEvent(SchedulerEvent.LinkPacket(link.id, scratch, count), now, this)
         } catch (t: Throwable) {
             if (now - link.lastReadErrorNanos >= ERROR_LOG_THROTTLE_NANOS) {
                 link.lastReadErrorNanos = now
@@ -198,24 +204,29 @@ internal class LinkIoLoop(
         }
     }
 
-    private fun dispatch(actions: List<SchedulerAction>) {
-        for (action in actions) {
-            try {
-                when (action) {
-                    is SchedulerAction.SendOnLink -> {
-                        val link = links[action.linkId] ?: continue
-                        logRegPacket("→", link, action.data, action.length)
-                        link.channel.write(ByteBuffer.wrap(action.data, 0, action.length))
-                        link.bytesSent += action.length
-                    }
-                    is SchedulerAction.SendToLocal -> {
-                        val caller = callerAddress ?: continue
-                        local.send(ByteBuffer.wrap(action.data, 0, action.length), caller)
-                    }
-                }
-            } catch (t: Throwable) {
-                Log.w(TAG, "dispatch failed", t)
-            }
+    override fun sendOnLink(linkId: Int, data: ByteArray, length: Int) {
+        val link = links[linkId] ?: return
+        try {
+            logRegPacket("→", link, data, length)
+            sendBuf.clear()
+            sendBuf.put(data, 0, length)
+            sendBuf.flip()
+            link.channel.write(sendBuf)
+            link.bytesSent += length
+        } catch (t: Throwable) {
+            Log.w(TAG, "sendOnLink failed", t)
+        }
+    }
+
+    override fun sendToLocal(data: ByteArray, length: Int) {
+        val caller = callerAddress ?: return
+        try {
+            sendBuf.clear()
+            sendBuf.put(data, 0, length)
+            sendBuf.flip()
+            local.send(sendBuf, caller)
+        } catch (t: Throwable) {
+            Log.w(TAG, "sendToLocal failed", t)
         }
     }
 
@@ -284,6 +295,7 @@ internal class LinkIoLoop(
     private companion object {
         const val TAG = "SrtlaIo"
         const val TICK_MS = 200L
+        const val JOIN_TIMEOUT_MS = 500L
         const val TICK_NANOS = 200_000_000L
         const val SNAPSHOT_NANOS = 1_000_000_000L
         const val SUMMARY_NANOS = 5_000_000_000L

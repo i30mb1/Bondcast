@@ -1,9 +1,22 @@
 package n7.srtla.bench
 
 import n7.srtla.protocol.PacketType
+import n7.srtla.scheduler.SchedulerActionSink
 import n7.srtla.scheduler.SchedulerEvent
 import n7.srtla.scheduler.SrtlaScheduler
 import n7.srtla.scheduler.Transport
+
+/** Sink без аллокаций для бенчей: копит контрольную сумму, чтобы JIT не выкинул onEvent. */
+class CountingSink : SchedulerActionSink {
+    var count: Long = 0
+    override fun sendOnLink(linkId: Int, data: ByteArray, length: Int) {
+        count += length + linkId
+    }
+
+    override fun sendToLocal(data: ByteArray, length: Int) {
+        count += length
+    }
+}
 
 object BenchPackets {
 

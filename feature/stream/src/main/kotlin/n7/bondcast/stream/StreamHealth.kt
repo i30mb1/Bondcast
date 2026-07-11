@@ -53,7 +53,10 @@ public fun streamHealth(
     }
     val dropLevel = if (dropPerSec > 0) HealthLevel.BAD else HealthLevel.OK
     val rateFraction = if (targetKbps > 0) cur.sendRateKbps.toFloat() / targetKbps else 1f
+    // на первом Live-сэмпле bistats(clear=true) занижает mbpsSendRate (окно = от старта сессии),
+    // поэтому не судим о rate без предыдущего сэмпла — иначе ложный overall=BAD на старте
     val rateLevel = when {
+        prev == null -> HealthLevel.OK
         rateFraction >= 0.9f -> HealthLevel.OK
         rateFraction >= 0.6f -> HealthLevel.WARN
         else -> HealthLevel.BAD

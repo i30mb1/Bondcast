@@ -2,11 +2,10 @@ package n7.srtla.protocol
 
 public object SrtlaCodec {
 
-    public fun keepalive(): ByteArray {
-        val buf = ByteArray(2)
-        Bytes.putU16be(buf, 0, PacketType.SRTLA_KEEPALIVE)
-        return buf
-    }
+    // константа: keepalive шлётся на каждый idle-линк каждый тик; получатели только читают/копируют, не мутируют
+    private val KEEPALIVE: ByteArray = ByteArray(2).also { Bytes.putU16be(it, 0, PacketType.SRTLA_KEEPALIVE) }
+
+    public fun keepalive(): ByteArray = KEEPALIVE
 
     public fun reg1(id: ByteArray): ByteArray = reg(PacketType.SRTLA_REG1, id)
 

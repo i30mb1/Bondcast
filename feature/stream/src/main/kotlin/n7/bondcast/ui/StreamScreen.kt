@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,7 +101,9 @@ public fun StreamScreen(
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
     val cameras by controller.cameras.collectAsState()
-    val health by controller.health.collectAsState()
+    // health тикает 1Гц в эфире — читаем его только внутри derivedStateOf, чтобы корень экрана
+    // рекомпозился на смену уровня внимания, а не на каждый тик статистики
+    val healthState = controller.health.collectAsState()
     val panels = remember { PanelManager() }
 
     val thermalFlow = remember(thermalMonitor) { thermalMonitor.states() }
@@ -174,10 +177,14 @@ public fun StreamScreen(
         controller.engine.prepare(current)
     }
 
-    val statsAttention = when (health?.overall) {
-        HealthLevel.BAD -> AttentionLevel.BAD
-        HealthLevel.WARN -> AttentionLevel.WARN
-        else -> AttentionLevel.NONE
+    val statsAttention by remember {
+        derivedStateOf {
+            when (healthState.value?.overall) {
+                HealthLevel.BAD -> AttentionLevel.BAD
+                HealthLevel.WARN -> AttentionLevel.WARN
+                else -> AttentionLevel.NONE
+            }
+        }
     }
     val thermalAttention = when {
         thermalState.status >= PowerManager.THERMAL_STATUS_SEVERE || thermalState.heat >= 0.95f -> AttentionLevel.BAD

@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 public interface UsbCameraMonitor {
     val connected: StateFlow<Boolean>
+
+    /** Снимает BroadcastReceiver. Вызывать при закрытии владельца, иначе ресивер течёт на applicationContext. */
+    fun close()
 }
 
 public fun usbCameraMonitor(context: Context): UsbCameraMonitor = UsbCameraMonitorImpl(context.applicationContext)
@@ -37,6 +40,10 @@ private class UsbCameraMonitorImpl(private val context: Context) : UsbCameraMoni
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    override fun close() {
+        runCatching { context.unregisterReceiver(receiver) }
     }
 
     private fun hasUvc(): Boolean = usbManager.deviceList.values.any(::isUvc)

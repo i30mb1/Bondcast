@@ -9,6 +9,7 @@ import io.github.thibaultbee.srtdroid.core.models.Stats
 import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.createDefaultTsServiceInfo
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.CompositeEndpointFactory
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.muxers.ts.TsMuxer
+import io.github.thibaultbee.streampack.core.elements.sources.video.IVideoSourceInternal
 import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
@@ -27,6 +28,8 @@ import kotlin.math.roundToInt
 internal class StreamPackEngine(
     private val context: Context,
     private val overlayCompositor: OverlayCompositor,
+    // стартовый источник поднимается по desired-камере контроллера, а не по «дефолтной тыловой»
+    private val initialCameraId: () -> String? = { null },
 ) : StreamEngine {
 
     private var streamer: SingleStreamer? = null
@@ -37,7 +40,7 @@ internal class StreamPackEngine(
     override val lastError: Throwable?
         get() = streamer?.throwableFlow?.value
 
-    override suspend fun prepare(settings: StreamSettings) {
+    override suspend fun prepare(settings: StreamSettings): Unit = streamerLock.withLock {
         val current = streamer ?: run {
             // свой sink вместо штатного: без srcTime из MediaCodec PTS (см. SendTimeSrtSink)
             val newSink = SendTimeSrtSink(Dispatchers.IO)
@@ -50,13 +53,13 @@ internal class StreamPackEngine(
             ).also {
                 streamer = it
                 sink = newSink
-                val camId = defaultCameraId()
-                val res = runCatching { it.setVideoSource(CameraXVideoSourceFactory(camId, overlayCompositor)) }
-                Log.i("StreamCamera", "init setVideoSource(camerax=$camId) -> ${res.exceptionOrNull()?.toString() ?: "ok"}")
+                val camId = initialCameraId() ?: defaultCameraId()
+                val res = runCatching { it.setVideoSource(sourceFactory(camId)) }
+                Log.i("StreamCamera", "init setVideoSource($camId) -> ${res.exceptionOrNull()?.toString() ?: "ok"}")
             }
         }
-        if (appliedSettings == settings) return
-        if (current.isStreamingFlow.value) return
+        if (appliedSettings == settings) return@withLock
+        if (current.isStreamingFlow.value) return@withLock
         current.setConfig(
             AudioConfig(startBitrate = 128_000),
             VideoConfig(
@@ -72,18 +75,18 @@ internal class StreamPackEngine(
     override suspend fun startStream(settings: StreamSettings) {
         prepare(settings)
         val current = requireNotNull(streamer)
-        streamerLock.withLock {
-            current.open(
-                SrtMediaDescriptor(
-                    host = settings.host,
-                    port = settings.port,
-                    streamId = settings.streamId,
-                    passPhrase = settings.passphrase.ifBlank { null },
-                    latency = settings.latencyMs,
-                ),
-            )
-            current.startStream()
-        }
+        // open() блокирует до конца SRT-хендшейка (секунды при недоступном сервере) — держим его ВНЕ
+        // streamerLock, иначе switchCamera/setVideoBitrate висят до таймаута коннекта
+        current.open(
+            SrtMediaDescriptor(
+                host = settings.host,
+                port = settings.port,
+                streamId = settings.streamId,
+                passPhrase = settings.passphrase.ifBlank { null },
+                latency = settings.latencyMs,
+            ),
+        )
+        current.startStream()
     }
 
     override suspend fun awaitDisconnect() {
@@ -139,18 +142,23 @@ internal class StreamPackEngine(
         return options
     }
 
-    override suspend fun switchCamera(cameraId: String) {
-        val current = streamer ?: return
-        streamerLock.withLock {
-            val factory = if (cameraId == USB_CAMERA_ID) {
-                UvcVideoSourceFactory()
-            } else {
-                CameraXVideoSourceFactory(cameraId, overlayCompositor)
-            }
-            runCatching { current.setVideoSource(factory) }
+    override suspend fun switchCamera(cameraId: String): Result<Unit> {
+        // streamer ещё не создан — источник поставит prepare() по desired-камере (initialCameraId),
+        // поэтому это не ошибка: desired будет учтён, откатывать currentCamera не нужно
+        val current = streamer ?: return Result.success(Unit)
+        return streamerLock.withLock {
+            runCatching { current.setVideoSource(sourceFactory(cameraId)) }
+                .map { }
                 .onFailure { Log.w("StreamCamera", "switchCamera($cameraId): $it") }
         }
     }
+
+    private fun sourceFactory(cameraId: String): IVideoSourceInternal.Factory =
+        if (cameraId == USB_CAMERA_ID) {
+            UvcVideoSourceFactory()
+        } else {
+            CameraXVideoSourceFactory(cameraId, overlayCompositor)
+        }
 
     private fun cameraManager(): CameraManager? = context.getSystemService(CameraManager::class.java)
 

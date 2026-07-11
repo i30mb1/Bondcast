@@ -34,6 +34,7 @@ open class SchedulerControlBenchmark {
     private lateinit var ackEvent: SchedulerEvent.LinkPacket
     private lateinit var nakEvent: SchedulerEvent.LinkPacket
     private lateinit var srtlaAckEvent: SchedulerEvent.LinkPacket
+    private val sink = CountingSink()
 
     @Setup(Level.Trial)
     fun setup() {
@@ -52,16 +53,19 @@ open class SchedulerControlBenchmark {
 
     @Benchmark
     open fun srtAck(bh: Blackhole) {
-        bh.consume(scheduler.onEvent(ackEvent, nowNanos))
+        scheduler.onEvent(ackEvent, nowNanos, sink)
+        bh.consume(sink.count)
     }
 
     @Benchmark
     open fun srtNak(bh: Blackhole) {
-        bh.consume(scheduler.onEvent(nakEvent, nowNanos))
+        scheduler.onEvent(nakEvent, nowNanos, sink)
+        bh.consume(sink.count)
     }
 
     @Benchmark
     open fun srtlaAck(bh: Blackhole) {
-        bh.consume(scheduler.onEvent(srtlaAckEvent, nowNanos))
+        scheduler.onEvent(srtlaAckEvent, nowNanos, sink)
+        bh.consume(sink.count)
     }
 }

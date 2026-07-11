@@ -28,23 +28,45 @@ public class SrtlaScheduler(
     /** Установлена ли srtla-группа (получен REG2 от сервера). */
     public val isEstablished: Boolean get() = groupEstablished
 
-    public fun onEvent(event: SchedulerEvent, nowNanos: Long): List<SchedulerAction> = when (event) {
-        is SchedulerEvent.LinkUp -> onLinkUp(event, nowNanos)
-        is SchedulerEvent.LinkDown -> onLinkDown(event)
-        is SchedulerEvent.LocalSrtPacket -> onLocalSrtPacket(event, nowNanos)
-        is SchedulerEvent.LinkPacket -> onLinkPacket(event, nowNanos)
-        is SchedulerEvent.Tick -> onTick(event.nowNanos)
+    /** Горячий путь: пишет действия прямо в sink, без List и объектов SchedulerAction на пакет. */
+    public fun onEvent(event: SchedulerEvent, nowNanos: Long, sink: SchedulerActionSink) {
+        when (event) {
+            is SchedulerEvent.LinkUp -> onLinkUp(event, nowNanos, sink)
+            is SchedulerEvent.LinkDown -> onLinkDown(event)
+            is SchedulerEvent.LocalSrtPacket -> onLocalSrtPacket(event, nowNanos, sink)
+            is SchedulerEvent.LinkPacket -> onLinkPacket(event, nowNanos, sink)
+            is SchedulerEvent.Tick -> onTick(event.nowNanos, sink)
+        }
     }
 
-    private fun onLinkUp(event: SchedulerEvent.LinkUp, nowNanos: Long): List<SchedulerAction> {
+    /** Совместимость с тестами/бенчами: собирает действия в свежий список. Не горячий путь. */
+    public fun onEvent(event: SchedulerEvent, nowNanos: Long): List<SchedulerAction> {
+        val out = ArrayList<SchedulerAction>(2)
+        onEvent(
+            event,
+            nowNanos,
+            object : SchedulerActionSink {
+                override fun sendOnLink(linkId: Int, data: ByteArray, length: Int) {
+                    out.add(SchedulerAction.SendOnLink(linkId, data, length))
+                }
+
+                override fun sendToLocal(data: ByteArray, length: Int) {
+                    out.add(SchedulerAction.SendToLocal(data, length))
+                }
+            },
+        )
+        return out
+    }
+
+    private fun onLinkUp(event: SchedulerEvent.LinkUp, nowNanos: Long, sink: SchedulerActionSink) {
         val link = LinkState(event.linkId, event.transport, event.priority, params)
         links[event.linkId] = link
-        return if (groupEstablished) {
+        if (groupEstablished) {
             link.reg = RegState.WAIT_REG3
             link.lastSentNanos = nowNanos
-            listOf(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
+            sink.sendOnLink(link.id, SrtlaCodec.reg2(groupId))
         } else {
-            listOfNotNull(selectPendingReg2(nowNanos))
+            selectPendingReg2(nowNanos, sink)
         }
     }
 
@@ -52,8 +74,8 @@ public class SrtlaScheduler(
      * Выбирает следующий линк для регистрации группы (REG1) по кругу от прошлого кандидата —
      * мёртвый линк не должен монополизировать регистрацию.
      */
-    private fun selectPendingReg2(nowNanos: Long): SchedulerAction? {
-        if (groupEstablished || pendingReg2 != null || links.isEmpty()) return null
+    private fun selectPendingReg2(nowNanos: Long, sink: SchedulerActionSink) {
+        if (groupEstablished || pendingReg2 != null || links.isEmpty()) return
         val ordered = links.values.toList()
         val lastIdx = ordered.indexOfFirst { it.id == lastReg1LinkId }
         val candidate = ordered[(lastIdx + 1) % ordered.size]
@@ -62,24 +84,23 @@ public class SrtlaScheduler(
         lastReg1LinkId = candidate.id
         candidate.reg = RegState.WAIT_REG2
         candidate.lastSentNanos = nowNanos
-        return SchedulerAction.SendOnLink(candidate.id, SrtlaCodec.reg1(groupId))
+        sink.sendOnLink(candidate.id, SrtlaCodec.reg1(groupId))
     }
 
-    private fun onLinkDown(event: SchedulerEvent.LinkDown): List<SchedulerAction> {
-        val link = links.remove(event.linkId) ?: return emptyList()
+    private fun onLinkDown(event: SchedulerEvent.LinkDown) {
+        val link = links.remove(event.linkId) ?: return
         if (pendingReg2 === link) pendingReg2 = null
-        return emptyList()
     }
 
-    private fun onLocalSrtPacket(event: SchedulerEvent.LocalSrtPacket, nowNanos: Long): List<SchedulerAction> {
-        val link = selectConn(nowNanos) ?: return emptyList()
+    private fun onLocalSrtPacket(event: SchedulerEvent.LocalSrtPacket, nowNanos: Long, sink: SchedulerActionSink) {
+        val link = selectConn(nowNanos) ?: return
         val sn = SrtInspector.srtDataSeqnum(event.data, event.length)
         if (sn >= 0) link.logPacket(sn)
-        return listOf(SchedulerAction.SendOnLink(link.id, event.data, event.length))
+        sink.sendOnLink(link.id, event.data, event.length)
     }
 
-    private fun onLinkPacket(event: SchedulerEvent.LinkPacket, nowNanos: Long): List<SchedulerAction> {
-        val link = links[event.linkId] ?: return emptyList()
+    private fun onLinkPacket(event: SchedulerEvent.LinkPacket, nowNanos: Long, sink: SchedulerActionSink) {
+        val link = links[event.linkId] ?: return
         val data = event.data
         val len = event.length
         val type = SrtInspector.srtType(data, len)
@@ -93,60 +114,56 @@ public class SrtlaScheduler(
                 lastReg1LinkId = link.id
                 link.reg = RegState.WAIT_REG2
                 link.lastSentNanos = nowNanos
-                return listOf(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg1(groupId)))
+                sink.sendOnLink(link.id, SrtlaCodec.reg1(groupId))
             }
-            return emptyList()
+            return
         }
 
         if (type == PacketType.SRTLA_REG2) {
-            if (pendingReg2 !== link) return emptyList()
-            val received = SrtlaCodec.reg2Id(data, len) ?: return emptyList()
-            if (!GroupId.firstHalfMatches(received, groupId)) return emptyList()
+            if (pendingReg2 !== link) return
+            val received = SrtlaCodec.reg2Id(data, len) ?: return
+            if (!GroupId.firstHalfMatches(received, groupId)) return
             groupId = received
             groupEstablished = true
             pendingReg2 = null
-            val actions = ArrayList<SchedulerAction>(links.size)
             for (l in links.values) {
                 l.reg = RegState.WAIT_REG3
                 l.lastSentNanos = nowNanos
-                actions.add(SchedulerAction.SendOnLink(l.id, SrtlaCodec.reg2(groupId)))
+                sink.sendOnLink(l.id, SrtlaCodec.reg2(groupId))
             }
-            return actions
+            return
         }
 
         link.lastRcvdNanos = nowNanos
 
-        return when (type) {
+        when (type) {
             PacketType.SRT_ACK -> {
                 registerSrtAck(SrtInspector.srtAckLastAck(data, len))
-                listOf(SchedulerAction.SendToLocal(data, len))
+                sink.sendToLocal(data, len)
             }
             PacketType.SRT_NAK -> {
                 SrtInspector.nakLostSeqnums(data, len) { registerNak(it) }
-                listOf(SchedulerAction.SendToLocal(data, len))
+                sink.sendToLocal(data, len)
             }
             PacketType.SRTLA_ACK -> {
                 SrtInspector.srtlaAckSeqnums(data, len) { registerSrtlaAck(it) }
-                emptyList()
             }
-            PacketType.SRTLA_KEEPALIVE -> emptyList()
+            PacketType.SRTLA_KEEPALIVE -> Unit
             PacketType.SRTLA_REG3 -> {
                 link.reg = RegState.ACTIVE
-                emptyList()
             }
-            PacketType.SRTLA_REG_ERR, PacketType.SRTLA_REG_NAK, PacketType.SRTLA_REG1 -> emptyList()
-            else -> listOf(SchedulerAction.SendToLocal(data, len))
+            PacketType.SRTLA_REG_ERR, PacketType.SRTLA_REG_NAK, PacketType.SRTLA_REG1 -> Unit
+            else -> sink.sendToLocal(data, len)
         }
     }
 
-    private fun onTick(nowNanos: Long): List<SchedulerAction> {
-        val actions = ArrayList<SchedulerAction>()
+    private fun onTick(nowNanos: Long, sink: SchedulerActionSink) {
         // дедлайн фиксируется в момент выбора кандидата и НЕ сдвигается ресендами:
         // иначе мёртвый линк держит регистрацию вечно
         if (pendingReg2 != null && pendingReg2DeadlineNanos < nowNanos) {
             pendingReg2 = null
         }
-        selectPendingReg2(nowNanos)?.let(actions::add)
+        selectPendingReg2(nowNanos, sink)
         for (link in links.values) {
             if (link.timedOut(nowNanos)) {
                 if (link.lastRcvdNanos > 0L) link.reset()
@@ -155,15 +172,14 @@ public class SrtlaScheduler(
                 if (groupEstablished && link.lastSentNanos + params.reg2ResendNanos < nowNanos) {
                     link.reg = RegState.WAIT_REG3
                     link.lastSentNanos = nowNanos
-                    actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.reg2(groupId)))
+                    sink.sendOnLink(link.id, SrtlaCodec.reg2(groupId))
                 }
                 // при неустановленной группе REG1 шлёт только выбранный кандидат (ротация выше)
             } else if (link.lastSentNanos + params.idleNanos < nowNanos) {
                 link.lastSentNanos = nowNanos
-                actions.add(SchedulerAction.SendOnLink(link.id, SrtlaCodec.keepalive()))
+                sink.sendOnLink(link.id, SrtlaCodec.keepalive())
             }
         }
-        return actions
     }
 
     private fun selectConn(nowNanos: Long): LinkState? {

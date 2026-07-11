@@ -26,7 +26,8 @@ public interface StreamEngine {
 
     fun availableCameras(): List<CameraOption>
 
-    suspend fun switchCamera(cameraId: String)
+    /** Меняет источник видео. Result.failure — источник не открылся (UVC/CameraX), камеру не сменили. */
+    suspend fun switchCamera(cameraId: String): Result<Unit>
 
     suspend fun stopStream()
 

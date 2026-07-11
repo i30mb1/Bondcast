@@ -47,17 +47,15 @@ internal fun StatsIcon(
         ),
         label = "bars",
     )
-    val bases = listOf(0.45f, 0.75f, 1.0f)
-    val phases = listOf(0f, 2.1f, 4.2f)
     val amp = 0.12f + agitation * 0.33f
     Canvas(modifier = modifier.size(22.dp)) {
         val w = size.width
         val h = size.height
         val barW = w * 0.2f
         val gap = (w - barW * 3) / 2f
-        bases.forEachIndexed { i, base ->
-            val osc = if (live) sin((phase + phases[i]).toDouble()).toFloat() * amp else 0f
-            val frac = (base + osc).coerceIn(0.18f, 1f)
+        for (i in STATS_BAR_BASES.indices) {
+            val osc = if (live) sin((phase + STATS_BAR_PHASES[i]).toDouble()).toFloat() * amp else 0f
+            val frac = (STATS_BAR_BASES[i] + osc).coerceIn(0.18f, 1f)
             val x = i * (barW + gap)
             val barH = h * frac
             drawRoundRect(
@@ -69,3 +67,6 @@ internal fun StatsIcon(
         }
     }
 }
+
+private val STATS_BAR_BASES = floatArrayOf(0.45f, 0.75f, 1.0f)
+private val STATS_BAR_PHASES = floatArrayOf(0f, 2.1f, 4.2f)
