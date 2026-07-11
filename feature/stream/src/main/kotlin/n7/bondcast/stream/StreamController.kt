@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import n7.bondcast.bonding.LinkInfo
 import n7.bondcast.bonding.SrtlaClient
@@ -33,6 +35,7 @@ import n7.bondcast.settings.StreamSettings
 import n7.bondcast.thermal.ThermalMitigations
 import n7.bondcast.uvc.usbCameraMonitor
 import n7.srtla.abr.AbrConfig
+import n7.srtla.abr.AbrController
 import n7.srtla.abr.AbrSample
 import n7.srtla.abr.abrController
 import kotlin.math.max
@@ -74,6 +77,9 @@ public class StreamController(
     private val _videoBitrateKbps = MutableStateFlow(0)
     val videoBitrateKbps: StateFlow<Int> = _videoBitrateKbps.asStateFlow()
 
+    private val _latencyMs = MutableStateFlow(StreamSettings().latencyMs)
+    val latencyMs: StateFlow<Int> = _latencyMs.asStateFlow()
+
     private val usbMonitor = usbCameraMonitor(application)
     private val baseCameras = engine.availableCameras().filterNot { it.id == USB_CAMERA_ID }
     private val usbOption = CameraOption(USB_CAMERA_ID, "USB", false)
@@ -114,6 +120,9 @@ public class StreamController(
                 }
             }
         }
+        scope.launch {
+            _latencyMs.value = settingsRepository.settings.first().latencyMs
+        }
     }
 
     /** Живые линки бондинга (пусто, когда бондинг выключен или не запущен). */
@@ -148,8 +157,18 @@ public class StreamController(
         _desiredCamera.value = option
     }
 
+    fun setLatency(ms: Int) {
+        val clamped = ms.coerceIn(LATENCY_MIN_MS, LATENCY_MAX_MS)
+        if (clamped == _latencyMs.value) return
+        _latencyMs.value = clamped
+        scope.launch {
+            runCatching { settingsRepository.save(settingsRepository.settings.first().copy(latencyMs = clamped)) }
+        }
+    }
+
     private suspend fun runSession() = coroutineScope {
         val settings = settingsRepository.settings.first()
+        _latencyMs.value = settings.latencyMs
         foreground.start()
         val sampler = launch { sampleStats(settings) }
         val bonding = settings.bondingEnabled
@@ -165,20 +184,24 @@ public class StreamController(
                 setPhase(StreamPhase.Connecting)
                 var failure: Throwable? = null
                 try {
+                    val latency = _latencyMs.value
                     val effective = if (bonding) {
                         // relay стартует лениво и переживает SRT-реконнекты;
                         // если старт упал — попробуем снова на следующей итерации
                         val port = localPort
                             ?: srtlaClient.start(SrtlaTarget(settings.srtlaHost, settings.srtlaPort))
                                 .also { localPort = it }
-                        settings.copy(host = "127.0.0.1", port = port)
+                        settings.copy(host = "127.0.0.1", port = port, latencyMs = latency)
                     } else {
-                        settings
+                        settings.copy(latencyMs = latency)
                     }
                     engine.startStream(effective)
                     attempt = 0
                     setPhase(StreamPhase.Live(System.currentTimeMillis()))
-                    engine.awaitDisconnect()
+                    if (awaitDisconnectOrLatencyChange(latency)) {
+                        engine.stopStream()
+                        continue
+                    }
                     Log.w(TAG, "SRT-соединение оборвалось: ${engine.lastError?.message ?: "без ошибки"}")
                 } catch (cancellation: CancellationException) {
                     throw cancellation
@@ -211,15 +234,14 @@ public class StreamController(
         _phase.value = phase
     }
 
-    private suspend fun sampleStats(settings: StreamSettings) {
-        val max = settings.videoBitrateKbps
-        val abr = if (settings.abrEnabled) {
+    private fun buildAbr(settings: StreamSettings, max: Int, latencyMs: Int): AbrController? =
+        if (settings.abrEnabled) {
             abrController(
                 AbrConfig(
                     minKbps = settings.minVideoBitrateKbps,
                     maxKbps = max,
-                    sndBufHighMs = settings.latencyMs / 2,
-                    sndBufLowMs = settings.latencyMs / 5,
+                    sndBufHighMs = latencyMs / 2,
+                    sndBufLowMs = latencyMs / 5,
                     // шаг подъёма растёт вместе с потолком, иначе от минимума до 20000 ползти минуту+
                     increaseStepKbps = max(500, max / 25),
                 ),
@@ -227,12 +249,35 @@ public class StreamController(
         } else {
             null
         }
+
+    private suspend fun awaitDisconnectOrLatencyChange(current: Int): Boolean = coroutineScope {
+        val disconnect = async { engine.awaitDisconnect() }
+        val latency = async { _latencyMs.first { it != current } }
+        try {
+            select {
+                disconnect.onAwait { false }
+                latency.onAwait { true }
+            }
+        } finally {
+            disconnect.cancel()
+            latency.cancel()
+        }
+    }
+
+    private suspend fun sampleStats(settings: StreamSettings) {
+        val max = settings.videoBitrateKbps
+        var abrLatency = _latencyMs.value
+        var abr = buildAbr(settings, max, abrLatency)
         var wasLive = false
         var desiredKbps = max
         var appliedKbps = 0
         var prevStats: StreamStats? = null
         var prevAtMs = 0L
         while (currentCoroutineContext().isActive) {
+            if (_latencyMs.value != abrLatency) {
+                abrLatency = _latencyMs.value
+                abr = buildAbr(settings, max, abrLatency)
+            }
             val live = _phase.value is StreamPhase.Live
             if (live) {
                 if (!wasLive) {
@@ -275,7 +320,7 @@ public class StreamController(
                         cur = stats,
                         elapsedMs = now - prevAtMs,
                         targetKbps = target,
-                        latencyMs = settings.latencyMs,
+                        latencyMs = abrLatency,
                     )
                     prevStats = stats
                     prevAtMs = now
@@ -294,5 +339,7 @@ public class StreamController(
     private companion object {
         const val TAG = "StreamSession"
         const val STATS_INTERVAL_MS = 1_000L
+        const val LATENCY_MIN_MS = 250
+        const val LATENCY_MAX_MS = 8_000
     }
 }

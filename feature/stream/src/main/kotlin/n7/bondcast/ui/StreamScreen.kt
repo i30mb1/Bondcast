@@ -442,18 +442,22 @@ private const val INFO_BITRATE =
         "Если просел заметно ниже цели, ищи виновного ниже:\n" +
         "• RTT и Потери растут — тормозит сеть\n" +
         "• Энкодер и Буфер растут — не тянет телефон"
+private const val INFO_LATENCY =
+    "Буфер приёмника SRT: сколько времени есть на досыл потерянных пакетов.\n" +
+        "Больше — устойчивее к потерям, но выше задержка эфира. На слабой сотовой поднимай.\n\n" +
+        "Меняется прямо в эфире — стрим коротко переподключится с новым значением."
 private const val INFO_RTT =
     "Пинг до сервера и обратно, как в игре.\n" +
         "До ~120 мс — комфортно, 120–300 — сеть напряжена, больше — далеко или забита.\n\n" +
         "Что делать:\n" +
-        "• поднять latency в настройках (применится после рестарта стрима)\n" +
+        "• поднять «Задержка SRT» ниже — прямо в эфире\n" +
         "• сменить сеть или точку, где ловит"
 private const val INFO_BUFFER =
     "Видео, которое телефон подготовил, но сеть ещё не подтвердила. Копится, когда канал не успевает.\n" +
         "Почти пустой — хорошо. Подбирается к latency из настроек — дропы вот-вот.\n\n" +
         "Что делать:\n" +
         "• сбавить битрейт или включить ABR\n" +
-        "• поднять latency в настройках (применится после рестарта стрима)"
+        "• поднять «Задержка SRT» ниже — прямо в эфире"
 private const val INFO_LOSS =
     "Пакеты, потерянные где-то в сети; SRT замечает это и досылает их заново (см. Ретр рядом).\n" +
         "Немного на сотовой — обычное дело, лечится само. Много — сеть слабая или перегружена.\n\n" +
@@ -465,7 +469,7 @@ private const val INFO_DROP =
         "Любой дроп = фриз или квадратики в эфире.\n\n" +
         "Срочно:\n" +
         "• сбавить битрейт (или потолок выше)\n" +
-        "• поднять latency в настройках (применится после рестарта стрима)\n" +
+        "• поднять «Задержка SRT» ниже — прямо в эфире\n" +
         "• включить ABR"
 private const val INFO_RETRANS =
     "Сколько раз SRT досылал пакеты повторно из-за потерь (см. Потери рядом). Это защита, а не беда.\n" +
@@ -532,6 +536,23 @@ private fun StatsPanel(
                 color = DiscordColors.textSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+        val liveLatency by controller.latencyMs.collectAsState()
+        StreetSectionLabel("Задержка SRT", info = INFO_LATENCY)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            StreetChip("−", false, Modifier.weight(1f)) { controller.setLatency(liveLatency - 250) }
+            Text(
+                text = "$liveLatency мс",
+                color = DiscordColors.textSecondary,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(2f),
+            )
+            StreetChip("+", false, Modifier.weight(1f)) { controller.setLatency(liveLatency + 250) }
         }
         if (settings != null) {
             // ABR применяется на старте сессии, поэтому в эфире переключение заперто
