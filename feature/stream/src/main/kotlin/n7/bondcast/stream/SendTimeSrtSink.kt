@@ -172,6 +172,10 @@ internal class SendTimeSrtSink(private val coroutineDispatcher: CoroutineDispatc
         socket.setSockFlag(SockOpt.INPUTBW, bitrate)
     }
 
+    suspend fun setInputBandwidth(bps: Long) {
+        socket?.setSockFlag(SockOpt.INPUTBW, bps)
+    }
+
     override suspend fun stopStream() {
     }
 

@@ -115,6 +115,7 @@ internal class StreamPackEngine(
         streamerLock.withLock {
             if (!current.isStreamingFlow.value) return@withLock
             runCatching { current.videoEncoder?.bitrate = kbps * 1000 }
+            runCatching { sink?.setInputBandwidth((kbps * 1000 + 128_000).toLong()) }
         }
     }
 

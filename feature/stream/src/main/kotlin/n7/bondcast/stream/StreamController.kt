@@ -80,6 +80,9 @@ public class StreamController(
     private val _latencyMs = MutableStateFlow(StreamSettings().latencyMs)
     val latencyMs: StateFlow<Int> = _latencyMs.asStateFlow()
 
+    private val _maxBitrateKbps = MutableStateFlow(StreamSettings().videoBitrateKbps)
+    val maxBitrateKbps: StateFlow<Int> = _maxBitrateKbps.asStateFlow()
+
     private val usbMonitor = usbCameraMonitor(application)
     private val baseCameras = engine.availableCameras().filterNot { it.id == USB_CAMERA_ID }
     private val usbOption = CameraOption(USB_CAMERA_ID, "USB", false)
@@ -121,7 +124,9 @@ public class StreamController(
             }
         }
         scope.launch {
-            _latencyMs.value = settingsRepository.settings.first().latencyMs
+            val s = settingsRepository.settings.first()
+            _latencyMs.value = s.latencyMs
+            _maxBitrateKbps.value = s.videoBitrateKbps
         }
     }
 
@@ -166,9 +171,19 @@ public class StreamController(
         }
     }
 
+    fun setMaxBitrate(kbps: Int) {
+        val clamped = kbps.coerceIn(MAX_BITRATE_MIN_KBPS, MAX_BITRATE_MAX_KBPS)
+        if (clamped == _maxBitrateKbps.value) return
+        _maxBitrateKbps.value = clamped
+        scope.launch {
+            runCatching { settingsRepository.save(settingsRepository.settings.first().copy(videoBitrateKbps = clamped)) }
+        }
+    }
+
     private suspend fun runSession() = coroutineScope {
         val settings = settingsRepository.settings.first()
         _latencyMs.value = settings.latencyMs
+        _maxBitrateKbps.value = settings.videoBitrateKbps
         foreground.start()
         val sampler = launch { sampleStats(settings) }
         val bonding = settings.bondingEnabled
@@ -185,15 +200,16 @@ public class StreamController(
                 var failure: Throwable? = null
                 try {
                     val latency = _latencyMs.value
+                    val maxKbps = _maxBitrateKbps.value
                     val effective = if (bonding) {
                         // relay стартует лениво и переживает SRT-реконнекты;
                         // если старт упал — попробуем снова на следующей итерации
                         val port = localPort
                             ?: srtlaClient.start(SrtlaTarget(settings.srtlaHost, settings.srtlaPort))
                                 .also { localPort = it }
-                        settings.copy(host = "127.0.0.1", port = port, latencyMs = latency)
+                        settings.copy(host = "127.0.0.1", port = port, latencyMs = latency, videoBitrateKbps = maxKbps)
                     } else {
-                        settings.copy(latencyMs = latency)
+                        settings.copy(latencyMs = latency, videoBitrateKbps = maxKbps)
                     }
                     engine.startStream(effective)
                     attempt = 0
@@ -238,7 +254,7 @@ public class StreamController(
         if (settings.abrEnabled) {
             abrController(
                 AbrConfig(
-                    minKbps = settings.minVideoBitrateKbps,
+                    minKbps = settings.minVideoBitrateKbps.coerceAtMost(max),
                     maxKbps = max,
                     sndBufHighMs = latencyMs / 2,
                     sndBufLowMs = latencyMs / 5,
@@ -265,26 +281,28 @@ public class StreamController(
     }
 
     private suspend fun sampleStats(settings: StreamSettings) {
-        val max = settings.videoBitrateKbps
+        var curMax = _maxBitrateKbps.value
         var abrLatency = _latencyMs.value
-        var abr = buildAbr(settings, max, abrLatency)
+        var abr = buildAbr(settings, curMax, abrLatency)
         var wasLive = false
-        var desiredKbps = max
+        var desiredKbps = curMax
         var appliedKbps = 0
         var prevStats: StreamStats? = null
         var prevAtMs = 0L
         while (currentCoroutineContext().isActive) {
-            if (_latencyMs.value != abrLatency) {
+            if (_latencyMs.value != abrLatency || _maxBitrateKbps.value != curMax) {
                 abrLatency = _latencyMs.value
-                abr = buildAbr(settings, max, abrLatency)
+                curMax = _maxBitrateKbps.value
+                abr = buildAbr(settings, curMax, abrLatency)
+                desiredKbps = desiredKbps.coerceAtMost(curMax)
             }
             val live = _phase.value is StreamPhase.Live
             if (live) {
                 if (!wasLive) {
                     wasLive = true
-                    _videoBitrateKbps.value = max
-                    abr?.reset(max)
-                    desiredKbps = max
+                    _videoBitrateKbps.value = curMax
+                    abr?.reset(curMax)
+                    desiredKbps = curMax
                     appliedKbps = 0
                     prevStats = null
                     engine.readStats()
@@ -301,20 +319,18 @@ public class StreamController(
                         ).targetKbps
                     }
                 } else {
-                    desiredKbps = max
+                    desiredKbps = curMax
                 }
-                val cap = mitigations.bitrateCapFraction.value?.let { (max * it).roundToInt() }
-                if (abr != null || cap != null) {
-                    val effective = cap?.let { min(desiredKbps, it) } ?: desiredKbps
-                    if (effective != appliedKbps) {
-                        engine.setVideoBitrate(effective)
-                        _videoBitrateKbps.value = effective
-                        appliedKbps = effective
-                    }
+                val cap = mitigations.bitrateCapFraction.value?.let { (curMax * it).roundToInt() }
+                val effective = cap?.let { min(desiredKbps, it) } ?: desiredKbps
+                if (effective != appliedKbps) {
+                    engine.setVideoBitrate(effective)
+                    _videoBitrateKbps.value = effective
+                    appliedKbps = effective
                 }
                 if (stats != null) {
                     val now = System.currentTimeMillis()
-                    val target = if (_videoBitrateKbps.value > 0) _videoBitrateKbps.value else max
+                    val target = if (_videoBitrateKbps.value > 0) _videoBitrateKbps.value else curMax
                     _health.value = streamHealth(
                         prev = prevStats,
                         cur = stats,
@@ -341,5 +357,7 @@ public class StreamController(
         const val STATS_INTERVAL_MS = 1_000L
         const val LATENCY_MIN_MS = 250
         const val LATENCY_MAX_MS = 8_000
+        const val MAX_BITRATE_MIN_KBPS = 500
+        const val MAX_BITRATE_MAX_KBPS = 20_000
     }
 }

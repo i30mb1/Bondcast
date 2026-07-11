@@ -359,7 +359,6 @@ public fun StreamScreen(
                 settings = settings,
                 phase = phase,
                 bitrateCap = bitrateCap,
-                mitigations = mitigations,
                 onUpdateSettings = onUpdateSettings,
                 onClose = { panels.close(PANEL_STATS) },
             )
@@ -490,13 +489,11 @@ private const val INFO_ENCODER =
         "• сбавить битрейт (потолок — в термопанели 🔥)\n" +
         "• остудить телефон, выключить превью\n" +
         "• снизить разрешение или fps"
-private const val INFO_BITRATE_CAP =
-    "Ручной рычаг, а не автомат: жмёшь — и битрейт мгновенно падает от потолка из настроек " +
-        "(50% = половина), без раздумий. В отличие от ABR ниже, тот следит за сетью и режет постепенно.\n\n" +
-        "Когда жать:\n" +
-        "• перегрев (энкодер не тянет, сеть ни при чём)\n" +
-        "• надо срезать сейчас, а не ждать\n" +
-        "• работает и прямо в эфире, без «Стоп»"
+private const val INFO_MAX_BITRATE =
+    "Потолок качества: выше этого битрейта не поднимаемся. ABR и термозащита работают ПОД ним.\n\n" +
+        "Меняется прямо в эфире (шаг 500 kbps), без «Стоп»:\n" +
+        "• сеть уверенно держит — подними, картинка чётче\n" +
+        "• стабильно не тянет — опусти потолок"
 private const val INFO_ABR =
     "Сам подруливает битрейт под сеть на лету: канал не тянет — снижает, отпустило — поднимает " +
         "обратно к потолку. Мягко приседает качеством вместо стоп-кадра.\n\n" +
@@ -511,7 +508,6 @@ private fun StatsPanel(
     settings: StreamSettings?,
     phase: StreamPhase,
     bitrateCap: Float?,
-    mitigations: ThermalMitigations,
     onUpdateSettings: (StreamSettings) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -519,20 +515,26 @@ private fun StatsPanel(
         HudStats(controller)
         LinksPanel(controller)
         Spacer(Modifier.height(2.dp))
-        StreetSectionLabel("Потолок битрейта", info = INFO_BITRATE_CAP)
+        val liveMax by controller.maxBitrateKbps.collectAsState()
+        StreetSectionLabel("Макс битрейт", info = INFO_MAX_BITRATE)
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            CapChip("Макс", null, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-            CapChip("75%", 0.75f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-            CapChip("50%", 0.5f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-            CapChip("25%", 0.25f, bitrateCap) { mitigations.setBitrateCapFraction(it) }
-        }
-        // цифра меняется сразу по тапу — не ждём тика стрима, считаем от потолка из настроек
-        if (bitrateCap != null && settings != null) {
+            StreetChip("−", false, Modifier.weight(1f)) { controller.setMaxBitrate(liveMax - 500) }
             Text(
-                text = "Режем до ${(settings.videoBitrateKbps * bitrateCap).roundToInt()} kbps",
+                text = "$liveMax kbps",
+                color = DiscordColors.textSecondary,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(2f),
+            )
+            StreetChip("+", false, Modifier.weight(1f)) { controller.setMaxBitrate(liveMax + 500) }
+        }
+        if (bitrateCap != null) {
+            Text(
+                text = "Термозащита режет до ${(liveMax * bitrateCap).roundToInt()} kbps",
                 color = DiscordColors.textSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -739,16 +741,6 @@ private fun formatRate(kbps: Int): String {
 private fun formatLag(ms: Int): String {
     val tenths = (ms + 50) / 100
     return if (ms >= 1000) "+${tenths / 10}.${tenths % 10}с" else "${ms}мс"
-}
-
-@Composable
-private fun RowScope.CapChip(
-    label: String,
-    value: Float?,
-    selected: Float?,
-    onSelect: (Float?) -> Unit,
-) {
-    StreetChip(label, selected == value, Modifier.weight(1f)) { onSelect(value) }
 }
 
 private fun Context.findActivity(): Activity? {
