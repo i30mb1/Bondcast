@@ -143,14 +143,16 @@ internal class LinkIoLoop(
             val channel = DatagramChannel.open()
             channel.configureBlocking(false)
             network.bindSocket(channel.socket())
-            channel.connect(remote)
+            val address = runCatching { network.getByName(target.host) }.getOrNull() ?: remote.address
+            val dest = InetSocketAddress(address, remote.port)
+            channel.connect(dest)
             val key = channel.register(selector, SelectionKey.OP_READ)
             val id = nextLinkId++
             val link = BondingLink(id, network, transport, channel, key)
             key.attach(link)
             links[id] = link
             networkToId[network] = id
-            Log.i(TAG, "link #$id up: $transport → $remote")
+            Log.i(TAG, "link #$id up: $transport → $dest")
             scheduler.onEvent(SchedulerEvent.LinkUp(id, transport), now, this)
             publishSnapshot(now)
         } catch (t: Throwable) {
@@ -204,17 +206,23 @@ internal class LinkIoLoop(
         }
     }
 
-    override fun sendOnLink(linkId: Int, data: ByteArray, length: Int) {
-        val link = links[linkId] ?: return
-        try {
+    override fun sendOnLink(linkId: Int, data: ByteArray, length: Int): Boolean {
+        val link = links[linkId] ?: return false
+        return try {
             logRegPacket("→", link, data, length)
             sendBuf.clear()
             sendBuf.put(data, 0, length)
             sendBuf.flip()
-            link.channel.write(sendBuf)
-            link.bytesSent += length
+            val sent = link.channel.write(sendBuf)
+            if (sent > 0) {
+                link.bytesSent += sent
+                true
+            } else {
+                false
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "sendOnLink failed", t)
+            false
         }
     }
 

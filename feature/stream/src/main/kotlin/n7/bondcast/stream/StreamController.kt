@@ -235,13 +235,21 @@ public class StreamController(
         while (currentCoroutineContext().isActive) {
             val live = _phase.value is StreamPhase.Live
             if (live) {
+                if (!wasLive) {
+                    wasLive = true
+                    _videoBitrateKbps.value = max
+                    abr?.reset(max)
+                    desiredKbps = max
+                    appliedKbps = 0
+                    prevStats = null
+                    engine.readStats()
+                    delay(STATS_INTERVAL_MS)
+                    continue
+                }
                 val stats = engine.readStats()
                 _stats.value = stats
+                if (stats == null) _health.value = null
                 if (abr != null) {
-                    if (!wasLive) {
-                        abr.reset(max)
-                        desiredKbps = max
-                    }
                     if (stats != null) {
                         desiredKbps = abr.onSample(
                             AbrSample(System.nanoTime(), stats.sndBufferMs, stats.pktLossTotal),
@@ -263,7 +271,7 @@ public class StreamController(
                     val now = System.currentTimeMillis()
                     val target = if (_videoBitrateKbps.value > 0) _videoBitrateKbps.value else max
                     _health.value = streamHealth(
-                        prev = if (wasLive) prevStats else null,
+                        prev = prevStats,
                         cur = stats,
                         elapsedMs = now - prevAtMs,
                         targetKbps = target,

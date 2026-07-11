@@ -9,8 +9,9 @@ import n7.srtla.scheduler.Transport
 /** Sink без аллокаций для бенчей: копит контрольную сумму, чтобы JIT не выкинул onEvent. */
 class CountingSink : SchedulerActionSink {
     var count: Long = 0
-    override fun sendOnLink(linkId: Int, data: ByteArray, length: Int) {
+    override fun sendOnLink(linkId: Int, data: ByteArray, length: Int): Boolean {
         count += length + linkId
+        return true
     }
 
     override fun sendToLocal(data: ByteArray, length: Int) {

@@ -6,6 +6,6 @@ package n7.srtla.scheduler
  * для тестов и бенчмарков, прод (LinkIoLoop) ходит через этот sink.
  */
 public interface SchedulerActionSink {
-    public fun sendOnLink(linkId: Int, data: ByteArray, length: Int = data.size)
+    public fun sendOnLink(linkId: Int, data: ByteArray, length: Int = data.size): Boolean
     public fun sendToLocal(data: ByteArray, length: Int = data.size)
 }

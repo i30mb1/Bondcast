@@ -46,8 +46,9 @@ public class SrtlaScheduler(
             event,
             nowNanos,
             object : SchedulerActionSink {
-                override fun sendOnLink(linkId: Int, data: ByteArray, length: Int) {
+                override fun sendOnLink(linkId: Int, data: ByteArray, length: Int): Boolean {
                     out.add(SchedulerAction.SendOnLink(linkId, data, length))
+                    return true
                 }
 
                 override fun sendToLocal(data: ByteArray, length: Int) {
@@ -94,9 +95,10 @@ public class SrtlaScheduler(
 
     private fun onLocalSrtPacket(event: SchedulerEvent.LocalSrtPacket, nowNanos: Long, sink: SchedulerActionSink) {
         val link = selectConn(nowNanos) ?: return
-        val sn = SrtInspector.srtDataSeqnum(event.data, event.length)
-        if (sn >= 0) link.logPacket(sn)
-        sink.sendOnLink(link.id, event.data, event.length)
+        if (sink.sendOnLink(link.id, event.data, event.length)) {
+            val sn = SrtInspector.srtDataSeqnum(event.data, event.length)
+            if (sn >= 0) link.logPacket(sn)
+        }
     }
 
     private fun onLinkPacket(event: SchedulerEvent.LinkPacket, nowNanos: Long, sink: SchedulerActionSink) {
@@ -208,7 +210,7 @@ public class SrtlaScheduler(
             while (idx < pktLogSize) {
                 if (idx != skip) {
                     val value = log[idx]
-                    if (value < ack) log[idx] = -1 else count++
+                    if (value < 0 || seqAcked(value, ack)) log[idx] = -1 else count++
                 }
                 idx++
             }
@@ -260,6 +262,8 @@ public class SrtlaScheduler(
         val i = idx - 1
         return if (i < 0) pktLogSize - 1 else i
     }
+
+    private fun seqAcked(value: Int, ack: Int): Boolean = ((ack - value) and 0x7FFFFFFF) in 1..0x3FFFFFFF
 
     public fun setLinkEnabled(linkId: Int, enabled: Boolean) {
         links[linkId]?.enabled = enabled
