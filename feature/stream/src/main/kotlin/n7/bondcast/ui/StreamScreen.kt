@@ -356,10 +356,7 @@ public fun StreamScreen(
         PanelSlot(panels.isOpen(PANEL_STATS)) {
             StatsPanel(
                 controller = controller,
-                settings = settings,
-                phase = phase,
                 bitrateCap = bitrateCap,
-                onUpdateSettings = onUpdateSettings,
                 onClose = { panels.close(PANEL_STATS) },
             )
         }
@@ -436,7 +433,7 @@ private const val PANEL_OBS = "obs"
 
 private const val INFO_BITRATE =
     "Сколько всего улетает в сеть прямо сейчас: видео + звук + служебные данные, поэтому " +
-        "в норме чуть выше цели из подписи снизу (это видео-битрейт из настроек). " +
+        "в норме чуть выше цели из подписи снизу (это целевой видео-битрейт). " +
         "Держится у цели или чуть выше — всё ок, про то же говорит цвет карточки.\n\n" +
         "Если просел заметно ниже цели, ищи виновного ниже:\n" +
         "• RTT и Потери растут — тормозит сеть\n" +
@@ -449,14 +446,14 @@ private const val INFO_RTT =
     "Пинг до сервера и обратно, как в игре.\n" +
         "До ~120 мс — комфортно, 120–300 — сеть напряжена, больше — далеко или забита.\n\n" +
         "Что делать:\n" +
-        "• поднять «Задержка SRT» ниже — прямо в эфире\n" +
+        "• поднять «Задержку» — прямо в эфире\n" +
         "• сменить сеть или точку, где ловит"
 private const val INFO_BUFFER =
     "Видео, которое телефон подготовил, но сеть ещё не подтвердила. Копится, когда канал не успевает.\n" +
-        "Почти пустой — хорошо. Подбирается к latency из настроек — дропы вот-вот.\n\n" +
+        "Почти пустой — хорошо. Подбирается к «Задержке» — дропы вот-вот.\n\n" +
         "Что делать:\n" +
         "• сбавить битрейт или включить ABR\n" +
-        "• поднять «Задержка SRT» ниже — прямо в эфире"
+        "• поднять «Задержку» — прямо в эфире"
 private const val INFO_LOSS =
     "Пакеты, потерянные где-то в сети; SRT замечает это и досылает их заново (см. Ретр рядом).\n" +
         "Немного на сотовой — обычное дело, лечится само. Много — сеть слабая или перегружена.\n\n" +
@@ -467,8 +464,8 @@ private const val INFO_DROP =
     "Пакеты, которые SRT выбросил, не успев довезти — досылать было поздно, зритель их не увидит.\n" +
         "Любой дроп = фриз или квадратики в эфире.\n\n" +
         "Срочно:\n" +
-        "• сбавить битрейт (или потолок выше)\n" +
-        "• поднять «Задержка SRT» ниже — прямо в эфире\n" +
+        "• опустить «Макс битрейт»\n" +
+        "• поднять «Задержку» — прямо в эфире\n" +
         "• включить ABR"
 private const val INFO_RETRANS =
     "Сколько раз SRT досылал пакеты повторно из-за потерь (см. Потери рядом). Это защита, а не беда.\n" +
@@ -486,29 +483,26 @@ private const val INFO_ENCODER =
     "Насколько кодирование отстаёт от реального времени — успевает ли телефон сжимать кадры с камеры.\n" +
         "Растёт → телефон не тянет (греется или битрейт не по зубам), у зрителя рывки. Сеть тут НЕ виновата.\n\n" +
         "Что делать:\n" +
-        "• сбавить битрейт (потолок — в термопанели 🔥)\n" +
+        "• опустить «Макс битрейт»\n" +
         "• остудить телефон, выключить превью\n" +
         "• снизить разрешение или fps"
 private const val INFO_MAX_BITRATE =
-    "Потолок качества: выше этого битрейта не поднимаемся. ABR и термозащита работают ПОД ним.\n\n" +
+    "Верхняя граница качества: выше этого битрейта не поднимаемся. ABR и термозащита работают ПОД ним.\n\n" +
         "Меняется прямо в эфире (шаг 500 kbps), без «Стоп»:\n" +
         "• сеть уверенно держит — подними, картинка чётче\n" +
-        "• стабильно не тянет — опусти потолок"
+        "• стабильно не тянет — опусти"
 private const val INFO_ABR =
     "Сам подруливает битрейт под сеть на лету: канал не тянет — снижает, отпустило — поднимает " +
-        "обратно к потолку. Мягко приседает качеством вместо стоп-кадра.\n\n" +
+        "обратно к «Макс битрейт». Мягко приседает качеством вместо стоп-кадра.\n\n" +
         "Как пользоваться:\n" +
-        "• включи один раз до старта эфира\n" +
-        "• дальше держит курс сам\n" +
-        "• вкл/выкл и минимум трогаются только вне эфира"
+        "• вкл/выкл и «мин» меняются прямо в эфире\n" +
+        "• «мин» — нижняя граница, ниже неё не режет\n" +
+        "• выключишь — держит ровно «Макс битрейт»"
 
 @Composable
 private fun StatsPanel(
     controller: StreamController,
-    settings: StreamSettings?,
-    phase: StreamPhase,
     bitrateCap: Float?,
-    onUpdateSettings: (StreamSettings) -> Unit,
     onClose: () -> Unit,
 ) {
     StreetPanelScaffold(title = "Статистика", onClose = onClose) {
@@ -540,7 +534,7 @@ private fun StatsPanel(
             )
         }
         val liveLatency by controller.latencyMs.collectAsState()
-        StreetSectionLabel("Задержка SRT", info = INFO_LATENCY)
+        StreetSectionLabel("Задержка", info = INFO_LATENCY)
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -556,58 +550,31 @@ private fun StatsPanel(
             )
             StreetChip("+", false, Modifier.weight(1f)) { controller.setLatency(liveLatency + 250) }
         }
-        if (settings != null) {
-            // ABR применяется на старте сессии, поэтому в эфире переключение заперто
-            val live = phase !is StreamPhase.Idle
-            StreetSectionLabel("Адаптивный битрейт (ABR)", info = INFO_ABR)
+        val abrOn by controller.abrEnabled.collectAsState()
+        val liveMin by controller.minBitrateKbps.collectAsState()
+        StreetSectionLabel("Адаптивный битрейт (ABR)", info = INFO_ABR)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            StreetChip("Вкл", abrOn, Modifier.weight(1f)) { controller.setAbrEnabled(true) }
+            StreetChip("Выкл", !abrOn, Modifier.weight(1f)) { controller.setAbrEnabled(false) }
+        }
+        if (abrOn) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                StreetChip("Вкл", settings.abrEnabled, Modifier.weight(1f), enabled = !live) {
-                    onUpdateSettings(settings.copy(abrEnabled = true))
-                }
-                StreetChip("Выкл", !settings.abrEnabled, Modifier.weight(1f), enabled = !live) {
-                    onUpdateSettings(settings.copy(abrEnabled = false))
-                }
-            }
-            if (settings.abrEnabled) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    StreetChip("−", false, Modifier.weight(1f), enabled = !live) {
-                        onUpdateSettings(
-                            settings.copy(
-                                minVideoBitrateKbps = (settings.minVideoBitrateKbps - 100).coerceAtLeast(300),
-                            ),
-                        )
-                    }
-                    Text(
-                        text = "мин ${settings.minVideoBitrateKbps}",
-                        color = DiscordColors.textSecondary,
-                        style = MaterialTheme.typography.labelMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(2f),
-                    )
-                    StreetChip("+", false, Modifier.weight(1f), enabled = !live) {
-                        onUpdateSettings(
-                            settings.copy(
-                                minVideoBitrateKbps = (settings.minVideoBitrateKbps + 100)
-                                    .coerceAtMost(settings.videoBitrateKbps),
-                            ),
-                        )
-                    }
-                }
-            }
-            // подпись про блокировку в эфире — функциональная, живёт и без подсказок
-            if (live) {
+                StreetChip("−", false, Modifier.weight(1f)) { controller.setMinBitrate(liveMin - 100) }
                 Text(
-                    text = "В эфире не переключается — сначала «Стоп», потом эксперименты 🙅",
-                    color = DiscordColors.textMuted,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "мин $liveMin",
+                    color = DiscordColors.textSecondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(2f),
                 )
+                StreetChip("+", false, Modifier.weight(1f)) { controller.setMinBitrate(liveMin + 100) }
             }
         }
     }

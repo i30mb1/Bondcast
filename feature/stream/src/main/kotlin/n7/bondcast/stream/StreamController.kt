@@ -83,6 +83,12 @@ public class StreamController(
     private val _maxBitrateKbps = MutableStateFlow(StreamSettings().videoBitrateKbps)
     val maxBitrateKbps: StateFlow<Int> = _maxBitrateKbps.asStateFlow()
 
+    private val _abrEnabled = MutableStateFlow(StreamSettings().abrEnabled)
+    val abrEnabled: StateFlow<Boolean> = _abrEnabled.asStateFlow()
+
+    private val _minBitrateKbps = MutableStateFlow(StreamSettings().minVideoBitrateKbps)
+    val minBitrateKbps: StateFlow<Int> = _minBitrateKbps.asStateFlow()
+
     private val usbMonitor = usbCameraMonitor(application)
     private val baseCameras = engine.availableCameras().filterNot { it.id == USB_CAMERA_ID }
     private val usbOption = CameraOption(USB_CAMERA_ID, "USB", false)
@@ -127,6 +133,8 @@ public class StreamController(
             val s = settingsRepository.settings.first()
             _latencyMs.value = s.latencyMs
             _maxBitrateKbps.value = s.videoBitrateKbps
+            _abrEnabled.value = s.abrEnabled
+            _minBitrateKbps.value = s.minVideoBitrateKbps
         }
     }
 
@@ -180,12 +188,31 @@ public class StreamController(
         }
     }
 
+    fun setAbrEnabled(enabled: Boolean) {
+        if (enabled == _abrEnabled.value) return
+        _abrEnabled.value = enabled
+        scope.launch {
+            runCatching { settingsRepository.save(settingsRepository.settings.first().copy(abrEnabled = enabled)) }
+        }
+    }
+
+    fun setMinBitrate(kbps: Int) {
+        val clamped = kbps.coerceIn(MIN_BITRATE_FLOOR_KBPS, _maxBitrateKbps.value)
+        if (clamped == _minBitrateKbps.value) return
+        _minBitrateKbps.value = clamped
+        scope.launch {
+            runCatching { settingsRepository.save(settingsRepository.settings.first().copy(minVideoBitrateKbps = clamped)) }
+        }
+    }
+
     private suspend fun runSession() = coroutineScope {
         val settings = settingsRepository.settings.first()
         _latencyMs.value = settings.latencyMs
         _maxBitrateKbps.value = settings.videoBitrateKbps
+        _abrEnabled.value = settings.abrEnabled
+        _minBitrateKbps.value = settings.minVideoBitrateKbps
         foreground.start()
-        val sampler = launch { sampleStats(settings) }
+        val sampler = launch { sampleStats() }
         val bonding = settings.bondingEnabled
         Log.i(
             TAG,
@@ -250,16 +277,16 @@ public class StreamController(
         _phase.value = phase
     }
 
-    private fun buildAbr(settings: StreamSettings, max: Int, latencyMs: Int): AbrController? =
-        if (settings.abrEnabled) {
+    private fun buildAbr(enabled: Boolean, minKbps: Int, maxKbps: Int, latencyMs: Int): AbrController? =
+        if (enabled) {
             abrController(
                 AbrConfig(
-                    minKbps = settings.minVideoBitrateKbps.coerceAtMost(max),
-                    maxKbps = max,
+                    minKbps = minKbps.coerceAtMost(maxKbps),
+                    maxKbps = maxKbps,
                     sndBufHighMs = latencyMs / 2,
                     sndBufLowMs = latencyMs / 5,
                     // шаг подъёма растёт вместе с потолком, иначе от минимума до 20000 ползти минуту+
-                    increaseStepKbps = max(500, max / 25),
+                    increaseStepKbps = max(500, maxKbps / 25),
                 ),
             ) { Log.i(TAG, it) }
         } else {
@@ -280,20 +307,26 @@ public class StreamController(
         }
     }
 
-    private suspend fun sampleStats(settings: StreamSettings) {
+    private suspend fun sampleStats() {
         var curMax = _maxBitrateKbps.value
         var abrLatency = _latencyMs.value
-        var abr = buildAbr(settings, curMax, abrLatency)
+        var abrOn = _abrEnabled.value
+        var curMin = _minBitrateKbps.value
+        var abr = buildAbr(abrOn, curMin, curMax, abrLatency)
         var wasLive = false
         var desiredKbps = curMax
         var appliedKbps = 0
         var prevStats: StreamStats? = null
         var prevAtMs = 0L
         while (currentCoroutineContext().isActive) {
-            if (_latencyMs.value != abrLatency || _maxBitrateKbps.value != curMax) {
+            if (_latencyMs.value != abrLatency || _maxBitrateKbps.value != curMax ||
+                _abrEnabled.value != abrOn || _minBitrateKbps.value != curMin
+            ) {
                 abrLatency = _latencyMs.value
                 curMax = _maxBitrateKbps.value
-                abr = buildAbr(settings, curMax, abrLatency)
+                abrOn = _abrEnabled.value
+                curMin = _minBitrateKbps.value
+                abr = buildAbr(abrOn, curMin, curMax, abrLatency)
                 desiredKbps = desiredKbps.coerceAtMost(curMax)
             }
             val live = _phase.value is StreamPhase.Live
@@ -359,5 +392,6 @@ public class StreamController(
         const val LATENCY_MAX_MS = 8_000
         const val MAX_BITRATE_MIN_KBPS = 500
         const val MAX_BITRATE_MAX_KBPS = 20_000
+        const val MIN_BITRATE_FLOOR_KBPS = 300
     }
 }
