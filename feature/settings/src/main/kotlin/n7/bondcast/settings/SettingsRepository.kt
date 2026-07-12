@@ -37,6 +37,14 @@ public class SettingsRepository(private val context: Context) {
             obsHost = preferences[OBS_HOST] ?: default.obsHost,
             obsPort = preferences[OBS_PORT] ?: default.obsPort,
             obsPassword = preferences[OBS_PASSWORD] ?: default.obsPassword,
+            chatEnabled = preferences[CHAT_ENABLED] ?: default.chatEnabled,
+            chatChannel = preferences[CHAT_CHANNEL] ?: default.chatChannel,
+            chatShowNicknames = preferences[CHAT_SHOW_NICKNAMES] ?: default.chatShowNicknames,
+            chatShowBadges = preferences[CHAT_SHOW_BADGES] ?: default.chatShowBadges,
+            chatHideCommands = preferences[CHAT_HIDE_COMMANDS] ?: default.chatHideCommands,
+            chatFontSizeSp = preferences[CHAT_FONT_SIZE_SP] ?: default.chatFontSizeSp,
+            chatOpacityPercent = preferences[CHAT_OPACITY_PERCENT] ?: default.chatOpacityPercent,
+            chatMessageLimit = preferences[CHAT_MESSAGE_LIMIT] ?: default.chatMessageLimit,
         )
     }
 
@@ -61,6 +69,14 @@ public class SettingsRepository(private val context: Context) {
             preferences[OBS_HOST] = settings.obsHost
             preferences[OBS_PORT] = settings.obsPort
             preferences[OBS_PASSWORD] = settings.obsPassword
+            preferences[CHAT_ENABLED] = settings.chatEnabled
+            preferences[CHAT_CHANNEL] = settings.chatChannel
+            preferences[CHAT_SHOW_NICKNAMES] = settings.chatShowNicknames
+            preferences[CHAT_SHOW_BADGES] = settings.chatShowBadges
+            preferences[CHAT_HIDE_COMMANDS] = settings.chatHideCommands
+            preferences[CHAT_FONT_SIZE_SP] = settings.chatFontSizeSp
+            preferences[CHAT_OPACITY_PERCENT] = settings.chatOpacityPercent
+            preferences[CHAT_MESSAGE_LIMIT] = settings.chatMessageLimit
         }
     }
 
@@ -84,5 +100,13 @@ public class SettingsRepository(private val context: Context) {
         val OBS_HOST = stringPreferencesKey("obs_host")
         val OBS_PORT = intPreferencesKey("obs_port")
         val OBS_PASSWORD = stringPreferencesKey("obs_password")
+        val CHAT_ENABLED = booleanPreferencesKey("chat_enabled")
+        val CHAT_CHANNEL = stringPreferencesKey("chat_channel")
+        val CHAT_SHOW_NICKNAMES = booleanPreferencesKey("chat_show_nicknames")
+        val CHAT_SHOW_BADGES = booleanPreferencesKey("chat_show_badges")
+        val CHAT_HIDE_COMMANDS = booleanPreferencesKey("chat_hide_commands")
+        val CHAT_FONT_SIZE_SP = intPreferencesKey("chat_font_size_sp")
+        val CHAT_OPACITY_PERCENT = intPreferencesKey("chat_opacity_percent")
+        val CHAT_MESSAGE_LIMIT = intPreferencesKey("chat_message_limit")
     }
 }

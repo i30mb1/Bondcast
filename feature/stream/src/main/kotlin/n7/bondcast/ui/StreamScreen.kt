@@ -9,6 +9,11 @@ import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.NightModeIndicator
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -16,7 +21,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -53,6 +57,7 @@ import n7.bondcast.camerax.CameraControlBus
 import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.camerax.setAeAwbLock
 import n7.bondcast.camerax.setLowLightBoost
+import n7.bondcast.chat.impl.ChatController
 import n7.bondcast.obs.ObsController
 import n7.bondcast.obs.ObsPhase
 import n7.bondcast.settings.StreamSettings
@@ -66,6 +71,9 @@ import n7.bondcast.thermal.ThermalState
 import n7.bondcast.ui.components.AttentionLevel
 import n7.bondcast.ui.components.CameraIcon
 import n7.bondcast.ui.components.CameraPanel
+import n7.bondcast.ui.components.ChatIcon
+import n7.bondcast.ui.components.ChatOverlay
+import n7.bondcast.ui.components.ChatPanel
 import n7.bondcast.ui.components.FlameIcon
 import n7.bondcast.ui.components.GearIcon
 import n7.bondcast.ui.components.GoLiveButton
@@ -97,6 +105,11 @@ public fun StreamScreen(
     thermalMonitor: ThermalMonitor,
     mitigations: ThermalMitigations,
     obsController: ObsController,
+    chatController: ChatController,
+    twitchStatus: String,
+    twitchLoggedIn: Boolean,
+    onTwitchLogin: () -> Unit,
+    onTwitchLogout: () -> Unit,
 ) {
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
@@ -153,6 +166,14 @@ public fun StreamScreen(
     DisposableEffect(obsController) {
         onDispose { obsController.setPanelVisible(false) }
     }
+
+    // чат — оверлей слева (когда включён), настраивается меню справа (chatMenuOpen);
+    // и то и другое живёт мимо PanelManager, поэтому не гасит панели и не трогает камеру
+    val chatOn = settings?.chatEnabled == true
+    var chatMenuOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(chatOn) { chatController.setActive(chatOn) }
+    DisposableEffect(chatController) { onDispose { chatController.setActive(false) } }
+    val chatMessages by chatController.messages.collectAsState()
 
     val context = LocalContext.current
     val window = remember(context) { context.findActivity()?.window }
@@ -273,6 +294,21 @@ public fun StreamScreen(
             )
         }
 
+        // чат рисуется ДО панелей — левые панели открываются поверх него
+        if (chatOn) {
+            ChatOverlay(
+                messages = chatMessages,
+                showNicknames = settings?.chatShowNicknames ?: true,
+                showBadges = settings?.chatShowBadges ?: true,
+                fontSizeSp = settings?.chatFontSizeSp ?: 14,
+                opacityPercent = settings?.chatOpacityPercent ?: 80,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .width(400.dp)
+                    .fillMaxHeight(),
+            )
+        }
+
         StickerBadge(
             phase = phase,
             modifier = Modifier
@@ -294,8 +330,7 @@ public fun StreamScreen(
         RailFadeColumn(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(top = 4.dp, end = 16.dp, bottom = 60.dp)
+                .padding(top = 24.dp, end = 8.dp, bottom = 4.dp)
                 .fillMaxHeight(),
         ) {
             var index = 0
@@ -342,6 +377,13 @@ public fun StreamScreen(
                 ) {
                     ObsIcon(color = glyphColor(obsActive))
                 }
+            }
+            RailButton(
+                active = chatMenuOpen,
+                onClick = { chatMenuOpen = !chatMenuOpen },
+                appearDelay = index++ * 45L,
+            ) {
+                ChatIcon(color = glyphColor(chatMenuOpen))
             }
             RailButton(
                 active = false,
@@ -421,6 +463,29 @@ public fun StreamScreen(
             )
         }
 
+        // меню чата выезжает справа (у рейла), настраивается вживую
+        AnimatedVisibility(
+            visible = chatMenuOpen && settings != null,
+            enter = fadeIn() + slideInHorizontally { it },
+            exit = fadeOut() + slideOutHorizontally { it },
+            // верх/низ как у левых панелей (safeDrawing + 16), справа отступ под рейл
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(top = 16.dp, end = 72.dp, bottom = 16.dp),
+        ) {
+            settings?.let { current ->
+                ChatPanel(
+                    settings = current,
+                    onUpdate = onUpdateSettings,
+                    twitchStatus = twitchStatus,
+                    twitchLoggedIn = twitchLoggedIn,
+                    onTwitchLogin = onTwitchLogin,
+                    onTwitchLogout = onTwitchLogout,
+                    onClose = { chatMenuOpen = false },
+                )
+            }
+        }
     }
 }
 
@@ -602,34 +667,58 @@ private fun HudStats(controller: StreamController) {
         // база сети рядом: RTT — задержка, Полоса — сколько ещё есть в запасе
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StreetStatCard(
-                "RTT", s?.rttMs?.toString() ?: "—", Modifier.weight(1f),
-                unit = "мс", labelColor = healthColor(h?.rttLevel), info = INFO_RTT,
+                "RTT",
+                s?.rttMs?.toString() ?: "—",
+                Modifier.weight(1f),
+                unit = "мс",
+                labelColor = healthColor(h?.rttLevel),
+                info = INFO_RTT,
             )
             StreetStatCard(
-                "Полоса", s?.bandwidthKbps?.toString() ?: "—", Modifier.weight(1f),
-                unit = "kbps", labelColor = DiscordColors.textSecondary, info = INFO_BANDWIDTH,
+                "Полоса",
+                s?.bandwidthKbps?.toString() ?: "—",
+                Modifier.weight(1f),
+                unit = "kbps",
+                labelColor = DiscordColors.textSecondary,
+                info = INFO_BANDWIDTH,
             )
         }
         // причина рядом со следствием: Потери → Ретр их же лечит
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StreetStatCard(
-                "Потери", h?.lossPerSec?.toString() ?: "—", Modifier.weight(1f),
-                unit = "/с", labelColor = healthColor(h?.lossLevel), info = INFO_LOSS,
+                "Потери",
+                h?.lossPerSec?.toString() ?: "—",
+                Modifier.weight(1f),
+                unit = "/с",
+                labelColor = healthColor(h?.lossLevel),
+                info = INFO_LOSS,
             )
             StreetStatCard(
-                "Ретр", h?.retransPerSec?.toString() ?: "—", Modifier.weight(1f),
-                unit = "/с", labelColor = healthColor(h?.retransLevel), info = INFO_RETRANS,
+                "Ретр",
+                h?.retransPerSec?.toString() ?: "—",
+                Modifier.weight(1f),
+                unit = "/с",
+                labelColor = healthColor(h?.retransLevel),
+                info = INFO_RETRANS,
             )
         }
         // причина рядом со следствием: Буфер переполняется → идут Дропы
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StreetStatCard(
-                "Буфер", s?.sndBufferMs?.toString() ?: "—", Modifier.weight(1f),
-                unit = "мс", labelColor = healthColor(h?.bufLevel), info = INFO_BUFFER,
+                "Буфер",
+                s?.sndBufferMs?.toString() ?: "—",
+                Modifier.weight(1f),
+                unit = "мс",
+                labelColor = healthColor(h?.bufLevel),
+                info = INFO_BUFFER,
             )
             StreetStatCard(
-                "Дропы", h?.dropPerSec?.toString() ?: "—", Modifier.weight(1f),
-                unit = "/с", labelColor = healthColor(h?.dropLevel), info = INFO_DROP,
+                "Дропы",
+                h?.dropPerSec?.toString() ?: "—",
+                Modifier.weight(1f),
+                unit = "/с",
+                labelColor = healthColor(h?.dropLevel),
+                info = INFO_DROP,
             )
         }
         StreetStatCard(

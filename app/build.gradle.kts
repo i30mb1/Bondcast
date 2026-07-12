@@ -31,6 +31,8 @@ dependencies {
     implementation(project(":feature:obs"))
     implementation(project(":feature:overlay"))
     implementation(project(":feature:stream"))
+    implementation(project(":feature:chat:twitch"))
+    implementation(project(":feature:chat:impl"))
 
     implementation(libs.activity.compose)
     implementation(libs.material)

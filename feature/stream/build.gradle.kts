@@ -9,6 +9,7 @@ dependencies {
     implementation(project(":feature:thermal"))
     implementation(project(":feature:obs"))
     implementation(project(":feature:camera"))
+    implementation(project(":feature:chat:impl"))
     api(project(":feature:overlay"))
     implementation(project(":core:ui"))
     implementation(project(":feature:bonding:domain"))

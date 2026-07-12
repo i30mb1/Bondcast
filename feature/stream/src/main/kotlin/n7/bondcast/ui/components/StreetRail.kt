@@ -38,13 +38,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -54,9 +50,9 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import n7.bondcast.DiscordColors
 import n7.bondcast.stream.StreamPhase
+import n7.bondcast.ui.street.SpringAppear
 import n7.bondcast.ui.street.StreetShape
 import n7.bondcast.ui.street.pressBounce
-import n7.bondcast.ui.street.SpringAppear
 import n7.bondcast.ui.street.streetButton
 import n7.bondcast.ui.street.streetLabel
 import n7.bondcast.ui.street.upper
@@ -162,6 +158,7 @@ internal fun RailGroupDivider() {
     )
 }
 
+/** Рейл кнопок: прокручиваемый, без затемнения у краёв, с увеличенным шагом. */
 @Composable
 internal fun RailFadeColumn(
     modifier: Modifier = Modifier,
@@ -170,28 +167,11 @@ internal fun RailFadeColumn(
     Column(
         modifier = modifier
             .width(48.dp)
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                val fade = 16.dp.toPx()
-                val top = fade / size.height
-                val bottom = 1f - fade / size.height
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        top to Color.Black,
-                        bottom to Color.Black,
-                        1f to Color.Transparent,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
-            }
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(4.dp))
         content()
-        Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -214,7 +194,7 @@ internal fun StickerBadge(
                 .shadow(12.dp, StreetShape, clip = false)
                 .clip(StreetShape)
                 .background(DiscordColors.sticker)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp).padding(end = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(

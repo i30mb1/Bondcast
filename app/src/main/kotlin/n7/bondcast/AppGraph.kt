@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import n7.bondcast.bonding.srtlaClient
+import n7.bondcast.chat.impl.chatController
+import n7.bondcast.chat.twitch.twitchChat
 import n7.bondcast.obs.ObsController
 import n7.bondcast.overlay.overlayCompositor
 import n7.bondcast.service.StreamService
@@ -19,6 +21,8 @@ internal class AppGraph(application: Application) {
     val thermalMitigations = ThermalMitigations()
     val obsController = ObsController(settingsRepository)
     val overlayCompositor = overlayCompositor()
+    val twitchChat = twitchChat(application)
+    val chatController = chatController(listOf(twitchChat.source), settingsRepository)
     val streamController =
         StreamController(
             application,

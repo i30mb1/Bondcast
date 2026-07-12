@@ -433,7 +433,10 @@ public fun StreetPanelScaffold(
             StreetCloseButton(onClose)
         }
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+            // weight ограничивает высоту, иначе verticalScroll не прокручивает, а обрезает
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             content()

@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +33,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import n7.bondcast.chat.twitch.TwitchAuthState
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.SettingsScreen
 import n7.bondcast.ui.StreamScreen
@@ -142,6 +144,26 @@ private fun App(graph: AppGraph, autostart: Boolean) {
         }
     }
 
+    val twitchAuth by graph.twitchChat.session.authState.collectAsState()
+    val twitchStatus = when (val auth = twitchAuth) {
+        is TwitchAuthState.LoggedIn -> "Вошёл: ${auth.login}"
+        is TwitchAuthState.AwaitingCode -> "Код ${auth.userCode} — открой ${auth.verificationUri}"
+        is TwitchAuthState.Failed -> "Ошибка входа: ${auth.message}"
+        TwitchAuthState.LoggedOut -> "Не выполнен вход в Twitch"
+    }
+    // на этапе кода откроем страницу активации в браузере
+    LaunchedEffect(twitchAuth) {
+        val auth = twitchAuth
+        if (auth is TwitchAuthState.AwaitingCode) {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(auth.verificationUri))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
+    }
+
     val currentSettings = settings
     if (showSettings && currentSettings != null) {
         SettingsScreen(
@@ -161,6 +183,11 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             thermalMonitor = graph.thermalMonitor,
             mitigations = graph.thermalMitigations,
             obsController = graph.obsController,
+            chatController = graph.chatController,
+            twitchStatus = twitchStatus,
+            twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
+            onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
+            onTwitchLogout = { graph.twitchChat.session.logout() },
         )
     }
 }

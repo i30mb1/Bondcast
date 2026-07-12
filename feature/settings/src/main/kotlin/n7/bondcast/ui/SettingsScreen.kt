@@ -313,6 +313,15 @@ public fun SettingsScreen(
                                     obsHost = host.trim(),
                                     obsPort = obsPortInt ?: 4455,
                                     obsPassword = obsPassword,
+                                    // чат настраивается на стрим-экране; тут просто не теряем значения
+                                    chatEnabled = initial.chatEnabled,
+                                    chatChannel = initial.chatChannel,
+                                    chatShowNicknames = initial.chatShowNicknames,
+                                    chatShowBadges = initial.chatShowBadges,
+                                    chatHideCommands = initial.chatHideCommands,
+                                    chatFontSizeSp = initial.chatFontSizeSp,
+                                    chatOpacityPercent = initial.chatOpacityPercent,
+                                    chatMessageLimit = initial.chatMessageLimit,
                                 ),
                             )
                         },

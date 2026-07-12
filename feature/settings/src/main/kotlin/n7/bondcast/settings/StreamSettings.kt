@@ -22,6 +22,16 @@ public data class StreamSettings(
     val obsHost: String = "",
     val obsPort: Int = 4455,
     val obsPassword: String = "",
+    /** Чат Twitch поверх экрана. channel пустой — свой канал залогиненного. */
+    val chatEnabled: Boolean = false,
+    val chatChannel: String = "",
+    val chatShowNicknames: Boolean = true,
+    val chatShowBadges: Boolean = true,
+    /** Прятать сообщения-команды ботов (начинаются с «!»). */
+    val chatHideCommands: Boolean = true,
+    val chatFontSizeSp: Int = 14,
+    val chatOpacityPercent: Int = 80,
+    val chatMessageLimit: Int = 30,
 ) {
     /** streamid в формате SRS: поток попадёт в live/<streamName>. */
     val streamId: String get() = "#!::r=live/$streamName,m=publish"
