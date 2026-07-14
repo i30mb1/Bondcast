@@ -188,32 +188,47 @@ private fun ChannelDialog(initial: String, onConfirm: (String) -> Unit, onDismis
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(text = "КАНАЛ", color = DiscordColors.accent, style = streetLabel)
-                Box(
+                Row(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .background(DiscordColors.inputBackground)
                         .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (text.isEmpty()) {
-                        Text(
-                            text = "свой канал",
-                            color = DiscordColors.textMuted,
-                            style = MaterialTheme.typography.bodyLarge,
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (text.isEmpty()) {
+                            Text(
+                                text = "свой канал",
+                                color = DiscordColors.textMuted,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        BasicTextField(
+                            value = text,
+                            onValueChange = { text = it },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = DiscordColors.textPrimary),
+                            cursorBrush = SolidColor(DiscordColors.accent),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { onConfirm(text.trim()) }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focus),
                         )
                     }
-                    BasicTextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = DiscordColors.textPrimary),
-                        cursorBrush = SolidColor(DiscordColors.accent),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { onConfirm(text.trim()) }),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focus),
-                    )
+                    // крестик — очистить поле одним тапом
+                    if (text.isNotEmpty()) {
+                        Text(
+                            text = "✕",
+                            color = DiscordColors.textSecondary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .clickable { text = "" }
+                                .padding(start = 8.dp),
+                        )
+                    }
                 }
             }
         }

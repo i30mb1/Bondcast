@@ -12,8 +12,8 @@ import androidx.camera.core.NightModeIndicator
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -466,8 +466,8 @@ public fun StreamScreen(
         // меню чата выезжает справа (у рейла), настраивается вживую
         AnimatedVisibility(
             visible = chatMenuOpen && settings != null,
-            enter = fadeIn() + slideInHorizontally { it },
-            exit = fadeOut() + slideOutHorizontally { it },
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
             // верх/низ как у левых панелей (safeDrawing + 16), справа отступ под рейл
             modifier = Modifier
                 .align(Alignment.TopEnd)

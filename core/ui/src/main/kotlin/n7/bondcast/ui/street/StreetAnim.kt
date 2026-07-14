@@ -1,5 +1,7 @@
 package n7.bondcast.ui.street
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
@@ -62,11 +64,17 @@ public fun Modifier.pressBounce(interactionSource: InteractionSource): Modifier 
     }
 }
 
-/** Лёгкая тряска-вобл при появлении: панель «дрожит», когда выезжает. */
-public fun Modifier.shakeOnAppear(amplitude: Float = 2.2f): Modifier = composed {
+/**
+ * Лёгкая тряска-вобл при появлении: панель «дрожит», когда выезжает. Завязана на
+ * transition окна, поэтому переигрывается на каждое открытие — даже если прошлое
+ * закрытие прервали на полпути и окно не успело покинуть композицию.
+ */
+@Composable
+public fun AnimatedVisibilityScope.shakeOnAppear(amplitude: Float = 2.2f): Modifier {
     val shake = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(transition.targetState) {
         shake.snapTo(0f)
+        if (transition.targetState != EnterExitState.Visible) return@LaunchedEffect
         shake.animateTo(
             targetValue = 0f,
             animationSpec = keyframes {
@@ -79,7 +87,7 @@ public fun Modifier.shakeOnAppear(amplitude: Float = 2.2f): Modifier = composed 
             },
         )
     }
-    graphicsLayer { rotationZ = shake.value }
+    return Modifier.graphicsLayer { rotationZ = shake.value }
 }
 
 @Composable

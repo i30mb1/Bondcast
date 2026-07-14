@@ -65,6 +65,6 @@ internal fun BoxScope.PanelSlot(
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(16.dp),
     ) {
-        Box(Modifier.shakeOnAppear()) { content() }
+        Box(shakeOnAppear()) { content() }
     }
 }
