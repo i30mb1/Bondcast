@@ -16,9 +16,9 @@ class IncludeModulesPlugin : Plugin<Settings> {
     private val ignoreModules = listOf("Bondcast", "build-logic", "build-settings")
 
     override fun apply(target: Settings) = with(target) {
-        val targetModule = readTargetModule(rootDir, target)
-        if (targetModule.isNotEmpty()) {
-            includeSpecificModule(targetModule)
+        val targetModules = readTargetModules(rootDir, target)
+        if (targetModules.isNotEmpty()) {
+            includeSpecificModules(targetModules)
         } else {
             includeAllModules()
         }
@@ -32,12 +32,12 @@ class IncludeModulesPlugin : Plugin<Settings> {
         println("Bondcast: Included $count modules in ${time.toString(DurationUnit.SECONDS, 2)}")
     }
 
-    private fun Settings.includeSpecificModule(targetModule: String) {
+    private fun Settings.includeSpecificModules(targetModules: List<String>) {
         val count: Int
         val time = measureTimeMillis {
-            count = includeModuleWithDependencies(targetModule)
+            count = includeModulesWithDependencies(targetModules)
         }.milliseconds
-        println("Bondcast: Included $count modules for target '$targetModule' in ${time.toString(DurationUnit.SECONDS, 2)}")
+        println("Bondcast: Included $count modules for target '${targetModules.joinToString(",")}' in ${time.toString(DurationUnit.SECONDS, 2)}")
     }
 
     private fun Settings.includeAllModule(): Int {
@@ -46,18 +46,20 @@ class IncludeModulesPlugin : Plugin<Settings> {
         return modules.size
     }
 
-    private fun Settings.includeModuleWithDependencies(targetModule: String): Int {
+    private fun Settings.includeModulesWithDependencies(targetModules: List<String>): Int {
         val allModules = getAllModules()
         val moduleByPath = allModules.associateBy { it.module }
 
-        val targetModuleData = moduleByPath[targetModule]
-        if (targetModuleData == null) {
-            println("Bondcast: Target module '$targetModule' not found!")
-            return 0
+        val requiredModules = mutableSetOf<ModuleData>()
+        targetModules.forEach { targetModule ->
+            val targetModuleData = moduleByPath[targetModule]
+            if (targetModuleData == null) {
+                println("Bondcast: Target module '$targetModule' not found!")
+                return@forEach
+            }
+            requiredModules.addAll(findAllDependencies(targetModuleData, moduleByPath, mutableSetOf()))
+            requiredModules.add(targetModuleData) // Добавляем сам целевой модуль
         }
-
-        val requiredModules = findAllDependencies(targetModuleData, moduleByPath, mutableSetOf())
-        requiredModules.add(targetModuleData) // Добавляем сам целевой модуль
 
         requiredModules.forEach { module ->
             include(module.module)
@@ -209,25 +211,27 @@ class IncludeModulesPlugin : Plugin<Settings> {
         }
     }
 
-    private fun readTargetModule(rootDir: File, settings: Settings): String {
+    private fun readTargetModules(rootDir: File, settings: Settings): List<String> {
         // 1. Приоритет: -P параметр из командной строки
         val moduleFromProperty = settings.providers.gradleProperty("module").orNull
         if (!moduleFromProperty.isNullOrEmpty()) {
-            return moduleFromProperty.trim().removeSurrounding("\"")
+            return moduleFromProperty.split(",").map { it.trim().removeSurrounding("\"") }.filter { it.isNotEmpty() }
         }
 
         // 2. Авто-определение по имени таска
-        val moduleFromTask = detectModuleFromTask(settings)
-        if (moduleFromTask.isNotEmpty()) {
-            return moduleFromTask
+        val modulesFromTask = detectModulesFromTask(settings)
+        if (modulesFromTask.isNotEmpty()) {
+            return modulesFromTask
         }
 
         // 3. Fallback: читаем из local.properties
         val properties = getLocalProperties(rootDir)
-        return properties.getProperty("module", "").trim().removeSurrounding("\"")
+        val fromLocal = properties.getProperty("module", "").trim().removeSurrounding("\"")
+        return if (fromLocal.isEmpty()) emptyList() else listOf(fromLocal)
     }
 
-    private fun detectModuleFromTask(settings: Settings): String {
+    private fun detectModulesFromTask(settings: Settings): List<String> {
+        val detected = mutableListOf<String>()
         try {
             val startParameter = settings.gradle.startParameter
             val taskRequests = startParameter.taskRequests
@@ -245,7 +249,7 @@ class IncludeModulesPlugin : Plugin<Settings> {
                         // Берем все части кроме последней (которая обычно таск)
                         val moduleParts = parts.dropLast(1)
                         val detectedModule = ":" + moduleParts.joinToString(":")
-                        return detectedModule
+                        if (detectedModule !in detected) detected.add(detectedModule)
                     }
                 }
             }
@@ -253,7 +257,7 @@ class IncludeModulesPlugin : Plugin<Settings> {
             // Тихо игнорируем ошибки авто-определения
         }
 
-        return ""
+        return detected
     }
 
     private fun getLocalProperties(root: File): Properties {
