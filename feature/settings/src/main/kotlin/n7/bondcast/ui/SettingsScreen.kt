@@ -1,6 +1,7 @@
 package n7.bondcast.ui
 
 import android.content.pm.ActivityInfo
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,9 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
+import n7.bondcast.qr.QrPayload
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.settings.VideoCodec
 import n7.bondcast.ui.components.DiscordField
@@ -66,6 +69,8 @@ public fun SettingsScreen(
     var obsEnabled by remember { mutableStateOf(initial.obsEnabled) }
     var obsPort by remember { mutableStateOf(initial.obsPort.toString()) }
     var obsPassword by remember { mutableStateOf(initial.obsPassword) }
+    var showScanner by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val portInt = port.toIntOrNull()
     val bitrateInt = bitrate.toIntOrNull()
@@ -93,6 +98,36 @@ public fun SettingsScreen(
         else -> 2_500 to 4_000
     }
 
+    if (showScanner) {
+        QrScannerScreen(
+            onResult = { payload ->
+                when (payload) {
+                    is QrPayload.ObsConnect -> {
+                        host = payload.host
+                        obsPort = payload.port.toString()
+                        obsPassword = payload.password
+                        obsEnabled = true
+                    }
+                    is QrPayload.ServerConfig -> {
+                        (payload.host ?: payload.srtlaHost)?.let { host = it }
+                        payload.port?.let { port = it.toString() }
+                        payload.srtlaPort?.let { srtlaPort = it.toString() }
+                        payload.streamName?.let { streamName = it }
+                        payload.passphrase?.let { passphrase = it }
+                        payload.bonding?.let { bonding = it }
+                        payload.obsPort?.let { obsPort = it.toString(); obsEnabled = true }
+                        payload.obsPassword?.let { obsPassword = it; obsEnabled = true }
+                    }
+                    is QrPayload.Unknown ->
+                        Toast.makeText(context, "QR не распознан", Toast.LENGTH_SHORT).show()
+                }
+                showScanner = false
+            },
+            onBack = { showScanner = false },
+        )
+        return
+    }
+
     BackHandler(onBack = onBack)
 
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -110,6 +145,15 @@ public fun SettingsScreen(
             ) {
                 SectionLabel("Сервер")
                 SettingsCard {
+                    Button(
+                        onClick = { showScanner = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text("📷 Сканировать QR")
+                    }
+                    RowDivider()
                     DiscordSwitchRow(
                         label = "Бондинг (объединить сети)",
                         checked = bonding,

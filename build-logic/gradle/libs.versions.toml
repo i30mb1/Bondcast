@@ -12,6 +12,7 @@ srtdroid = "1.9.5"
 okhttp = "4.12.0"
 coil = "3.5.0"
 camera = "1.7.0-alpha02"
+mlkitBarcode = "17.3.0"
 jmh = "1.37"
 json = "20250107"
 junit = "4.13.2"
@@ -53,6 +54,7 @@ camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", versi
 camera-effects = { group = "androidx.camera", name = "camera-effects", version.ref = "camera" }
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
 camera-compose = { group = "androidx.camera", name = "camera-compose", version.ref = "camera" }
+mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
