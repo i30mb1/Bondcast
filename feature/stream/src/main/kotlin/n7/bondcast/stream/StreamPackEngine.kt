@@ -156,12 +156,11 @@ internal class StreamPackEngine(
         }
     }
 
-    private fun sourceFactory(cameraId: String): IVideoSourceInternal.Factory =
-        if (cameraId == USB_CAMERA_ID) {
-            UvcVideoSourceFactory()
-        } else {
-            CameraXVideoSourceFactory(cameraId, overlayCompositor)
-        }
+    private fun sourceFactory(cameraId: String): IVideoSourceInternal.Factory = if (cameraId == USB_CAMERA_ID) {
+        UvcVideoSourceFactory()
+    } else {
+        CameraXVideoSourceFactory(cameraId, overlayCompositor)
+    }
 
     private fun cameraManager(): CameraManager? = context.getSystemService(CameraManager::class.java)
 

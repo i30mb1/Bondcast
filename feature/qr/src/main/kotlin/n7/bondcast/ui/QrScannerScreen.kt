@@ -39,10 +39,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.LifecycleOwner
 import n7.bondcast.DiscordColors
-import n7.bondcast.ui.components.DiscordTopBar
 import n7.bondcast.qr.BarcodeAnalyzer
 import n7.bondcast.qr.QrPayload
 import n7.bondcast.qr.qrPayloadParser
+import n7.bondcast.ui.components.DiscordTopBar
 import java.util.concurrent.Executors
 
 @Composable

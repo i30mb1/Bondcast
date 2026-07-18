@@ -31,10 +31,8 @@ configure<ComposeCompilerGradlePluginExtension> {
         stabilityConfigurationFile.set(file)
     }
 
-    /**
-     * Generate file with info about compose functions
-     * use Gradle task *:compile****Kotlin --rerun-tasks
-     */
+    // Generate file with info about compose functions
+    // use Gradle task *:compile****Kotlin --rerun-tasks
     metricsDestination.set(layout.buildDirectory.dir("compose_metrics"))
     reportsDestination.set(layout.buildDirectory.dir("compose_metrics"))
 }

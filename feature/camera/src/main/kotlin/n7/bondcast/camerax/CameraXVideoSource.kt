@@ -56,6 +56,7 @@ internal class CameraXVideoSource(
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
+
     // свои use-cases: teardown снимает ТОЛЬКО их, а не unbindAll() — иначе старый источник при
     // switchCamera убивает привязку нового (делят один ProcessCameraProvider), камера гаснет
     private var boundUseCases: List<UseCase> = emptyList()

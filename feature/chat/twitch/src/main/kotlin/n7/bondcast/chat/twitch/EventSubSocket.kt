@@ -58,16 +58,22 @@ internal class EventSubSocket(
                 val payload = json.optJSONObject("payload") ?: JSONObject()
                 when (metadata.getString("message_type")) {
                     "session_welcome" -> sessionId.complete(payload.getJSONObject("session").getString("id"))
-                    "session_keepalive" -> Unit // живость держит pingInterval OkHttp
+
+                    "session_keepalive" -> Unit
+
+                    // живость держит pingInterval OkHttp
                     "notification" -> _notifications.tryEmit(
                         EventSubNotification(
                             type = payload.getJSONObject("subscription").getString("type"),
                             event = payload.getJSONObject("event"),
                         ),
                     )
+
                     "session_reconnect" ->
                         reconnectUrl.complete(payload.getJSONObject("session").getString("reconnect_url"))
+
                     "revocation" -> Log.w(TAG, "подписка отозвана: ${payload.optJSONObject("subscription")}")
+
                     "session_disconnect" -> finish(IOException("session_disconnect"))
                 }
             }.onFailure {

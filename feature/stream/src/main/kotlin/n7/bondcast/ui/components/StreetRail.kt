@@ -182,8 +182,11 @@ internal fun StickerBadge(
 ) {
     val (dotColor, label) = when (phase) {
         is StreamPhase.Idle -> DiscordColors.textMuted to "Не в эфире"
+
         is StreamPhase.Connecting -> DiscordColors.yellow to "Подключение…"
+
         is StreamPhase.Live -> DiscordColors.accent to "В эфире"
+
         is StreamPhase.Retrying ->
             DiscordColors.danger to "Реконнект #${phase.attempt}"
     }

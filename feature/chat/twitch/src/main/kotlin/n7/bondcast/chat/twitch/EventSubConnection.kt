@@ -116,6 +116,7 @@ public class EventSubConnection(
                             url = outcome.url
                             graceful = true
                         }
+
                         is Outcome.Closed -> failure = outcome.cause
                     }
                 }

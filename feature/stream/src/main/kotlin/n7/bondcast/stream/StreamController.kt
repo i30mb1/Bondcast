@@ -277,21 +277,20 @@ public class StreamController(
         _phase.value = phase
     }
 
-    private fun buildAbr(enabled: Boolean, minKbps: Int, maxKbps: Int, latencyMs: Int): AbrController? =
-        if (enabled) {
-            abrController(
-                AbrConfig(
-                    minKbps = minKbps.coerceAtMost(maxKbps),
-                    maxKbps = maxKbps,
-                    sndBufHighMs = latencyMs / 2,
-                    sndBufLowMs = latencyMs / 5,
-                    // шаг подъёма растёт вместе с потолком, иначе от минимума до 20000 ползти минуту+
-                    increaseStepKbps = max(500, maxKbps / 25),
-                ),
-            ) { Log.i(TAG, it) }
-        } else {
-            null
-        }
+    private fun buildAbr(enabled: Boolean, minKbps: Int, maxKbps: Int, latencyMs: Int): AbrController? = if (enabled) {
+        abrController(
+            AbrConfig(
+                minKbps = minKbps.coerceAtMost(maxKbps),
+                maxKbps = maxKbps,
+                sndBufHighMs = latencyMs / 2,
+                sndBufLowMs = latencyMs / 5,
+                // шаг подъёма растёт вместе с потолком, иначе от минимума до 20000 ползти минуту+
+                increaseStepKbps = max(500, maxKbps / 25),
+            ),
+        ) { Log.i(TAG, it) }
+    } else {
+        null
+    }
 
     private suspend fun awaitDisconnectOrLatencyChange(current: Int): Boolean = coroutineScope {
         val disconnect = async { engine.awaitDisconnect() }

@@ -78,10 +78,12 @@ internal class TwitchSessionImpl(
                     finishLogin(result)
                     return
                 }
+
                 is TokenResult.Failed -> {
                     _authState.value = TwitchAuthState.Failed(result.message)
                     return
                 }
+
                 else -> Unit // Pending или сетевой сбой — ждём дальше
             }
         }
@@ -124,6 +126,7 @@ internal class TwitchSessionImpl(
                 tokens = rotated
                 rotated.accessToken
             }
+
             else -> {
                 store.clear()
                 tokens = null

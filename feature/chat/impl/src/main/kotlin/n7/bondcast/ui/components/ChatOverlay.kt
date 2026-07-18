@@ -117,10 +117,12 @@ private fun ChatMessageRow(
                         append(fragment.name)
                     }
                 }
+
                 is MessageFragment.Mention ->
                     withStyle(SpanStyle(color = DiscordColors.accent, fontWeight = FontWeight.Bold)) {
                         append("@${fragment.name}")
                     }
+
                 is MessageFragment.Text -> append(fragment.rawText)
             }
         }

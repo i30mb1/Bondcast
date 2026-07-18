@@ -115,11 +115,14 @@ internal class ChatControllerImpl(
                 while (buffer.size > limit) buffer.removeFirst()
                 publish()
             }
+
             is ChatEvent.Moderation -> mutex.withLock {
                 applyModeration(event.kind)
                 publish()
             }
+
             is ChatEvent.Connection -> _phase.value = mapPhase(event.state)
+
             is ChatEvent.Rich -> Unit // v1 богатые события не показываем
         }
     }

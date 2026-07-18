@@ -143,18 +143,24 @@ public class SrtlaScheduler(
                 registerSrtAck(SrtInspector.srtAckLastAck(data, len))
                 sink.sendToLocal(data, len)
             }
+
             PacketType.SRT_NAK -> {
                 SrtInspector.nakLostSeqnums(data, len) { registerNak(it) }
                 sink.sendToLocal(data, len)
             }
+
             PacketType.SRTLA_ACK -> {
                 SrtInspector.srtlaAckSeqnums(data, len) { registerSrtlaAck(it) }
             }
+
             PacketType.SRTLA_KEEPALIVE -> Unit
+
             PacketType.SRTLA_REG3 -> {
                 link.reg = RegState.ACTIVE
             }
+
             PacketType.SRTLA_REG_ERR, PacketType.SRTLA_REG_NAK, PacketType.SRTLA_REG1 -> Unit
+
             else -> sink.sendToLocal(data, len)
         }
     }

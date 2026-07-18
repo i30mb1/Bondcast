@@ -45,6 +45,7 @@ internal object ChatMessageParser {
                         val id = emote.getString("id")
                         add(MessageFragment.Emote(id = id, name = text, imageUrl = emoteUrl(id)))
                     }
+
                     "mention" -> {
                         val mention = fragment.getJSONObject("mention")
                         add(
@@ -54,6 +55,7 @@ internal object ChatMessageParser {
                             ),
                         )
                     }
+
                     else -> add(MessageFragment.Text(text))
                 }
             }

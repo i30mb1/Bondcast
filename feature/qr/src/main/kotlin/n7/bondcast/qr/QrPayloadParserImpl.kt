@@ -44,8 +44,7 @@ internal class QrPayloadParserImpl : QrPayloadParser {
         )
     }
 
-    private fun decode(value: String): String =
-        runCatching { URLDecoder.decode(value, Charsets.UTF_8.name()) }.getOrDefault(value)
+    private fun decode(value: String): String = runCatching { URLDecoder.decode(value, Charsets.UTF_8.name()) }.getOrDefault(value)
 
     private companion object {
         const val OBS_PREFIX = "obsws://"

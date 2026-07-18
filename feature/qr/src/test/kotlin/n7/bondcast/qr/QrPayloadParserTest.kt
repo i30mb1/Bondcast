@@ -1,8 +1,8 @@
 package n7.bondcast.qr
 
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.junit.Test
 
 class QrPayloadParserTest {
 

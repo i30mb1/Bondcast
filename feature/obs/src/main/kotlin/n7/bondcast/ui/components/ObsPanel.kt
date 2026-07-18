@@ -55,12 +55,14 @@ public fun ObsPanel(
                 color = DiscordColors.textMuted,
                 style = MaterialTheme.typography.bodySmall,
             )
+
             is ObsPhase.Retrying -> Text(
                 text = "Не достучались (#${phase.attempt})${phase.cause?.let { ": $it" } ?: ""}. " +
                     "OBS запущен? WebSocket включён? Фаервол пускает?",
                 color = DiscordColors.textMuted,
                 style = MaterialTheme.typography.bodySmall,
             )
+
             else -> Unit
         }
 
@@ -109,7 +111,6 @@ public fun ObsPanel(
                 }
             }
         }
-
     }
 }
 

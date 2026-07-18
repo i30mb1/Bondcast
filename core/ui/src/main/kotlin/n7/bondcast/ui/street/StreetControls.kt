@@ -269,6 +269,7 @@ private class TooltipShape(
                     close()
                 }
             }
+
             TooltipArrowSide.START -> {
                 val cy = arrowCenterPx.coerceIn(r + aw / 2f, h - r - aw / 2f)
                 Path().apply {

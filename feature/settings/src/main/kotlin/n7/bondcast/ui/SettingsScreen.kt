@@ -108,6 +108,7 @@ public fun SettingsScreen(
                         obsPassword = payload.password
                         obsEnabled = true
                     }
+
                     is QrPayload.ServerConfig -> {
                         (payload.host ?: payload.srtlaHost)?.let { host = it }
                         payload.port?.let { port = it.toString() }
@@ -115,9 +116,16 @@ public fun SettingsScreen(
                         payload.streamName?.let { streamName = it }
                         payload.passphrase?.let { passphrase = it }
                         payload.bonding?.let { bonding = it }
-                        payload.obsPort?.let { obsPort = it.toString(); obsEnabled = true }
-                        payload.obsPassword?.let { obsPassword = it; obsEnabled = true }
+                        payload.obsPort?.let {
+                            obsPort = it.toString()
+                            obsEnabled = true
+                        }
+                        payload.obsPassword?.let {
+                            obsPassword = it
+                            obsEnabled = true
+                        }
                     }
+
                     is QrPayload.Unknown ->
                         Toast.makeText(context, "QR не распознан", Toast.LENGTH_SHORT).show()
                 }

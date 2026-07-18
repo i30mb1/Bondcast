@@ -41,6 +41,7 @@ internal class LinkIoLoop(
     private val pendingEvents = ConcurrentLinkedQueue<NetworkEvent>()
     private val closed = AtomicBoolean(false)
     private val scratch = ByteArray(PacketType.MTU + 512)
+
     // единый direct-буфер отправки: sink пишет прямо в сокет без ByteBuffer.wrap на каждый пакет.
     // io-поток однопоточный, put/flip/write синхронны — можно переиспользовать между действиями
     private val sendBuf = ByteBuffer.allocateDirect(PacketType.MTU + 512)

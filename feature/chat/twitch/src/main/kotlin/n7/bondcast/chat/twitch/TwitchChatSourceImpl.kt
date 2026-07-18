@@ -68,11 +68,15 @@ internal class TwitchChatSourceImpl(
                 null
             }
         }
+
         "channel.chat.message_delete" ->
             moderation(ModerationKind.DeleteMessage(note.event.getString("message_id")))
+
         "channel.chat.clear_user_messages" ->
             moderation(ModerationKind.BanUser(note.event.getString("target_user_id")))
+
         "channel.chat.clear" -> moderation(ModerationKind.ClearChat)
+
         else -> null
     }
 

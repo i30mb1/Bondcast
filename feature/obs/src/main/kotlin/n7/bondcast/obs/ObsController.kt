@@ -169,16 +169,19 @@ public class ObsController(private val settingsRepository: SettingsRepository) {
         session.events.collect { (type, data) ->
             when (type) {
                 "CurrentProgramSceneChanged" -> _currentScene.value = eventSceneName(data)
+
                 // в payload нет текущей сцены — перечитываем список целиком
                 "SceneListChanged" -> runCatching {
                     val (scenes, current) = parseSceneList(session.request("GetSceneList"))
                     _scenes.value = scenes
                     if (current != null) _currentScene.value = current
                 }
+
                 "StreamStateChanged" -> {
                     val active = eventOutputActive(data)
                     _streamStatus.value = ObsStreamStatus(active, _streamStatus.value?.timecode ?: "00:00:00", null)
                 }
+
                 "RecordStateChanged" -> {
                     val active = eventOutputActive(data)
                     _recordStatus.value = ObsRecordStatus(active, _recordStatus.value?.timecode ?: "00:00:00")
