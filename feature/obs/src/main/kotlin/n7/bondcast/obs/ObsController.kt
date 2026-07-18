@@ -136,7 +136,7 @@ public class ObsController(private val settingsRepository: SettingsRepository) {
                         poller.cancel()
                         settingsWatcher.cancel()
                     }
-                    if (failure is ObsAuthException) throw failure as ObsAuthException
+                    if (failure is ObsAuthException) throw failure
                 } catch (auth: ObsAuthException) {
                     Log.w(TAG, "аутентификация не прошла: ${auth.message}")
                     setPhase(ObsPhase.AuthFailed)

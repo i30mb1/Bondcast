@@ -1,5 +1,6 @@
 package n7.bondcast.stream
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -40,6 +41,7 @@ internal class StreamPackEngine(
     override val lastError: Throwable?
         get() = streamer?.throwableFlow?.value
 
+    @SuppressLint("MissingPermission")
     override suspend fun prepare(settings: StreamSettings): Unit = streamerLock.withLock {
         val current = streamer ?: run {
             // свой sink вместо штатного: без srcTime из MediaCodec PTS (см. SendTimeSrtSink)
