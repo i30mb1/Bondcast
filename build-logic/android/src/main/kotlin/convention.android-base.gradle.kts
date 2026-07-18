@@ -5,7 +5,7 @@ pluginManager.withPlugin("com.android.application") {
     extensions.configure(ApplicationExtension::class.java) {
         compileSdk = 37
         defaultConfig {
-            minSdk = 35
+            minSdk = 29
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         }
         compileOptions {
@@ -33,7 +33,7 @@ pluginManager.withPlugin("com.android.library") {
     extensions.configure(LibraryExtension::class.java) {
         compileSdk = 37
         defaultConfig {
-            minSdk = 35
+            minSdk = 29
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         }
         compileOptions {

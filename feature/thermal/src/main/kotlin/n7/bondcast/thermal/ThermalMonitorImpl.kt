@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
 import android.os.PowerManager
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -58,8 +59,11 @@ internal class ThermalMonitorImpl(private val context: Context) : ThermalMonitor
         }
     }
 
-    private fun readHeadroom(powerManager: PowerManager): Float? = runCatching { powerManager.getThermalHeadroom(0) }.getOrNull()
-        ?.takeIf { !it.isNaN() && it > 0f }
+    private fun readHeadroom(powerManager: PowerManager): Float? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return runCatching { powerManager.getThermalHeadroom(0) }.getOrNull()
+            ?.takeIf { !it.isNaN() && it > 0f }
+    }
 
     private fun readBatteryTemp(): Float? {
         val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

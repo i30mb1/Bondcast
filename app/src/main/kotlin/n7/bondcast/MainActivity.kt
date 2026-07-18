@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -114,7 +115,11 @@ private fun App(graph: AppGraph, autostart: Boolean) {
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted = requiredGranted() }
-    val allPermissions = requiredPermissions + Manifest.permission.POST_NOTIFICATIONS
+    val allPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        requiredPermissions + Manifest.permission.POST_NOTIFICATIONS
+    } else {
+        requiredPermissions
+    }
 
     LaunchedEffect(Unit) {
         if (!granted) launcher.launch(allPermissions)
