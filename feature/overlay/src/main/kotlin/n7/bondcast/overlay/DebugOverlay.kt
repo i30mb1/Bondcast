@@ -1,9 +1,7 @@
 package n7.bondcast.overlay
 
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.util.Size
 
 public class DebugOverlay : StreamOverlay {
 
@@ -18,9 +16,11 @@ public class DebugOverlay : StreamOverlay {
 
     private var frames = 0L
 
-    override fun draw(canvas: Canvas, frame: Size) {
+    override fun draw(frame: OverlayFrame) {
         frames++
-        canvas.drawRect(0f, 0f, frame.width.toFloat(), 260f, bar)
+        val canvas = frame.canvas
+        val width = frame.uprightSize.width.toFloat()
+        canvas.drawRect(0f, 0f, width, 260f, bar)
         canvas.drawRect(40f, 40f, 220f, 220f, box)
         canvas.drawText("OVERLAY #$frames", 260f, 175f, label)
     }

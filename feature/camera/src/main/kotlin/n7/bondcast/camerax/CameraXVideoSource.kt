@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import n7.bondcast.overlay.OverlayCompositor
+import n7.bondcast.overlay.OverlayFrame
 
 internal class CameraXVideoSource(
     private val context: Context,
@@ -234,7 +235,8 @@ internal class CameraXVideoSource(
         effect.setOnDrawListener { frame ->
             val canvas = frame.overlayCanvas
             canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            compositor.drawAll(canvas, frame.size)
+            val info = _infoProviderFlow.value
+            compositor.drawAll(OverlayFrame(canvas, frame.size, info.rotationDegrees, info.isMirror))
             true
         }
         overlayThread = thread

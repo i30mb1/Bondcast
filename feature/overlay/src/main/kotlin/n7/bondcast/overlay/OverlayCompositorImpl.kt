@@ -1,24 +1,38 @@
 package n7.bondcast.overlay
 
-import android.graphics.Canvas
-import android.util.Size
-import java.util.concurrent.CopyOnWriteArrayList
-
 internal class OverlayCompositorImpl : OverlayCompositor {
 
-    private val overlays = CopyOnWriteArrayList<StreamOverlay>()
+    private val lock = Any()
+    private val entries = mutableListOf<Entry>()
 
-    override fun register(overlay: StreamOverlay) {
-        overlays.addIfAbsent(overlay)
+    @Volatile
+    private var ordered: Array<StreamOverlay> = emptyArray()
+
+    override fun register(overlay: StreamOverlay, z: Int) {
+        synchronized(lock) {
+            if (entries.any { it.overlay === overlay }) return
+            entries.add(Entry(overlay, z))
+            rebuild()
+        }
     }
 
     override fun unregister(overlay: StreamOverlay) {
-        overlays.remove(overlay)
+        synchronized(lock) {
+            if (entries.removeAll { it.overlay === overlay }) rebuild()
+        }
     }
 
-    override fun hasOverlays(): Boolean = overlays.isNotEmpty()
+    override fun hasOverlays(): Boolean = ordered.isNotEmpty()
 
-    override fun drawAll(canvas: Canvas, frame: Size) {
-        for (overlay in overlays) overlay.draw(canvas, frame)
+    override fun drawAll(frame: OverlayFrame) {
+        val snapshot = ordered
+        for (i in snapshot.indices) snapshot[i].draw(frame)
     }
+
+    private fun rebuild() {
+        entries.sortBy { it.z }
+        ordered = Array(entries.size) { entries[it].overlay }
+    }
+
+    private class Entry(val overlay: StreamOverlay, val z: Int)
 }
