@@ -32,6 +32,7 @@ public data class StreamSettings(
     val chatFontSizeSp: Int = 14,
     val chatOpacityPercent: Int = 80,
     val chatMessageLimit: Int = 30,
+    val onboardingCompleted: Boolean = false,
 ) {
     /** streamid в формате SRS: поток попадёт в live/<streamName>. */
     val streamId: String get() = "#!::r=live/$streamName,m=publish"

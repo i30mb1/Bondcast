@@ -45,6 +45,7 @@ public class SettingsRepository(private val context: Context) {
             chatFontSizeSp = preferences[CHAT_FONT_SIZE_SP] ?: default.chatFontSizeSp,
             chatOpacityPercent = preferences[CHAT_OPACITY_PERCENT] ?: default.chatOpacityPercent,
             chatMessageLimit = preferences[CHAT_MESSAGE_LIMIT] ?: default.chatMessageLimit,
+            onboardingCompleted = preferences[ONBOARDING_COMPLETED] ?: default.onboardingCompleted,
         )
     }
 
@@ -77,6 +78,7 @@ public class SettingsRepository(private val context: Context) {
             preferences[CHAT_FONT_SIZE_SP] = settings.chatFontSizeSp
             preferences[CHAT_OPACITY_PERCENT] = settings.chatOpacityPercent
             preferences[CHAT_MESSAGE_LIMIT] = settings.chatMessageLimit
+            preferences[ONBOARDING_COMPLETED] = settings.onboardingCompleted
         }
     }
 
@@ -108,5 +110,6 @@ public class SettingsRepository(private val context: Context) {
         val CHAT_FONT_SIZE_SP = intPreferencesKey("chat_font_size_sp")
         val CHAT_OPACITY_PERCENT = intPreferencesKey("chat_opacity_percent")
         val CHAT_MESSAGE_LIMIT = intPreferencesKey("chat_message_limit")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 }

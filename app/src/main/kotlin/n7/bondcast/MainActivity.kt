@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import n7.bondcast.chat.twitch.TwitchAuthState
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.ui.OnboardingScreen
 import n7.bondcast.ui.SettingsScreen
 import n7.bondcast.ui.StreamScreen
 
@@ -94,6 +95,7 @@ internal class MainActivity : ComponentActivity() {
             bondingEnabled = intent.getBooleanExtra("cfg_bonding", current.bondingEnabled),
             srtlaHost = intent.getStringExtra("cfg_srtla_host") ?: current.srtlaHost,
             srtlaPort = intent.getIntExtra("cfg_srtla_port", current.srtlaPort),
+            onboardingCompleted = true,
         )
     }
 }
@@ -132,11 +134,12 @@ private fun App(graph: AppGraph, autostart: Boolean) {
 
     val settings by graph.settingsRepository.settings.collectAsState(initial = null)
     var showSettings by remember { mutableStateOf(false) }
+    val onboarding = settings?.let { !it.onboardingCompleted } == true
     val scope = rememberCoroutineScope()
 
     // настройки удобнее крутить в портрете, стрим живёт в ландшафте (манифест: sensorLandscape)
-    LaunchedEffect(showSettings) {
-        (context as? Activity)?.requestedOrientation = if (showSettings) {
+    LaunchedEffect(showSettings, onboarding) {
+        (context as? Activity)?.requestedOrientation = if (showSettings || onboarding) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -170,7 +173,12 @@ private fun App(graph: AppGraph, autostart: Boolean) {
     }
 
     val currentSettings = settings
-    if (showSettings && currentSettings != null) {
+    if (currentSettings != null && !currentSettings.onboardingCompleted) {
+        OnboardingScreen(
+            initial = currentSettings,
+            onFinish = { new -> scope.launch { graph.settingsRepository.save(new) } },
+        )
+    } else if (showSettings && currentSettings != null) {
         SettingsScreen(
             initial = currentSettings,
             onSave = { new ->
