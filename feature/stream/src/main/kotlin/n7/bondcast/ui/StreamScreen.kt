@@ -74,6 +74,7 @@ import n7.bondcast.ui.components.CameraPanel
 import n7.bondcast.ui.components.ChatIcon
 import n7.bondcast.ui.components.ChatOverlay
 import n7.bondcast.ui.components.ChatPanel
+import n7.bondcast.ui.components.ConnectionHealthChip
 import n7.bondcast.ui.components.FlameIcon
 import n7.bondcast.ui.components.GearIcon
 import n7.bondcast.ui.components.GoLiveButton
@@ -207,6 +208,7 @@ public fun StreamScreen(
             }
         }
     }
+    val overallHealth by remember { derivedStateOf { healthState.value?.overall } }
     val thermalAttention = when {
         thermalState.status >= PowerManager.THERMAL_STATUS_SEVERE || thermalState.heat >= 0.95f -> AttentionLevel.BAD
         thermalState.status >= PowerManager.THERMAL_STATUS_MODERATE || thermalState.heat >= 0.65f -> AttentionLevel.WARN
@@ -309,13 +311,16 @@ public fun StreamScreen(
             )
         }
 
-        StickerBadge(
-            phase = phase,
+        Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(16.dp),
-        )
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StickerBadge(phase = phase)
+            ConnectionHealthChip(overall = overallHealth)
+        }
 
         val streaming = phase !is StreamPhase.Idle
         GoLiveButton(
