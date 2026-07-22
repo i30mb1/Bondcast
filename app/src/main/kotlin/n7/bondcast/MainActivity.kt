@@ -172,6 +172,12 @@ private fun App(graph: AppGraph, autostart: Boolean) {
         }
     }
 
+    // опрос «кто в чате» живёт, пока залогинены — канал берём из настроек, как и сам чат
+    val twitchViewers by graph.twitchChat.viewers.state.collectAsState()
+    LaunchedEffect(twitchAuth, settings?.chatChannel) {
+        graph.twitchChat.viewers.setActive(twitchAuth is TwitchAuthState.LoggedIn, settings?.chatChannel.orEmpty())
+    }
+
     val currentSettings = settings
     if (currentSettings != null && !currentSettings.onboardingCompleted) {
         OnboardingScreen(
@@ -201,6 +207,8 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
             onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
             onTwitchLogout = { graph.twitchChat.session.logout() },
+            twitchViewerCount = twitchViewers?.total,
+            twitchViewerNames = twitchViewers?.names ?: emptyList(),
         )
     }
 }

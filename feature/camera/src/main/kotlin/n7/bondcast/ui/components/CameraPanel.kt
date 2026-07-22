@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,6 +15,7 @@ import n7.bondcast.stream.CameraOption
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
 import n7.bondcast.ui.street.StreetSectionLabel
+import n7.bondcast.ui.street.streetBody
 import n7.bondcast.ui.street.streetLabel
 
 @Composable
@@ -108,7 +108,7 @@ public fun CameraPanel(
                     Text(
                         text = "Сцена тёмная — есть смысл включить.",
                         color = DiscordColors.yellow,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = streetBody,
                     )
                 }
             }
@@ -126,7 +126,7 @@ internal fun PanelHint(text: String) {
     Text(
         text = text,
         color = DiscordColors.textMuted,
-        style = MaterialTheme.typography.bodySmall,
+        style = streetBody,
     )
 }
 

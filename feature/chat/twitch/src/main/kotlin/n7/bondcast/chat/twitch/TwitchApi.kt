@@ -113,6 +113,31 @@ internal class TwitchApi(
         if (code == 200) parseBadges(text) else emptyMap()
     }
 
+    /** Кто сейчас в чате канала: страница по 100 + курсор пагинации. */
+    suspend fun getChatters(
+        accessToken: String,
+        broadcasterId: String,
+        moderatorId: String,
+        cursor: String?,
+    ): ChattersPage = withContext(Dispatchers.IO) {
+        val url = buildString {
+            append(HELIX_CHATTERS)
+            append("?broadcaster_id=").append(broadcasterId)
+            append("&moderator_id=").append(moderatorId)
+            append("&first=100")
+            if (!cursor.isNullOrBlank()) append("&after=").append(cursor)
+        }
+        val (code, text) = execute(helixGet(url, accessToken))
+        if (code != 200) return@withContext ChattersPage(0, emptyList(), null)
+        val json = JSONObject(text)
+        val data = json.optJSONArray("data")
+        val names = buildList {
+            if (data != null) for (i in 0 until data.length()) add(data.getJSONObject(i).getString("user_name"))
+        }
+        val nextCursor = json.optJSONObject("pagination")?.optString("cursor")?.ifBlank { null }
+        ChattersPage(total = json.optInt("total", names.size), logins = names, cursor = nextCursor)
+    }
+
     private fun parseBadges(text: String): Map<String, String> {
         val data = JSONObject(text).optJSONArray("data") ?: return emptyMap()
         val map = HashMap<String, String>()
@@ -162,6 +187,7 @@ internal class TwitchApi(
         const val HELIX_EVENTSUB = "https://api.twitch.tv/helix/eventsub/subscriptions"
         const val HELIX_BADGES = "https://api.twitch.tv/helix/chat/badges"
         const val HELIX_BADGES_GLOBAL = "https://api.twitch.tv/helix/chat/badges/global"
+        const val HELIX_CHATTERS = "https://api.twitch.tv/helix/chat/chatters"
         const val GRANT_DEVICE_CODE = "urn:ietf:params:oauth:grant-type:device_code"
         const val DEFAULT_INTERVAL = 5
         const val DEFAULT_EXPIRES = 14400L
@@ -175,6 +201,12 @@ internal data class DeviceCode(
     val verificationUri: String,
     val expiresInSec: Int,
     val intervalSec: Int,
+)
+
+internal data class ChattersPage(
+    val total: Int,
+    val logins: List<String>,
+    val cursor: String?,
 )
 
 internal data class ValidateResult(

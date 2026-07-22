@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import n7.bondcast.DiscordColors
 import n7.bondcast.temperatureColor
 import n7.bondcast.thermal.ThermalState
@@ -28,6 +28,7 @@ import n7.bondcast.ui.street.StreetSectionLabel
 import n7.bondcast.ui.street.StreetShape
 import n7.bondcast.ui.street.StreetStatCard
 import n7.bondcast.ui.street.pressBounce
+import n7.bondcast.ui.street.streetBody
 import kotlin.math.roundToInt
 
 @Composable
@@ -61,6 +62,9 @@ public fun ThermalPanel(
             modifier = Modifier.fillMaxWidth(),
             labelColor = temperatureColor(state.heat),
             info = INFO_THERMAL_STATUS,
+            // фраза на всю ширину карточки в 22sp давит сильнее, чем короткие числа соседних
+            // карточек (нагрузка/батарея) — тот же принцип, что и остальная унификация шрифтов
+            valueFontSize = 16.sp,
         )
         val headroom = state.headroom
         val battery = state.batteryTempC
@@ -120,7 +124,7 @@ private fun AdviceRow(text: String, onClick: () -> Unit) {
     Text(
         text = text,
         color = DiscordColors.textPrimary,
-        style = MaterialTheme.typography.bodySmall,
+        style = streetBody,
         modifier = Modifier
             .pressBounce(interaction)
             .fillMaxWidth()

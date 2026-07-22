@@ -63,8 +63,25 @@ internal class TwitchSessionImpl(
         return map
     }
 
+    override suspend fun chatters(broadcasterId: String, moderatorId: String): TwitchChatters? {
+        val token = freshAccessToken() ?: return null
+        val names = ArrayList<String>()
+        var cursor: String? = null
+        var total = 0
+        var pages = 0
+        do {
+            val page = runCatching { api.getChatters(token, broadcasterId, moderatorId, cursor) }.getOrNull()
+                ?: return if (names.isEmpty()) null else TwitchChatters(total, names)
+            total = page.total
+            names.addAll(page.logins)
+            cursor = page.cursor
+            pages++
+        } while (cursor != null && pages < MAX_CHATTERS_PAGES)
+        return TwitchChatters(total, names)
+    }
+
     private suspend fun runDeviceLogin() {
-        val scopes = listOf(TwitchConfig.SCOPE_CHAT_READ)
+        val scopes = listOf(TwitchConfig.SCOPE_CHAT_READ, TwitchConfig.SCOPE_CHATTERS)
         val device = runCatching { api.requestDeviceCode(scopes) }.getOrElse {
             _authState.value = TwitchAuthState.Failed(it.message ?: "не удалось получить код")
             return
@@ -138,5 +155,6 @@ internal class TwitchSessionImpl(
 
     private companion object {
         const val SKEW_MS = 60_000L
+        const val MAX_CHATTERS_PAGES = 10
     }
 }

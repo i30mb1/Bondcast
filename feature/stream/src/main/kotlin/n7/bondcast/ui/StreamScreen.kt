@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -87,11 +86,13 @@ import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.StickerBadge
 import n7.bondcast.ui.components.ThermalPanel
+import n7.bondcast.ui.components.ViewersPanel
 import n7.bondcast.ui.components.healthColor
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
 import n7.bondcast.ui.street.StreetSectionLabel
 import n7.bondcast.ui.street.StreetStatCard
+import n7.bondcast.ui.street.streetBody
 import n7.bondcast.uvc.UvcPreviewBus
 import n7.srtla.scheduler.RegState
 import n7.srtla.scheduler.Transport
@@ -111,6 +112,8 @@ public fun StreamScreen(
     twitchLoggedIn: Boolean,
     onTwitchLogin: () -> Unit,
     onTwitchLogout: () -> Unit,
+    twitchViewerCount: Int?,
+    twitchViewerNames: List<String>,
 ) {
     val phase by controller.phase.collectAsState()
     val currentCamera by controller.currentCamera.collectAsState()
@@ -318,7 +321,11 @@ public fun StreamScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            StickerBadge(phase = phase)
+            StickerBadge(
+                phase = phase,
+                viewerCount = twitchViewerCount,
+                onViewersClick = { panels.toggle(PANEL_VIEWERS) },
+            )
             ConnectionHealthChip(overall = overallHealth)
         }
 
@@ -448,6 +455,14 @@ public fun StreamScreen(
             )
         }
 
+        PanelSlot(panels.isOpen(PANEL_VIEWERS)) {
+            ViewersPanel(
+                total = twitchViewerCount ?: 0,
+                names = twitchViewerNames,
+                onClose = { panels.close(PANEL_VIEWERS) },
+            )
+        }
+
         PanelSlot(panels.isOpen(PANEL_OBS)) {
             val obsScenes by obsController.scenes.collectAsState()
             val obsCurrentScene by obsController.currentScene.collectAsState()
@@ -500,6 +515,7 @@ private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"
 private const val PANEL_CAMERAS = "cameras"
 private const val PANEL_OBS = "obs"
+private const val PANEL_VIEWERS = "viewers"
 
 private const val INFO_BITRATE =
     "Сколько всего улетает в сеть прямо сейчас: видео + звук + служебные данные, поэтому " +
@@ -590,7 +606,7 @@ private fun StatsPanel(
             Text(
                 text = "$liveMax kbps",
                 color = DiscordColors.textSecondary,
-                style = MaterialTheme.typography.labelMedium,
+                style = streetBody,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(2f),
             )
@@ -600,7 +616,7 @@ private fun StatsPanel(
             Text(
                 text = "Термозащита режет до ${(liveMax * bitrateCap).roundToInt()} kbps",
                 color = DiscordColors.textSecondary,
-                style = MaterialTheme.typography.bodySmall,
+                style = streetBody,
             )
         }
         val liveLatency by controller.latencyMs.collectAsState()
@@ -614,7 +630,7 @@ private fun StatsPanel(
             Text(
                 text = "$liveLatency мс",
                 color = DiscordColors.textSecondary,
-                style = MaterialTheme.typography.labelMedium,
+                style = streetBody,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(2f),
             )
@@ -640,7 +656,7 @@ private fun StatsPanel(
                 Text(
                     text = "мин $liveMin",
                     color = DiscordColors.textSecondary,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = streetBody,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(2f),
                 )
@@ -757,13 +773,13 @@ private fun LinksPanel(controller: StreamController) {
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = link.transport.label(),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = streetBody,
                     color = DiscordColors.textSecondary,
                     modifier = Modifier.width(60.dp),
                 )
                 Text(
                     text = formatRate(link.sendRateKbps),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = streetBody,
                     color = DiscordColors.textPrimary,
                     modifier = Modifier.width(72.dp),
                 )

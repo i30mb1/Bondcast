@@ -16,6 +16,12 @@ public sealed interface TwitchAuthState {
     public data class Failed(val message: String) : TwitchAuthState
 }
 
+/** Кто сейчас в чате канала: общее число + имена (Twitch не отдаёт список зрителей видео — только чата). */
+public data class TwitchChatters(
+    val total: Int,
+    val names: List<String>,
+)
+
 /**
  * Единый авторитет по токену Twitch (Device Code Flow). Владеет access/refresh,
  * обновляет их прозрачно и переиспользуется будущими фичами (channel points и т.д.).
@@ -42,6 +48,9 @@ public interface TwitchSession {
 
     /** Значки чата канала (set_id/version → url картинки): глобальные + канала. */
     public suspend fun chatBadges(broadcasterId: String): Map<String, String>
+
+    /** Кто сейчас в чате: [moderatorId] — id залогиненного (должен быть бродкастер или мод канала). */
+    public suspend fun chatters(broadcasterId: String, moderatorId: String): TwitchChatters?
 }
 
 public fun twitchSession(

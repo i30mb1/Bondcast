@@ -178,6 +178,8 @@ internal fun RailFadeColumn(
 @Composable
 internal fun StickerBadge(
     phase: StreamPhase,
+    viewerCount: Int?,
+    onViewersClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val (dotColor, label) = when (phase) {
@@ -190,6 +192,7 @@ internal fun StickerBadge(
         is StreamPhase.Retrying ->
             DiscordColors.danger to "Реконнект #${phase.attempt}"
     }
+    val interaction = remember { MutableInteractionSource() }
     SpringAppear(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -197,7 +200,14 @@ internal fun StickerBadge(
                 .shadow(12.dp, StreetShape, clip = false)
                 .clip(StreetShape)
                 .background(DiscordColors.sticker)
-                .padding(horizontal = 12.dp, vertical = 8.dp).padding(end = 18.dp),
+                .then(
+                    if (viewerCount != null) {
+                        Modifier.clickable(interactionSource = interaction, indication = null, onClick = onViewersClick)
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp).padding(end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -215,6 +225,16 @@ internal fun StickerBadge(
             if (phase is StreamPhase.Live) {
                 Spacer(Modifier.width(10.dp))
                 LiveTimer(phase.sinceEpochMs)
+            }
+            if (viewerCount != null) {
+                Spacer(Modifier.width(10.dp))
+                ViewersIcon(color = Color.Black, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "$viewerCount",
+                    color = Color.Black,
+                    style = streetLabel.copy(fontSize = 12.sp),
+                )
             }
         }
     }

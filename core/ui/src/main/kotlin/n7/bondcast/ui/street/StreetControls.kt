@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -106,6 +107,9 @@ public fun StreetStatCard(
     sub: String? = null,
     labelColor: Color = DiscordColors.accent,
     info: String? = null,
+    // текстовый статус (слово/фраза) на всю ширину карточки визуально давит сильнее,
+    // чем короткое число в том же 22sp — здесь можно подать размер поменьше
+    valueFontSize: TextUnit = streetValue.fontSize,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
@@ -160,7 +164,7 @@ public fun StreetStatCard(
                 Modifier
             },
         ) {
-            Text(text = value, style = streetValue, color = DiscordColors.textPrimary)
+            Text(text = value, style = streetValue.copy(fontSize = valueFontSize), color = DiscordColors.textPrimary)
             if (unit != null) {
                 Spacer(Modifier.width(4.dp))
                 Text(
@@ -374,9 +378,12 @@ public fun StreetTooltip(
                 .graphicsLayer { rotationZ = tiltDegrees }
                 .background(DiscordColors.background, shape)
                 .border(2.dp, Color.White, shape)
+                // отступы ФИКСИРОВАНЫ независимо от side (не читают его): иначе размер поповера
+                // менялся бы вместе со стороной стрелки, а от размера зависит сама сторона
+                // (calculatePosition) — получалась бы бесконечная дрожащая обратная связь
                 .padding(
-                    top = if (side == TooltipArrowSide.TOP) arrowHeight + 8.dp else 8.dp,
-                    start = if (side == TooltipArrowSide.START) arrowHeight + 10.dp else 10.dp,
+                    top = arrowHeight + 8.dp,
+                    start = arrowHeight + 10.dp,
                     end = 10.dp,
                     bottom = 8.dp,
                 ),

@@ -39,6 +39,8 @@ internal class TwitchSessionWithLogging(
 
     override suspend fun chatBadges(broadcasterId: String): Map<String, String> = origin.chatBadges(broadcasterId)
 
+    override suspend fun chatters(broadcasterId: String, moderatorId: String): TwitchChatters? = origin.chatters(broadcasterId, moderatorId)
+
     private companion object {
         const val TAG = "TwitchSession"
     }

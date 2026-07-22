@@ -38,6 +38,7 @@ import n7.bondcast.DiscordColors
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
+import n7.bondcast.ui.street.streetBody
 import n7.bondcast.ui.street.streetLabel
 import n7.bondcast.ui.street.upper
 
@@ -62,7 +63,7 @@ public fun ChatPanel(
         Text(
             text = twitchStatus,
             color = DiscordColors.textSecondary,
-            style = MaterialTheme.typography.bodySmall,
+            style = streetBody,
         )
         StreetChip(
             text = if (twitchLoggedIn) "Выйти из Twitch" else "Войти в Twitch",
@@ -135,7 +136,7 @@ private fun StepperRow(label: String, value: Int, unit: String, step: Int = 1, o
         Text(
             text = "$value$unit",
             color = DiscordColors.textSecondary,
-            style = MaterialTheme.typography.labelMedium,
+            style = streetBody,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(40.dp),
         )
@@ -157,7 +158,7 @@ private fun ChannelRow(channel: String, onClick: () -> Unit) {
         Text(
             text = channel.ifBlank { "свой" },
             color = DiscordColors.textSecondary,
-            style = MaterialTheme.typography.labelMedium,
+            style = streetBody,
         )
     }
 }

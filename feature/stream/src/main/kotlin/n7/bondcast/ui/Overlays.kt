@@ -1,7 +1,6 @@
 package n7.bondcast.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
@@ -16,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import n7.bondcast.ui.street.panelEnter
 import n7.bondcast.ui.street.panelExit
-import n7.bondcast.ui.street.shakeOnAppear
 
 /**
  * Оконный менеджер стрим-экрана: одна панель за раз, эксклюзивно.
@@ -65,6 +63,6 @@ internal fun BoxScope.PanelSlot(
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(16.dp),
     ) {
-        Box(shakeOnAppear()) { content() }
+        content()
     }
 }

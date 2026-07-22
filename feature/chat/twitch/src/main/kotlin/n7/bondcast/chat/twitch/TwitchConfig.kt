@@ -13,5 +13,8 @@ public object TwitchConfig {
     /** Скоуп чтения чата через EventSub (не legacy IRC chat:read). */
     public const val SCOPE_CHAT_READ: String = "user:read:chat"
 
+    /** Скоуп «кто сейчас в чате» (helix/chat/chatters) — счётчик и список зрителей. */
+    public const val SCOPE_CHATTERS: String = "moderator:read:chatters"
+
     public val isConfigured: Boolean get() = CLIENT_ID.isNotBlank()
 }

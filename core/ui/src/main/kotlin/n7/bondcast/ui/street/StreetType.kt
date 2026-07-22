@@ -39,4 +39,10 @@ public val streetUnit: TextStyle = TextStyle(
     fontSize = 11.sp,
 )
 
+/** Единый размер «обычного» текста в street-панелях: статусы, подписи, инлайн-значения степперов. */
+public val streetBody: TextStyle = TextStyle(
+    fontWeight = FontWeight.Medium,
+    fontSize = 13.sp,
+)
+
 public fun String.upper(): String = uppercase()

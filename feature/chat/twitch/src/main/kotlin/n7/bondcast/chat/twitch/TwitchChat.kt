@@ -14,6 +14,7 @@ public class TwitchChat internal constructor(
     public val session: TwitchSession,
     public val eventSub: EventSubConnection,
     public val source: ChatSource,
+    public val viewers: TwitchViewersMonitor,
 )
 
 public fun twitchChat(context: Context, clientId: String = TwitchConfig.CLIENT_ID): TwitchChat {
@@ -23,7 +24,8 @@ public fun twitchChat(context: Context, clientId: String = TwitchConfig.CLIENT_I
     val session = twitchSession(context, okHttp, clientId)
     val eventSub = EventSubConnection(session, okHttp, clientId)
     val source = twitchChatSource(session, eventSub)
-    return TwitchChat(session, eventSub, source)
+    val viewers = twitchViewersMonitor(session)
+    return TwitchChat(session, eventSub, source, viewers)
 }
 
 private const val PING_SECONDS = 15L

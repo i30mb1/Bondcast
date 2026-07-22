@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -16,6 +15,7 @@ import n7.bondcast.obs.ObsStats
 import n7.bondcast.obs.ObsStreamStatus
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
+import n7.bondcast.ui.street.streetBody
 import n7.bondcast.ui.street.streetLabel
 import n7.bondcast.ui.street.upper
 import kotlin.math.roundToInt
@@ -53,14 +53,14 @@ public fun ObsPanel(
             ObsPhase.AuthFailed -> Text(
                 text = "OBS не принял пароль. Проверь его в настройках ⚙ и переоткрой панель.",
                 color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.bodySmall,
+                style = streetBody,
             )
 
             is ObsPhase.Retrying -> Text(
                 text = "Не достучались (#${phase.attempt})${phase.cause?.let { ": $it" } ?: ""}. " +
                     "OBS запущен? WebSocket включён? Фаервол пускает?",
                 color = DiscordColors.textMuted,
-                style = MaterialTheme.typography.bodySmall,
+                style = streetBody,
             )
 
             else -> Unit
@@ -127,6 +127,6 @@ private fun InfoLine(text: String) {
     Text(
         text = text,
         color = DiscordColors.textSecondary,
-        style = MaterialTheme.typography.bodySmall,
+        style = streetBody,
     )
 }
