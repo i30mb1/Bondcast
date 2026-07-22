@@ -87,6 +87,8 @@ public fun ChatPanel(
         StepperRow("Лимит", settings.chatMessageLimit, "", step = 5) {
             onUpdate(settings.copy(chatMessageLimit = (settings.chatMessageLimit + it).coerceIn(5, 200)))
         }
+        ToggleRow("Гаснуть к верху", settings.chatFadeTopEnabled) { onUpdate(settings.copy(chatFadeTopEnabled = it)) }
+        ToggleRow("Стирать старые (30с)", settings.chatAutoEraseEnabled) { onUpdate(settings.copy(chatAutoEraseEnabled = it)) }
     }
 
     if (channelDialog) {

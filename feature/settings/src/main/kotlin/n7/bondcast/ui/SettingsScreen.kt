@@ -406,6 +406,8 @@ public fun SettingsScreen(
                                     chatFontSizeSp = initial.chatFontSizeSp,
                                     chatOpacityPercent = initial.chatOpacityPercent,
                                     chatMessageLimit = initial.chatMessageLimit,
+                                    chatFadeTopEnabled = initial.chatFadeTopEnabled,
+                                    chatAutoEraseEnabled = initial.chatAutoEraseEnabled,
                                     onboardingCompleted = initial.onboardingCompleted,
                                 ),
                             )

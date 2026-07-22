@@ -32,6 +32,10 @@ public data class StreamSettings(
     val chatFontSizeSp: Int = 14,
     val chatOpacityPercent: Int = 80,
     val chatMessageLimit: Int = 30,
+    /** Сообщения выше середины оверлея гаснут по alpha к верху. */
+    val chatFadeTopEnabled: Boolean = false,
+    /** Стирать сообщения старше 30 секунд, независимо от лимита по количеству. */
+    val chatAutoEraseEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
 ) {
     /** streamid в формате SRS: поток попадёт в live/<streamName>. */

@@ -307,6 +307,7 @@ public fun StreamScreen(
                 showBadges = settings?.chatShowBadges ?: true,
                 fontSizeSp = settings?.chatFontSizeSp ?: 14,
                 opacityPercent = settings?.chatOpacityPercent ?: 80,
+                fadeTopEnabled = settings?.chatFadeTopEnabled ?: false,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .width(400.dp)

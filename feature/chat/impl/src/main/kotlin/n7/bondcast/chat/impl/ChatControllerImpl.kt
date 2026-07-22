@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +46,9 @@ internal class ChatControllerImpl(
     @Volatile
     private var hideCommands = true
 
+    @Volatile
+    private var autoErase = false
+
     private var sessionJob: Job? = null
 
     override fun setActive(active: Boolean) {
@@ -52,6 +56,7 @@ internal class ChatControllerImpl(
             if (sessionJob?.isActive == true) return
             sessionJob = scope.launch {
                 launch { watchDisplayConfig() }
+                launch { expireOldMessages() }
                 connectionLoop()
             }
         } else {
@@ -65,16 +70,17 @@ internal class ChatControllerImpl(
         scope.cancel()
     }
 
-    // лимит и «прятать команды» — чисто визуальные, применяются НА ЛЕТУ, без переподключения
+    // лимит, «прятать команды» и автостирание — чисто визуальные, применяются НА ЛЕТУ, без переподключения
     private suspend fun watchDisplayConfig() {
         settingsRepository.settings
-            .map { it.chatMessageLimit.coerceIn(MIN_LIMIT, MAX_LIMIT) to it.chatHideCommands }
+            .map { Triple(it.chatMessageLimit.coerceIn(MIN_LIMIT, MAX_LIMIT), it.chatHideCommands, it.chatAutoEraseEnabled) }
             .distinctUntilChanged()
-            .collect { (newLimit, newHide) ->
+            .collect { (newLimit, newHide, newAutoErase) ->
                 mutex.withLock {
                     var changed = false
                     if (newHide && !hideCommands) changed = buffer.removeAll { isCommand(it) } || changed
                     hideCommands = newHide
+                    autoErase = newAutoErase
                     if (newLimit != limit) {
                         limit = newLimit
                         while (buffer.size > limit) {
@@ -85,6 +91,18 @@ internal class ChatControllerImpl(
                     if (changed) publish()
                 }
             }
+    }
+
+    // независимо от лимита по количеству: пока включено, сообщения старше 30с стираются
+    private suspend fun expireOldMessages() {
+        while (true) {
+            delay(EXPIRE_TICK_MS)
+            if (!autoErase) continue
+            mutex.withLock {
+                val cutoff = System.currentTimeMillis() - AUTO_ERASE_AGE_MS
+                if (buffer.removeAll { it.timestampMs < cutoff }) publish()
+            }
+        }
     }
 
     // переподключение (и чистка буфера) ТОЛЬКО на смену вкл/канала
@@ -153,5 +171,7 @@ internal class ChatControllerImpl(
         const val MIN_LIMIT = 5
         const val MAX_LIMIT = 500
         const val DEFAULT_LIMIT = 30
+        const val EXPIRE_TICK_MS = 1_000L
+        const val AUTO_ERASE_AGE_MS = 30_000L
     }
 }
