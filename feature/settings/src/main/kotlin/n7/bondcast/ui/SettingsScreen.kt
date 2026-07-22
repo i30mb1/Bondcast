@@ -3,6 +3,11 @@ package n7.bondcast.ui
 import android.content.pm.ActivityInfo
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -70,6 +75,12 @@ public fun SettingsScreen(
     var obsPort by remember { mutableStateOf(initial.obsPort.toString()) }
     var obsPassword by remember { mutableStateOf(initial.obsPassword) }
     var showScanner by remember { mutableStateOf(false) }
+    var showAdvanced by remember {
+        mutableStateOf(
+            initial.bondingEnabled || initial.obsEnabled || initial.passphrase.isNotBlank() ||
+                initial.latencyMs != 2000 || initial.fps >= 60,
+        )
+    }
     val context = LocalContext.current
 
     val portInt = port.toIntOrNull()
@@ -162,18 +173,6 @@ public fun SettingsScreen(
                         Text("📷 Сканировать QR")
                     }
                     RowDivider()
-                    DiscordSwitchRow(
-                        label = "Бондинг (объединить сети)",
-                        checked = bonding,
-                        onCheckedChange = { bonding = it },
-                        info = "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
-                            "и если одна прилегла отдохнуть — остальные тащат.\n\n" +
-                            "Когда включать:\n" +
-                            "• стрим на ходу, где сеть скачет\n" +
-                            "• есть две-три сети сразу (Wi-Fi + SIM)\n\n" +
-                            "Видео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать.",
-                    )
-                    RowDivider()
                     Row {
                         DiscordField(
                             label = "Хост сервера",
@@ -200,83 +199,18 @@ public fun SettingsScreen(
                         )
                     }
                     RowDivider()
-                    Row {
-                        DiscordField(
-                            label = "Имя стрима",
-                            value = streamName,
-                            onValueChange = { streamName = it },
-                            isError = streamName.isBlank(),
-                            modifier = Modifier.weight(1f),
-                            info = "Поток приедет на сервер как live/<имя>. Плеер потом ищет его по этому же имени.\n\n" +
-                                "Что вписать:\n" +
-                                "• латиницей, без пробелов\n" +
-                                "• «phone» скромно, «super_mega_stream_3000» тоже примем\n\n" +
-                                "Главное — чтобы совпадало с тем, что ждёт сервер/плеер.",
-                        )
-                        DiscordField(
-                            label = "Passphrase",
-                            value = passphrase,
-                            onValueChange = { passphrase = it },
-                            modifier = Modifier.weight(1f),
-                            info = "Секретный стук в дверь — AES-шифрование SRT.\n\n" +
-                                "Как выбрать:\n" +
-                                "• пусто — дверь нараспашку, для своего сервера ок\n" +
-                                "• задал — сервер должен знать тот же секрет\n\n" +
-                                "Не совпало с сервером — он сделает вид, что впервые тебя видит.",
-                        )
-                    }
-                    RowDivider()
-                    DiscordStepperField(
-                        label = "Latency, мс",
-                        value = latency,
-                        onValueChange = { latency = it },
-                        min = 20,
-                        max = 8_000,
-                        step = 100,
-                        isError = !latencyValid,
-                        info = "Подушка безопасности SRT: сколько у потерянного пакета есть времени, " +
-                            "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\n" +
-                            "Что ставить:\n" +
-                            "• 2000 — золотая середина, пара секунд задержки без артефактов\n" +
-                            "• больше — для слабой/дальней сети\n" +
-                            "• меньше 500 — только адреналиновым наркоманам",
+                    DiscordField(
+                        label = "Имя стрима",
+                        value = streamName,
+                        onValueChange = { streamName = it },
+                        isError = streamName.isBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        info = "Поток приедет на сервер как live/<имя>. Плеер потом ищет его по этому же имени.\n\n" +
+                            "Что вписать:\n" +
+                            "• латиницей, без пробелов\n" +
+                            "• «phone» скромно, «super_mega_stream_3000» тоже примем\n\n" +
+                            "Главное — чтобы совпадало с тем, что ждёт сервер/плеер.",
                     )
-                    RowDivider()
-                    DiscordSwitchRow(
-                        label = "Пульт OBS",
-                        checked = obsEnabled,
-                        onCheckedChange = { obsEnabled = it },
-                        info = "Панель на стрим-экране, которая командует OBS на компе: сцены, эфир, запись.\n\n" +
-                            "Как включить в OBS:\n" +
-                            "• Сервис → Настройка сервера WebSocket\n" +
-                            "• галочка «Включить сервер WebSocket»\n" +
-                            "• порт и пароль — там же, кнопка «Показать сведения о подключении»\n\n" +
-                            "Хост берётся общий — тот же IP, что сверху. Выключен — ни настроек, ни иконки.",
-                    )
-                    if (obsEnabled) {
-                        RowDivider()
-                        Row {
-                            DiscordField(
-                                label = "Порт OBS",
-                                value = obsPort,
-                                onValueChange = { obsPort = it },
-                                keyboardType = KeyboardType.Number,
-                                isError = !obsPortValid,
-                                modifier = Modifier.weight(1f),
-                            )
-                            DiscordField(
-                                label = "Пароль WebSocket",
-                                value = obsPassword,
-                                onValueChange = { obsPassword = it },
-                                modifier = Modifier.weight(2f),
-                                info = "Тот же пароль, что в OBS.\n\n" +
-                                    "Где взять:\n" +
-                                    "• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n" +
-                                    "• или кнопка «Показать сведения о подключении»\n\n" +
-                                    "Галочка «Включить аутентификацию» снята — оставь пустым.",
-                            )
-                        }
-                    }
                 }
 
                 SectionLabel("Видео")
@@ -286,13 +220,6 @@ public fun SettingsScreen(
                         options = listOf("720p", "1080p"),
                         selectedIndex = if (is1080p) 1 else 0,
                         onSelect = { is1080p = it == 1 },
-                    )
-                    RowDivider()
-                    DiscordSegmentedRow(
-                        label = "Частота кадров",
-                        options = listOf("30 fps", "60 fps"),
-                        selectedIndex = if (is60fps) 1 else 0,
-                        onSelect = { is60fps = it == 1 },
                     )
                     RowDivider()
                     DiscordStepperField(
@@ -328,6 +255,111 @@ public fun SettingsScreen(
                             selected = bitrateInt == recOutdoorKbps,
                             onClick = { bitrate = recOutdoorKbps.toString() },
                         )
+                    }
+                }
+
+                AdvancedToggle(
+                    expanded = showAdvanced,
+                    onClick = { showAdvanced = !showAdvanced },
+                )
+
+                AnimatedVisibility(
+                    visible = showAdvanced,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        SectionLabel("Подключение")
+                        SettingsCard {
+                            DiscordSwitchRow(
+                                label = "Бондинг (объединить сети)",
+                                checked = bonding,
+                                onCheckedChange = { bonding = it },
+                                info = "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
+                                    "и если одна прилегла отдохнуть — остальные тащат.\n\n" +
+                                    "Когда включать:\n" +
+                                    "• стрим на ходу, где сеть скачет\n" +
+                                    "• есть две-три сети сразу (Wi-Fi + SIM)\n\n" +
+                                    "Видео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать.",
+                            )
+                            RowDivider()
+                            DiscordField(
+                                label = "Passphrase",
+                                value = passphrase,
+                                onValueChange = { passphrase = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                info = "Секретный стук в дверь — AES-шифрование SRT.\n\n" +
+                                    "Как выбрать:\n" +
+                                    "• пусто — дверь нараспашку, для своего сервера ок\n" +
+                                    "• задал — сервер должен знать тот же секрет\n\n" +
+                                    "Не совпало с сервером — он сделает вид, что впервые тебя видит.",
+                            )
+                            RowDivider()
+                            DiscordStepperField(
+                                label = "Latency, мс",
+                                value = latency,
+                                onValueChange = { latency = it },
+                                min = 20,
+                                max = 8_000,
+                                step = 100,
+                                isError = !latencyValid,
+                                info = "Подушка безопасности SRT: сколько у потерянного пакета есть времени, " +
+                                    "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\n" +
+                                    "Что ставить:\n" +
+                                    "• 2000 — золотая середина, пара секунд задержки без артефактов\n" +
+                                    "• больше — для слабой/дальней сети\n" +
+                                    "• меньше 500 — только адреналиновым наркоманам",
+                            )
+                        }
+
+                        SectionLabel("Видео (доп.)")
+                        SettingsCard {
+                            DiscordSegmentedRow(
+                                label = "Частота кадров",
+                                options = listOf("30 fps", "60 fps"),
+                                selectedIndex = if (is60fps) 1 else 0,
+                                onSelect = { is60fps = it == 1 },
+                            )
+                        }
+
+                        SectionLabel("Пульт OBS")
+                        SettingsCard {
+                            DiscordSwitchRow(
+                                label = "Пульт OBS",
+                                checked = obsEnabled,
+                                onCheckedChange = { obsEnabled = it },
+                                info = "Панель на стрим-экране, которая командует OBS на компе: сцены, эфир, запись.\n\n" +
+                                    "Как включить в OBS:\n" +
+                                    "• Сервис → Настройка сервера WebSocket\n" +
+                                    "• галочка «Включить сервер WebSocket»\n" +
+                                    "• порт и пароль — там же, кнопка «Показать сведения о подключении»\n\n" +
+                                    "Хост берётся общий — тот же IP, что сверху. Выключен — ни настроек, ни иконки.",
+                            )
+                            if (obsEnabled) {
+                                RowDivider()
+                                Row {
+                                    DiscordField(
+                                        label = "Порт OBS",
+                                        value = obsPort,
+                                        onValueChange = { obsPort = it },
+                                        keyboardType = KeyboardType.Number,
+                                        isError = !obsPortValid,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    DiscordField(
+                                        label = "Пароль WebSocket",
+                                        value = obsPassword,
+                                        onValueChange = { obsPassword = it },
+                                        modifier = Modifier.weight(2f),
+                                        info = "Тот же пароль, что в OBS.\n\n" +
+                                            "Где взять:\n" +
+                                            "• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n" +
+                                            "• или кнопка «Показать сведения о подключении»\n\n" +
+                                            "Галочка «Включить аутентификацию» снята — оставь пустым.",
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -387,6 +419,23 @@ public fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun AdvancedToggle(
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = if (expanded) "▾ Скрыть доп. настройки" else "▸ Показать доп. настройки",
+        color = DiscordColors.accent,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    )
 }
 
 @Composable
