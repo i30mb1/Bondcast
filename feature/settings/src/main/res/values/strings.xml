@@ -6,14 +6,17 @@
     <string name="settings_scan_qr_button">"📷 Scan QR"</string>
     <string name="settings_qr_unrecognized">"Couldn\'t read that QR"</string>
 
-    <string name="settings_twitch_direct_label">"Stream straight to Twitch (no server)"</string>
+    <string name="settings_destination_own_server">"Own server"</string>
+    <string name="settings_destination_twitch_direct">"Twitch direct"</string>
     <string name="settings_twitch_direct_info">"Encodes H.264 and fires RTMP straight at Twitch — no SRT/SRTLA server of your own required.\n\nThe catch:\n• no bonding — just one connection, no network-teaming superpowers\n• network drops, stream drops — same as any bog-standard Larix/Streamlabs setup\n• no OBS remote either — that needs a server machine standing next to you\n\nTurn it on when: you don\'t have your own server, or rock-solid uptime isn\'t the point. Need bonding or the OBS remote? Switch this off and spin up your own server."</string>
 
+    <string name="settings_twitch_connected">"Twitch account connected"</string>
+    <string name="settings_twitch_not_connected">"Twitch account not connected"</string>
     <string name="settings_twitch_stream_key_label">"Twitch stream key"</string>
     <string name="settings_twitch_stream_key_info">"Creator Dashboard → Settings → Stream → Primary Stream Key.\n\nGuard it like a password — anyone with this key can stream to your channel instead of you."</string>
 
     <string name="settings_twitch_login_button">"Log in to Twitch"</string>
-    <string name="settings_twitch_logout_button">"Log out of Twitch"</string>
+    <string name="settings_twitch_logout_button">"Log out"</string>
     <string name="settings_twitch_fetch_key_button">"🔑 Grab it from Twitch"</string>
     <string name="settings_twitch_fetch_key_button_loading">"Fetching key…"</string>
     <string name="settings_twitch_fetch_error_relogin">"No dice. Log back into Twitch above (needs stream-key access) and try again."</string>
@@ -30,15 +33,13 @@
     <string name="settings_resolution_label">"Resolution"</string>
     <string name="settings_bitrate_label">"Video bitrate, kbps"</string>
     <string name="settings_bitrate_info">"How many kilobits per second we burn on making things look pretty. H.265 does compression witchcraft, so cranking this up doesn\'t help much — past the recommendation the picture barely improves, but your phone gets hot and starts dropping frames.\n\nHow to pick:\n• tap a preset below — we already did the math\n• a still room forgives a low bitrate\n• leaves rustling and people moving outdoors is the hungriest content there is"</string>
-    <string name="settings_bitrate_presets_hint">"💡 Presets for %1$s·%2$s fps — tap to apply:"</string>
-    <string name="settings_preset_indoor">"🏠 Indoors ≈ %1$d"</string>
-    <string name="settings_preset_outdoor">"🌳 Outdoors ≈ %1$d"</string>
+    <string name="settings_preset_indoor">"🏠 %1$d"</string>
+    <string name="settings_preset_outdoor">"🌳 %1$d"</string>
 
-    <string name="settings_advanced_show">"▸ Show advanced settings"</string>
-    <string name="settings_advanced_hide">"▾ Hide advanced settings"</string>
+    <string name="settings_mode_novice">"Beginner"</string>
+    <string name="settings_mode_expert">"Expert"</string>
 
-    <string name="settings_section_connection">Connection</string>
-    <string name="settings_bonding_label">"Bonding (combine networks)"</string>
+    <string name="settings_bonding_label">"Bonding"</string>
     <string name="settings_bonding_info">"Teams up Wi-Fi and cellular into one party: packets run down every network at once, so if one takes a nap, the others carry the weight.\n\nTurn it on when:\n• you\'re streaming on the move and the network is flaky\n• you\'ve got two or three networks at once (Wi-Fi + SIM)\n\nVideo goes to srtla_rec instead of straight to the SRT port. At home, you can probably skip it."</string>
 
     <string name="settings_passphrase_label">"Passphrase"</string>
@@ -47,11 +48,9 @@
     <string name="settings_latency_label">"Latency, ms"</string>
     <string name="settings_latency_info">"SRT\'s airbag: how much time a lost packet gets to be resent before we give up on it. More padding means a steadier picture, but your viewer watches further behind real time.\n\nWhat to set:\n• 2000 — the sweet spot, a couple seconds of delay with no glitches\n• higher — for a weak or long-distance network\n• under 500 — for adrenaline junkies only"</string>
 
-    <string name="settings_section_twitch_extra">"Twitch (extra)"</string>
     <string name="settings_ingest_url_label">"Ingest URL"</string>
     <string name="settings_ingest_url_info">"Usually no need to touch this — live.twitch.tv auto-routes you to the nearest datacenter.\n\nWant a specific regional ingest for lower ping? Grab one from twitch.tv/ingest, format rtmp://&lt;host&gt;/app."</string>
 
-    <string name="settings_section_video_extra">"Video (extra)"</string>
     <string name="settings_fps_label">"Frame rate"</string>
 
     <string name="settings_section_obs">"OBS remote"</string>
@@ -60,9 +59,6 @@
     <string name="settings_obs_port_label">"OBS port"</string>
     <string name="settings_obs_password_label">"WebSocket password"</string>
     <string name="settings_obs_password_info">"The same password OBS is using.\n\nWhere to find it:\n• Tools → WebSocket Server Settings → \"Server Password\"\n• or the \"Show Connect Info\" button\n\n\"Enable Authentication\" unchecked in OBS? Leave this blank."</string>
-
-    <string name="settings_back_button">"Back"</string>
-    <string name="settings_save_button">"Save"</string>
 
     <!-- Onboarding screen -->
     <string name="onboarding_hint">"Tell us where to send the stream — your own server, the cloud, or just scan a QR code. Everything else is already set up; tweak it later in settings."</string>

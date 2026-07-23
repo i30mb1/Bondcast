@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,12 +37,9 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +55,9 @@ import n7.bondcast.ui.street.streetLabel
 import n7.bondcast.ui.street.upper
 
 internal enum class AttentionLevel { NONE, WARN, BAD }
+
+/** Кнопки рейла скруглены сильнее, чем угловатый [StreetShape] панелей и чипов. */
+internal val RailButtonShape: RoundedCornerShape = RoundedCornerShape(16.dp)
 
 @Composable
 internal fun RailButton(
@@ -82,15 +80,15 @@ internal fun RailButton(
                     .pressBounce(interaction)
                     .shadow(
                         elevation = if (active) 10.dp else 0.dp,
-                        shape = StreetShape,
+                        shape = RailButtonShape,
                         clip = false,
                         ambientColor = DiscordColors.accent,
                         spotColor = DiscordColors.accent,
                     )
                     .size(48.dp)
-                    .clip(StreetShape)
+                    .clip(RailButtonShape)
                     .background(if (active) DiscordColors.accent else DiscordColors.plate)
-                    .border(2.dp, DiscordColors.accent, StreetShape)
+                    .border(2.dp, if (active) DiscordColors.accent else DiscordColors.iconBorder, RailButtonShape)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
@@ -123,40 +121,18 @@ private fun AttentionGlow(level: AttentionLevel, modifier: Modifier = Modifier) 
     Box(
         modifier
             .blur(11.dp, BlurredEdgeTreatment.Unbounded)
-            .background(DiscordColors.accent.copy(alpha = glow), StreetShape),
+            .background(DiscordColors.accent.copy(alpha = glow), RailButtonShape),
     )
 }
 
-/** Значок настроек: шестерёнка из толстых радиальных лучей + кольцо. */
+/** Значок настроек: шестерёнка тонкой линией. */
 @Composable
 internal fun GearIcon(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.size(22.dp)) {
-        val c = center
-        val r = size.minDimension / 2f
-        val sw = size.minDimension * 0.14f
-        repeat(8) { i ->
-            rotate(degrees = 45f * i, pivot = c) {
-                drawLine(
-                    color = color,
-                    start = Offset(c.x, c.y - r * 0.98f),
-                    end = Offset(c.x, c.y - r * 0.60f),
-                    strokeWidth = sw,
-                    cap = StrokeCap.Round,
-                )
-            }
-        }
-        drawCircle(color = color, radius = r * 0.40f, center = c, style = Stroke(width = sw))
-    }
-}
-
-@Composable
-internal fun RailGroupDivider() {
-    Box(
-        modifier = Modifier
-            .padding(horizontal = 4.dp, vertical = 2.dp)
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(DiscordColors.groupDivider),
+    Icon(
+        painter = painterResource(R.drawable.gear),
+        contentDescription = null,
+        tint = color,
+        modifier = modifier.size(22.dp),
     )
 }
 
@@ -170,7 +146,7 @@ internal fun RailFadeColumn(
         modifier = modifier
             .width(48.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         content()

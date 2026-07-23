@@ -11,10 +11,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
 import n7.bondcast.stream.HealthLevel
@@ -51,18 +50,19 @@ internal fun StatsIcon(
     Canvas(modifier = modifier.size(22.dp)) {
         val w = size.width
         val h = size.height
-        val barW = w * 0.2f
-        val gap = (w - barW * 3) / 2f
+        val strokeWidth = w * 0.14f
+        val bottom = h - strokeWidth / 2f
+        val centers = floatArrayOf(w * 0.1f, w * 0.5f, w * 0.9f)
         for (i in STATS_BAR_BASES.indices) {
             val osc = if (live) sin((phase + STATS_BAR_PHASES[i]).toDouble()).toFloat() * amp else 0f
             val frac = (STATS_BAR_BASES[i] + osc).coerceIn(0.18f, 1f)
-            val x = i * (barW + gap)
-            val barH = h * frac
-            drawRoundRect(
+            val barH = (h - strokeWidth) * frac
+            drawLine(
                 color = color,
-                topLeft = Offset(x, h - barH),
-                size = Size(barW, barH),
-                cornerRadius = CornerRadius(barW * 0.3f, barW * 0.3f),
+                start = Offset(centers[i], bottom),
+                end = Offset(centers[i], bottom - barH),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
             )
         }
     }

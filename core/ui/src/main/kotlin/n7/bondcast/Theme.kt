@@ -1,16 +1,20 @@
 package n7.bondcast
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 private val White = Color(0xFFFFFFFF)
 private val Accent = Color(0xFFFF3C3C)
 private val AccentPressed = Color(0xFFD42F2F)
 private val Green = Color(0xFF2FBF5B)
 private val Red = Color(0xFFFF3C3C)
+private val IconBorder = Color(0xFF4A4A4A)
 private val Yellow = Color(0xFFF0B232)
 private val Background = Color(0xFF0E0E0E)
 private val CardSurface = Color(0xFF0E0E0E)
@@ -21,7 +25,6 @@ private val TextSecondary = Color(0xFFAAAAAA)
 private val TextMuted = Color(0xFF666666)
 private val Link = Color(0xFFFF6B6B)
 private val Divider = Color(0xFF2A2A2A)
-private val GroupDivider = Color(0xFF3A3A3A)
 private val Sticker = Color(0xFFFFFFFF)
 private val Stripe = Color(0xFF161616)
 
@@ -60,9 +63,9 @@ public object DiscordColors {
     val danger = Red
     val yellow = Yellow
     val accent = Accent
+    val iconBorder = IconBorder
     val plate = Elevated
     val panel = Background
-    val groupDivider = GroupDivider
     val sticker = Sticker
     val stripe = Stripe
     fun temperature(heat: Float): Color = temperatureColor(heat)
@@ -73,6 +76,17 @@ public fun temperatureColor(heat: Float): Color {
     return Color.hsv(240f - clamped * 240f, 0.9f, 1f)
 }
 
+// одно скругление на все кнопки — то же, что у карточек/полей (SettingsCard, DiscordField).
+// M3 Button/TextButton не всегда берут форму из темы (см. ниже), поэтому передаём его же явно.
+public val ButtonShape: RoundedCornerShape = RoundedCornerShape(8.dp)
+private val AppShapes = Shapes(
+    extraSmall = ButtonShape,
+    small = ButtonShape,
+    medium = ButtonShape,
+    large = ButtonShape,
+    extraLarge = ButtonShape,
+)
+
 @Composable
 public fun AppTheme(
     content: @Composable () -> Unit,
@@ -80,6 +94,7 @@ public fun AppTheme(
     MaterialTheme(
         colorScheme = ColorScheme,
         typography = Typography(),
+        shapes = AppShapes,
         content = content,
     )
 }

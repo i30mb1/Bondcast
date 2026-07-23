@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import n7.bondcast.ButtonShape
 import n7.bondcast.DiscordColors
 import n7.bondcast.ui.street.BackIcon
 import n7.bondcast.ui.street.BackIconSize
@@ -51,9 +52,11 @@ import n7.bondcast.ui.street.upper
 public fun DiscordTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -75,7 +78,12 @@ public fun DiscordTopBar(
             text = title.upper(),
             color = DiscordColors.textPrimary,
             style = streetTitle.copy(fontSize = 22.sp),
+            modifier = Modifier.weight(1f),
         )
+        if (trailing != null) {
+            trailing()
+            Spacer(Modifier.width(8.dp))
+        }
     }
 }
 
@@ -94,9 +102,9 @@ public fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(ButtonShape)
             .background(DiscordColors.card)
-            .border(1.dp, DiscordColors.divider, RoundedCornerShape(8.dp)),
+            .border(1.dp, DiscordColors.divider, ButtonShape),
         content = content,
     )
 }
@@ -161,18 +169,20 @@ public fun DiscordField(
     keyboardType: KeyboardType = KeyboardType.Text,
     isError: Boolean = false,
     info: String? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         FieldLabel(label, info)
         Spacer(Modifier.height(6.dp))
-        Box(
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DiscordColors.inputBackground, RoundedCornerShape(8.dp))
+                .background(DiscordColors.inputBackground, ButtonShape)
                 .border(
                     width = 1.dp,
                     color = if (isError) MaterialTheme.colorScheme.error else Color.Transparent,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = ButtonShape,
                 )
                 .padding(horizontal = 12.dp, vertical = 12.dp),
         ) {
@@ -183,8 +193,12 @@ public fun DiscordField(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = DiscordColors.textPrimary),
                 cursorBrush = SolidColor(DiscordColors.blurple),
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             )
+            if (trailingIcon != null) {
+                Spacer(Modifier.width(8.dp))
+                trailingIcon()
+            }
         }
     }
 }
@@ -212,11 +226,11 @@ public fun DiscordRangeField(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(DiscordColors.inputBackground, RoundedCornerShape(8.dp))
+                    .background(DiscordColors.inputBackground, ButtonShape)
                     .border(
                         width = 1.dp,
                         color = if (isError) MaterialTheme.colorScheme.error else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = ButtonShape,
                     )
                     .padding(horizontal = 12.dp, vertical = 12.dp),
             ) {
@@ -247,6 +261,7 @@ public fun DiscordStepperField(
     step: Int = 100,
     isError: Boolean = false,
     info: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     fun nudge(delta: Int) {
         val current = value.toIntOrNull() ?: min
@@ -263,11 +278,11 @@ public fun DiscordStepperField(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(DiscordColors.inputBackground, RoundedCornerShape(8.dp))
+                    .background(DiscordColors.inputBackground, ButtonShape)
                     .border(
                         width = 1.dp,
                         color = if (isError) MaterialTheme.colorScheme.error else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = ButtonShape,
                     )
                     .padding(horizontal = 12.dp, vertical = 12.dp),
             ) {
@@ -282,6 +297,7 @@ public fun DiscordStepperField(
                 )
             }
             BoundButton("+") { nudge(step) }
+            trailing?.invoke()
         }
     }
 }
@@ -314,7 +330,7 @@ public fun DiscordHint(
 private fun BoundButton(text: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(ButtonShape)
             .background(DiscordColors.elevated)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -328,6 +344,7 @@ private fun BoundButton(text: String, onClick: () -> Unit) {
     }
 }
 
+/** Подпись слева, пилюли выбора справа в той же строке — компактнее, чем подпись над во всю ширину. */
 @Composable
 public fun DiscordSegmentedRow(
     label: String,
@@ -336,8 +353,13 @@ public fun DiscordSegmentedRow(
     onSelect: (Int) -> Unit,
     info: String? = null,
 ) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             Text(
                 text = label,
                 color = DiscordColors.textMuted,
@@ -348,11 +370,9 @@ public fun DiscordSegmentedRow(
                 InfoButton(info)
             }
         }
-        Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(DiscordColors.inputBackground, RoundedCornerShape(6.dp))
+                .background(DiscordColors.inputBackground, ButtonShape)
                 .padding(3.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
@@ -360,13 +380,12 @@ public fun DiscordSegmentedRow(
                 val selected = index == selectedIndex
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .background(
                             color = if (selected) DiscordColors.blurple else Color.Transparent,
-                            shape = RoundedCornerShape(4.dp),
+                            shape = ButtonShape,
                         )
                         .clickable { onSelect(index) }
-                        .padding(vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

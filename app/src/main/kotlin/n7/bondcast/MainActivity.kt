@@ -135,12 +135,16 @@ private fun App(graph: AppGraph, autostart: Boolean) {
 
     val settings by graph.settingsRepository.settings.collectAsState(initial = null)
     var showSettings by remember { mutableStateOf(false) }
+    var showWizard by remember { mutableStateOf(false) }
     val onboarding = settings?.let { !it.onboardingCompleted } == true
     val scope = rememberCoroutineScope()
 
-    // настройки удобнее крутить в портрете, стрим живёт в ландшафте (манифест: sensorLandscape)
-    LaunchedEffect(showSettings, onboarding) {
-        (context as? Activity)?.requestedOrientation = if (showSettings || onboarding) {
+    // настройки и визард удобнее крутить в портрете, стрим живёт в ландшафте (манифест: sensorLandscape).
+    // Единственное место, которое просит поворот — экраны сами его больше не лочат, иначе при переходе
+    // Settings → Wizard (оба портретные) один экран на выходе успевал вернуть ландшафт до того,
+    // как другой запросит портрет обратно, и был виден рывок туда-сюда.
+    LaunchedEffect(showSettings, showWizard, onboarding) {
+        (context as? Activity)?.requestedOrientation = if (showSettings || showWizard || onboarding) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -185,6 +189,15 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             initial = currentSettings,
             onFinish = { new -> scope.launch { graph.settingsRepository.save(new) } },
         )
+    } else if (currentSettings != null && showWizard) {
+        OnboardingScreen(
+            initial = currentSettings,
+            onFinish = { new ->
+                scope.launch { graph.settingsRepository.save(new) }
+                showWizard = false
+            },
+            onCancel = { showWizard = false },
+        )
     } else if (showSettings && currentSettings != null) {
         SettingsScreen(
             initial = currentSettings,
@@ -193,6 +206,7 @@ private fun App(graph: AppGraph, autostart: Boolean) {
                 showSettings = false
             },
             onBack = { showSettings = false },
+            onOpenWizard = { showWizard = true },
             twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
             onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
             onTwitchLogout = { graph.twitchChat.session.logout() },
@@ -227,7 +241,7 @@ private fun PermissionScreen(onRequest: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(stringResource(R.string.app_permission_rationale))
-            Button(onClick = onRequest) {
+            Button(onClick = onRequest, shape = ButtonShape) {
                 Text(stringResource(R.string.app_permission_grant_button))
             }
         }

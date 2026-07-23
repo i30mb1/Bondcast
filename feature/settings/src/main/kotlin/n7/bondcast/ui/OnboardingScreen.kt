@@ -1,7 +1,7 @@
 package n7.bondcast.ui
 
-import android.content.pm.ActivityInfo
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import n7.bondcast.ButtonShape
 import n7.bondcast.DiscordColors
 import n7.bondcast.feature.settings.R
 import n7.bondcast.qr.QrPayload
@@ -34,6 +35,7 @@ import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.components.DiscordField
 import n7.bondcast.ui.components.DiscordHint
 import n7.bondcast.ui.components.DiscordSwitchRow
+import n7.bondcast.ui.components.DiscordTopBar
 import n7.bondcast.ui.components.RowDivider
 import n7.bondcast.ui.components.SectionLabel
 import n7.bondcast.ui.components.SettingsCard
@@ -42,8 +44,10 @@ import n7.bondcast.ui.components.SettingsCard
 public fun OnboardingScreen(
     initial: StreamSettings,
     onFinish: (StreamSettings) -> Unit,
+    // не null — визард открыт добровольно из настроек (после первого запуска), можно выйти назад
+    onCancel: (() -> Unit)? = null,
 ) {
-    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+    if (onCancel != null) BackHandler(onBack = onCancel)
 
     var host by remember { mutableStateOf(initial.srtlaHost.ifBlank { initial.obsHost.ifBlank { initial.host.takeIf { it != "10.0.2.2" } ?: "" } }) }
     var port by remember { mutableStateOf(initial.port.toString()) }
@@ -108,91 +112,101 @@ public fun OnboardingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            Text(
-                text = "Bondcast",
-                color = DiscordColors.textPrimary,
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(top = 24.dp),
-            )
-            DiscordHint(stringResource(R.string.onboarding_hint))
-
-            SectionLabel(stringResource(R.string.onboarding_section_destination))
-            SettingsCard {
-                Button(
-                    onClick = { showScanner = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    Text(stringResource(R.string.settings_scan_qr_button))
-                }
-                RowDivider()
-                DiscordSwitchRow(
-                    label = stringResource(R.string.onboarding_bonding_label),
-                    checked = bonding,
-                    onCheckedChange = { bonding = it },
-                    info = stringResource(R.string.onboarding_bonding_info),
-                )
-                RowDivider()
-                Row {
-                    DiscordField(
-                        label = stringResource(R.string.settings_host_label),
-                        value = host,
-                        onValueChange = { host = it },
-                        keyboardType = KeyboardType.Decimal,
-                        isError = host.isBlank(),
-                        modifier = Modifier.weight(2f),
-                        info = stringResource(R.string.onboarding_host_info),
-                    )
-                    DiscordField(
-                        label = stringResource(R.string.settings_port_label),
-                        value = if (bonding) srtlaPort else port,
-                        onValueChange = { if (bonding) srtlaPort = it else port = it },
-                        keyboardType = KeyboardType.Number,
-                        isError = !activePortValid,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                RowDivider()
-                DiscordField(
-                    label = stringResource(R.string.settings_stream_name_label),
-                    value = streamName,
-                    onValueChange = { streamName = it },
-                    isError = streamName.isBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                    info = stringResource(R.string.onboarding_stream_name_info),
+            if (onCancel != null) {
+                DiscordTopBar(title = "Bondcast", onBack = onCancel)
+            } else {
+                Text(
+                    text = "Bondcast",
+                    color = DiscordColors.textPrimary,
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(start = 16.dp, top = 24.dp),
                 )
             }
 
-            Button(
-                onClick = {
-                    onFinish(
-                        initial.copy(
-                            host = host.trim(),
-                            port = portInt ?: initial.port,
-                            streamName = streamName.trim(),
-                            passphrase = passphrase,
-                            bondingEnabled = bonding,
-                            srtlaHost = host.trim(),
-                            srtlaPort = srtlaPortInt ?: initial.srtlaPort,
-                            obsEnabled = obsEnabled,
-                            obsHost = host.trim(),
-                            obsPort = obsPortInt ?: initial.obsPort,
-                            obsPassword = obsPassword,
-                            onboardingCompleted = true,
-                        ),
-                    )
-                },
-                enabled = valid,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 20.dp),
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(stringResource(R.string.onboarding_done_button))
+                DiscordHint(stringResource(R.string.onboarding_hint))
+
+                SectionLabel(stringResource(R.string.onboarding_section_destination))
+                SettingsCard {
+                    Button(
+                        onClick = { showScanner = true },
+                        shape = ButtonShape,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text(stringResource(R.string.settings_scan_qr_button))
+                    }
+                    RowDivider()
+                    DiscordSwitchRow(
+                        label = stringResource(R.string.onboarding_bonding_label),
+                        checked = bonding,
+                        onCheckedChange = { bonding = it },
+                        info = stringResource(R.string.onboarding_bonding_info),
+                    )
+                    RowDivider()
+                    Row {
+                        DiscordField(
+                            label = stringResource(R.string.settings_host_label),
+                            value = host,
+                            onValueChange = { host = it },
+                            keyboardType = KeyboardType.Decimal,
+                            isError = host.isBlank(),
+                            modifier = Modifier.weight(2f),
+                            info = stringResource(R.string.onboarding_host_info),
+                        )
+                        DiscordField(
+                            label = stringResource(R.string.settings_port_label),
+                            value = if (bonding) srtlaPort else port,
+                            onValueChange = { if (bonding) srtlaPort = it else port = it },
+                            keyboardType = KeyboardType.Number,
+                            isError = !activePortValid,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    RowDivider()
+                    DiscordField(
+                        label = stringResource(R.string.settings_stream_name_label),
+                        value = streamName,
+                        onValueChange = { streamName = it },
+                        isError = streamName.isBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        info = stringResource(R.string.onboarding_stream_name_info),
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        onFinish(
+                            initial.copy(
+                                host = host.trim(),
+                                port = portInt ?: initial.port,
+                                streamName = streamName.trim(),
+                                passphrase = passphrase,
+                                bondingEnabled = bonding,
+                                srtlaHost = host.trim(),
+                                srtlaPort = srtlaPortInt ?: initial.srtlaPort,
+                                obsEnabled = obsEnabled,
+                                obsHost = host.trim(),
+                                obsPort = obsPortInt ?: initial.obsPort,
+                                obsPassword = obsPassword,
+                                onboardingCompleted = true,
+                            ),
+                        )
+                    },
+                    enabled = valid,
+                    shape = ButtonShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                ) {
+                    Text(stringResource(R.string.onboarding_done_button))
+                }
             }
         }
     }

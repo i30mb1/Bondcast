@@ -6,14 +6,17 @@
     <string name="settings_scan_qr_button">"📷 Сканировать QR"</string>
     <string name="settings_qr_unrecognized">"QR не распознан"</string>
 
-    <string name="settings_twitch_direct_label">"Напрямую в Twitch (без сервера)"</string>
+    <string name="settings_destination_own_server">"Свой сервер"</string>
+    <string name="settings_destination_twitch_direct">"Twitch напрямую"</string>
     <string name="settings_twitch_direct_info">"Кодирует H.264 и шлёт RTMP прямо на Twitch — свой SRT/SRTLA-сервер не нужен.\n\nЧем платим:\n• бондинг недоступен — одно соединение, без объединения сетей\n• оборвалась сеть — оборвался эфир, как в обычном Larix/Streamlabs\n• пульт OBS тоже недоступен — ему нужна своя машина-сервер рядом\n\nКогда включать: нет своего сервера или устойчивость не критична. Нужен бондинг или пульт OBS — выключи и подними свой сервер."</string>
 
+    <string name="settings_twitch_connected">"Аккаунт Twitch подключён"</string>
+    <string name="settings_twitch_not_connected">"Аккаунт Twitch не подключён"</string>
     <string name="settings_twitch_stream_key_label">"Ключ трансляции Twitch"</string>
     <string name="settings_twitch_stream_key_info">"Creator Dashboard → Настройки → Трансляция → Основной ключ трансляции.\n\nДержи в секрете: с ним кто угодно стримит в твой канал вместо тебя."</string>
 
     <string name="settings_twitch_login_button">"Войти в Twitch"</string>
-    <string name="settings_twitch_logout_button">"Выйти из Twitch"</string>
+    <string name="settings_twitch_logout_button">"Выйти"</string>
     <string name="settings_twitch_fetch_key_button">"🔑 Взять из Twitch"</string>
     <string name="settings_twitch_fetch_key_button_loading">"Тяну ключ…"</string>
     <string name="settings_twitch_fetch_error_relogin">"Не получилось. Перелогинься в Twitch (нужен доступ к ключу трансляции) и попробуй снова."</string>
@@ -30,15 +33,13 @@
     <string name="settings_resolution_label">"Разрешение"</string>
     <string name="settings_bitrate_label">"Битрейт видео, kbps"</string>
     <string name="settings_bitrate_info">"Сколько килобит в секунду тратим на красоту. H.265 умеет в магию сжатия, так что задирать не нужно: выше рекомендации картинка почти не хорошеет, зато телефон греется и роняет кадры.\n\nКак выбрать:\n• жми пресет ниже — мы уже посчитали\n• комната статичная — прощает низкий битрейт\n• улица с листвой и движением — самый прожорливый контент"</string>
-    <string name="settings_bitrate_presets_hint">"💡 Пресеты под %1$s·%2$s fps — тапни, применю:"</string>
-    <string name="settings_preset_indoor">"🏠 Комната ≈ %1$d"</string>
-    <string name="settings_preset_outdoor">"🌳 Улица ≈ %1$d"</string>
+    <string name="settings_preset_indoor">"🏠 %1$d"</string>
+    <string name="settings_preset_outdoor">"🌳 %1$d"</string>
 
-    <string name="settings_advanced_show">"▸ Показать доп. настройки"</string>
-    <string name="settings_advanced_hide">"▾ Скрыть доп. настройки"</string>
+    <string name="settings_mode_novice">"Новичок"</string>
+    <string name="settings_mode_expert">"Эксперт"</string>
 
-    <string name="settings_section_connection">Подключение</string>
-    <string name="settings_bonding_label">"Бондинг (объединить сети)"</string>
+    <string name="settings_bonding_label">"Бондинг"</string>
     <string name="settings_bonding_info">"Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, и если одна прилегла отдохнуть — остальные тащат.\n\nКогда включать:\n• стрим на ходу, где сеть скачет\n• есть две-три сети сразу (Wi-Fi + SIM)\n\nВидео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать."</string>
 
     <string name="settings_passphrase_label">"Passphrase"</string>
@@ -47,11 +48,9 @@
     <string name="settings_latency_label">"Latency, мс"</string>
     <string name="settings_latency_info">"Подушка безопасности SRT: сколько у потерянного пакета есть времени, чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\nЧто ставить:\n• 2000 — золотая середина, пара секунд задержки без артефактов\n• больше — для слабой/дальней сети\n• меньше 500 — только адреналиновым наркоманам"</string>
 
-    <string name="settings_section_twitch_extra">"Twitch (доп.)"</string>
     <string name="settings_ingest_url_label">"Ingest URL"</string>
     <string name="settings_ingest_url_info">"Обычно менять не нужно — live.twitch.tv сам разведёт на ближайший датацентр.\n\nСвой региональный ingest (для меньшего пинга) — со страницы twitch.tv/ingest, формат rtmp://&lt;хост&gt;/app."</string>
 
-    <string name="settings_section_video_extra">"Видео (доп.)"</string>
     <string name="settings_fps_label">"Частота кадров"</string>
 
     <string name="settings_section_obs">"Пульт OBS"</string>
@@ -60,9 +59,6 @@
     <string name="settings_obs_port_label">"Порт OBS"</string>
     <string name="settings_obs_password_label">"Пароль WebSocket"</string>
     <string name="settings_obs_password_info">"Тот же пароль, что в OBS.\n\nГде взять:\n• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n• или кнопка «Показать сведения о подключении»\n\nГалочка «Включить аутентификацию» снята — оставь пустым."</string>
-
-    <string name="settings_back_button">"Назад"</string>
-    <string name="settings_save_button">"Сохранить"</string>
 
     <!-- Onboarding screen -->
     <string name="onboarding_hint">"Укажи, куда отправлять эфир — свой сервер, облако или отсканируй QR. Остальное уже настроено, поправишь потом в настройках."</string>

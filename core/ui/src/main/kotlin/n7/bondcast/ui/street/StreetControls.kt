@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -55,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import n7.bondcast.DiscordColors
+import n7.bondcast.core.ui.R
 import kotlin.random.Random
 
 public val StreetShape: RoundedCornerShape = RoundedCornerShape(4.dp)
@@ -409,7 +412,7 @@ public fun StreetPanelScaffold(
             .shadow(20.dp, PanelShape, clip = false)
             .clip(PanelShape)
             .background(DiscordColors.panel)
-            .border(2.dp, DiscordColors.accent, PanelShape)
+            .border(2.dp, DiscordColors.iconBorder, PanelShape)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -460,10 +463,15 @@ private fun StreetCloseButton(onClose: () -> Unit) {
             .pressBounce(interaction)
             .size(28.dp)
             .clip(StreetShape)
-            .border(2.dp, DiscordColors.accent, StreetShape)
+            .border(2.dp, DiscordColors.iconBorder, StreetShape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClose),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = "✕", color = DiscordColors.textPrimary, style = streetLabel)
+        Icon(
+            painter = painterResource(R.drawable.close),
+            contentDescription = null,
+            tint = DiscordColors.textSecondary,
+            modifier = Modifier.size(14.dp),
+        )
     }
 }

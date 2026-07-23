@@ -15,10 +15,13 @@ import androidx.camera.lifecycle.awaitInstance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -120,7 +123,11 @@ public fun QrScannerScreen(
                 .border(3.dp, DiscordColors.accent, RoundedCornerShape(20.dp)),
         )
 
-        DiscordTopBar(title = stringResource(R.string.qr_scanner_title_label), onBack = onBack)
+        DiscordTopBar(
+            title = stringResource(R.string.qr_scanner_title_label),
+            onBack = onBack,
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+        )
 
         val hint = error ?: stringResource(R.string.qr_scanner_hint_label)
         Text(
@@ -130,6 +137,7 @@ public fun QrScannerScreen(
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .fillMaxWidth()
                 .padding(24.dp),
         )

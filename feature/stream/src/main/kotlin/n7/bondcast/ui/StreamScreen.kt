@@ -83,7 +83,6 @@ import n7.bondcast.ui.components.ObsIcon
 import n7.bondcast.ui.components.ObsPanel
 import n7.bondcast.ui.components.RailButton
 import n7.bondcast.ui.components.RailFadeColumn
-import n7.bondcast.ui.components.RailGroupDivider
 import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.StickerBadge
@@ -373,7 +372,6 @@ public fun StreamScreen(
             ) {
                 StatsIcon(color = glyphColor(statsActive), live = live, agitation = statsAgitation)
             }
-            RailGroupDivider()
             val thermalActive = panels.isOpen(PANEL_THERMAL)
             RailButton(
                 active = thermalActive,
@@ -407,7 +405,7 @@ public fun StreamScreen(
                 enabled = phase is StreamPhase.Idle,
                 appearDelay = index++ * 45L,
             ) {
-                GearIcon(color = if (phase is StreamPhase.Idle) DiscordColors.accent else DiscordColors.textMuted)
+                GearIcon(color = if (phase is StreamPhase.Idle) DiscordColors.textSecondary else DiscordColors.textMuted)
             }
         }
 
@@ -513,7 +511,7 @@ public fun StreamScreen(
     }
 }
 
-private fun glyphColor(active: Boolean): Color = if (active) Color.White else DiscordColors.accent
+private fun glyphColor(active: Boolean): Color = if (active) Color.White else DiscordColors.textSecondary
 
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"

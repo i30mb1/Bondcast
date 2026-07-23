@@ -1,6 +1,5 @@
 package n7.bondcast.ui
 
-import android.content.pm.ActivityInfo
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -11,36 +10,45 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import n7.bondcast.ButtonShape
 import n7.bondcast.DiscordColors
 import n7.bondcast.feature.settings.R
 import n7.bondcast.qr.QrPayload
@@ -55,19 +63,19 @@ import n7.bondcast.ui.components.DiscordTopBar
 import n7.bondcast.ui.components.RowDivider
 import n7.bondcast.ui.components.SectionLabel
 import n7.bondcast.ui.components.SettingsCard
+import n7.bondcast.ui.components.StatusDot
 
 @Composable
 public fun SettingsScreen(
     initial: StreamSettings,
     onSave: (StreamSettings) -> Unit,
     onBack: () -> Unit,
+    onOpenWizard: () -> Unit,
     twitchLoggedIn: Boolean = false,
     onTwitchLogin: (() -> Unit)? = null,
     onTwitchLogout: (() -> Unit)? = null,
     onFetchTwitchStreamKey: (suspend () -> String?)? = null,
 ) {
-    LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-
     // один IP на всё: SRT-сервер, srtla_rec и пульт OBS живут на этой машине
     var host by remember { mutableStateOf(initial.srtlaHost.ifBlank { initial.obsHost.ifBlank { initial.host } }) }
     var port by remember { mutableStateOf(initial.port.toString()) }
@@ -89,7 +97,7 @@ public fun SettingsScreen(
     var twitchFetchError by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     var showScanner by remember { mutableStateOf(false) }
-    var showAdvanced by remember {
+    var expertMode by remember {
         mutableStateOf(
             initial.bondingEnabled || initial.obsEnabled || initial.passphrase.isNotBlank() ||
                 initial.latencyMs != 2000 || initial.fps >= 60 ||
@@ -97,6 +105,28 @@ public fun SettingsScreen(
         )
     }
     val context = LocalContext.current
+    val fetchErrorRelogin = stringResource(R.string.settings_twitch_fetch_error_relogin)
+    val fetchErrorLoginFirst = stringResource(R.string.settings_twitch_fetch_error_login_first)
+
+    fun fetchTwitchKey() {
+        if (onFetchTwitchStreamKey == null || twitchFetching) return
+        twitchFetchError = null
+        twitchFetching = true
+        coroutineScope.launch {
+            val key = runCatching { onFetchTwitchStreamKey() }.getOrNull()
+            twitchFetching = false
+            if (key.isNullOrBlank()) {
+                twitchFetchError = if (twitchLoggedIn) fetchErrorRelogin else fetchErrorLoginFirst
+            } else {
+                twitchStreamKey = key
+            }
+        }
+    }
+
+    // ключ тянем сам, как только юзер залогинен — ручная кнопка нужна только если это не сработало
+    LaunchedEffect(twitchDirect, twitchLoggedIn) {
+        if (twitchDirect && twitchLoggedIn && twitchStreamKey.isBlank()) fetchTwitchKey()
+    }
 
     val portInt = port.toIntOrNull()
     val bitrateInt = bitrate.toIntOrNull()
@@ -116,6 +146,53 @@ public fun SettingsScreen(
     val destinationValid = if (twitchDirect) twitchStreamKey.isNotBlank() else host.isNotBlank() && activePortValid
     val nameValid = twitchDirect || streamName.isNotBlank()
     val valid = nameValid && bitrateValid && latencyValid && destinationValid && obsValid
+
+    fun buildSettings(): StreamSettings = StreamSettings(
+        host = host.trim(),
+        port = portInt ?: initial.port,
+        streamName = streamName.trim(),
+        passphrase = passphrase,
+        width = if (is1080p) 1920 else 1280,
+        height = if (is1080p) 1080 else 720,
+        fps = if (is60fps) 60 else 30,
+        // сервер свой и всегда умеет H.265 — меню кодека не показываем
+        videoCodec = VideoCodec.H265,
+        videoBitrateKbps = requireNotNull(bitrateInt),
+        // ABR и мин. битрейт живут в карточке статистики на стрим-экране
+        abrEnabled = initial.abrEnabled,
+        minVideoBitrateKbps = initial.minVideoBitrateKbps,
+        latencyMs = requireNotNull(latencyInt),
+        // бондинг и Twitch-напрямую взаимоисключающие — второе всегда побеждает
+        bondingEnabled = bonding && !twitchDirect,
+        srtlaHost = host.trim(),
+        srtlaPort = srtlaPortInt ?: 5000,
+        // пульт OBS не сочетается со стримом напрямую в Twitch — нет своей машины-сервера
+        obsEnabled = obsEnabled && !twitchDirect,
+        obsHost = host.trim(),
+        obsPort = obsPortInt ?: 4455,
+        obsPassword = obsPassword,
+        // чат настраивается на стрим-экране; тут просто не теряем значения
+        chatEnabled = initial.chatEnabled,
+        chatChannel = initial.chatChannel,
+        chatShowNicknames = initial.chatShowNicknames,
+        chatShowBadges = initial.chatShowBadges,
+        chatHideCommands = initial.chatHideCommands,
+        chatFontSizeSp = initial.chatFontSizeSp,
+        chatOpacityPercent = initial.chatOpacityPercent,
+        chatMessageLimit = initial.chatMessageLimit,
+        chatFadeTopEnabled = initial.chatFadeTopEnabled,
+        chatAutoEraseEnabled = initial.chatAutoEraseEnabled,
+        onboardingCompleted = initial.onboardingCompleted,
+        twitchDirectEnabled = twitchDirect,
+        twitchStreamKey = twitchStreamKey.trim(),
+        twitchIngestUrl = twitchIngestUrl.trim().ifBlank { initial.twitchIngestUrl },
+    )
+
+    // сохраняем только при валидных полях — иначе просто выходим, не портя сохранённые настройки
+    fun saveAndBack() {
+        if (valid) onSave(buildSettings())
+        onBack()
+    }
 
     // рекомендации для H.265 по гайду belabox: сложность сцены решает не меньше разрешения —
     // статичная комната прощает низкий битрейт, улица с листвой и движением просит почти вдвое больше
@@ -164,7 +241,7 @@ public fun SettingsScreen(
         return
     }
 
-    BackHandler(onBack = onBack)
+    BackHandler(onBack = ::saveAndBack)
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -173,7 +250,46 @@ public fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            DiscordTopBar(title = stringResource(R.string.settings_title), onBack = onBack)
+            DiscordTopBar(
+                title = stringResource(R.string.settings_title),
+                onBack = ::saveAndBack,
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        listOf(
+                            stringResource(R.string.settings_mode_novice) to false,
+                            stringResource(R.string.settings_mode_expert) to true,
+                        ).forEach { (label, isExpert) ->
+                            val selected = expertMode == isExpert
+                            Text(
+                                text = label,
+                                color = if (selected) Color.White else DiscordColors.textSecondary,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier
+                                    .clip(ButtonShape)
+                                    .background(if (selected) DiscordColors.accent else Color.Transparent)
+                                    .clickable { expertMode = isExpert }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 4.dp)
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(50))
+                                .clickable(onClick = onOpenWizard),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.wizard),
+                                contentDescription = null,
+                                tint = DiscordColors.textSecondary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                },
+            )
 
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -181,90 +297,89 @@ public fun SettingsScreen(
             ) {
                 SectionLabel(stringResource(R.string.settings_section_server))
                 SettingsCard {
-                    Button(
-                        onClick = { showScanner = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        Text(stringResource(R.string.settings_scan_qr_button))
-                    }
-                    RowDivider()
-                    DiscordSwitchRow(
-                        label = stringResource(R.string.settings_twitch_direct_label),
-                        checked = twitchDirect,
-                        onCheckedChange = { twitchDirect = it },
+                    DiscordSegmentedRow(
+                        label = stringResource(R.string.onboarding_section_destination),
+                        options = listOf(
+                            stringResource(R.string.settings_destination_own_server),
+                            stringResource(R.string.settings_destination_twitch_direct),
+                        ),
+                        selectedIndex = if (twitchDirect) 1 else 0,
+                        onSelect = { twitchDirect = it == 1 },
                         info = stringResource(R.string.settings_twitch_direct_info),
                     )
+                    RowDivider()
                     if (twitchDirect) {
-                        RowDivider()
-                        DiscordField(
-                            label = stringResource(R.string.settings_twitch_stream_key_label),
-                            value = twitchStreamKey,
-                            onValueChange = {
-                                twitchStreamKey = it
-                                twitchFetchError = null
-                            },
-                            isError = twitchStreamKey.isBlank(),
-                            modifier = Modifier.fillMaxWidth(),
-                            info = stringResource(R.string.settings_twitch_stream_key_info),
-                        )
-                        if (onTwitchLogin != null && onTwitchLogout != null || onFetchTwitchStreamKey != null) {
-                            val fetchErrorRelogin = stringResource(R.string.settings_twitch_fetch_error_relogin)
-                            val fetchErrorLoginFirst = stringResource(R.string.settings_twitch_fetch_error_login_first)
+                        if (onTwitchLogin != null && onTwitchLogout != null) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (onTwitchLogin != null && onTwitchLogout != null) {
-                                    TextButton(
-                                        onClick = { if (twitchLoggedIn) onTwitchLogout() else onTwitchLogin() },
-                                    ) {
-                                        Text(
-                                            stringResource(
-                                                if (twitchLoggedIn) {
-                                                    R.string.settings_twitch_logout_button
-                                                } else {
-                                                    R.string.settings_twitch_login_button
-                                                },
-                                            ),
-                                        )
-                                    }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    StatusDot(if (twitchLoggedIn) DiscordColors.green else DiscordColors.textMuted)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(
+                                            if (twitchLoggedIn) {
+                                                R.string.settings_twitch_connected
+                                            } else {
+                                                R.string.settings_twitch_not_connected
+                                            },
+                                        ),
+                                        color = DiscordColors.textSecondary,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
                                 }
-                                if (onFetchTwitchStreamKey != null) {
-                                    TextButton(
-                                        enabled = !twitchFetching,
-                                        onClick = {
-                                            twitchFetchError = null
-                                            twitchFetching = true
-                                            coroutineScope.launch {
-                                                val key = runCatching { onFetchTwitchStreamKey() }.getOrNull()
-                                                twitchFetching = false
-                                                if (key.isNullOrBlank()) {
-                                                    twitchFetchError = if (twitchLoggedIn) {
-                                                        fetchErrorRelogin
-                                                    } else {
-                                                        fetchErrorLoginFirst
-                                                    }
-                                                } else {
-                                                    twitchStreamKey = key
-                                                }
-                                            }
+                                Text(
+                                    text = stringResource(
+                                        if (twitchLoggedIn) {
+                                            R.string.settings_twitch_logout_button
+                                        } else {
+                                            R.string.settings_twitch_login_button
                                         },
-                                    ) {
-                                        Text(
-                                            stringResource(
-                                                if (twitchFetching) {
-                                                    R.string.settings_twitch_fetch_key_button_loading
-                                                } else {
-                                                    R.string.settings_twitch_fetch_key_button
-                                                },
-                                            ),
+                                    ),
+                                    color = DiscordColors.blurple,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier
+                                        .clip(ButtonShape)
+                                        .clickable(
+                                            onClick = { if (twitchLoggedIn) onTwitchLogout() else onTwitchLogin() },
                                         )
-                                    }
-                                }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                        // новичку ключ показывать незачем — при логине он подтягивается сам (LaunchedEffect выше);
+                        // руками лезть приходится только если аккаунта нет, подтянуть не вышло, либо это режим эксперта
+                        val keyFieldNeeded = twitchStreamKey.isBlank() && !twitchFetching
+                        if (expertMode || keyFieldNeeded) {
+                            RowDivider()
+                            DiscordField(
+                                label = stringResource(R.string.settings_twitch_stream_key_label),
+                                value = twitchStreamKey,
+                                onValueChange = {
+                                    twitchStreamKey = it
+                                    twitchFetchError = null
+                                },
+                                isError = twitchStreamKey.isBlank(),
+                                modifier = Modifier.fillMaxWidth(),
+                                info = stringResource(R.string.settings_twitch_stream_key_info),
+                            )
+                            if (onFetchTwitchStreamKey != null) {
+                                DiscordHint(
+                                    text = stringResource(
+                                        if (twitchFetching) {
+                                            R.string.settings_twitch_fetch_key_button_loading
+                                        } else {
+                                            R.string.settings_twitch_fetch_key_button
+                                        },
+                                    ),
+                                    onClick = { fetchTwitchKey() },
+                                )
                             }
                             twitchFetchError?.let {
                                 Text(
@@ -275,8 +390,23 @@ public fun SettingsScreen(
                                 )
                             }
                         }
+                        AnimatedVisibility(
+                            visible = expertMode,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically(),
+                        ) {
+                            Column {
+                                RowDivider()
+                                DiscordField(
+                                    label = stringResource(R.string.settings_ingest_url_label),
+                                    value = twitchIngestUrl,
+                                    onValueChange = { twitchIngestUrl = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    info = stringResource(R.string.settings_ingest_url_info),
+                                )
+                            }
+                        }
                     } else {
-                        RowDivider()
                         Row {
                             DiscordField(
                                 label = stringResource(R.string.settings_host_label),
@@ -287,6 +417,22 @@ public fun SettingsScreen(
                                 isError = host.isBlank(),
                                 modifier = Modifier.weight(2f),
                                 info = stringResource(R.string.settings_host_info),
+                                trailingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(ButtonShape)
+                                            .clickable(onClick = { showScanner = true }),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.cam),
+                                            contentDescription = null,
+                                            tint = DiscordColors.textSecondary,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                },
                             )
                             DiscordField(
                                 label = stringResource(R.string.settings_port_label),
@@ -306,68 +452,13 @@ public fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             info = stringResource(R.string.settings_stream_name_info),
                         )
-                    }
-                }
-
-                SectionLabel(stringResource(R.string.settings_section_video))
-                SettingsCard {
-                    DiscordSegmentedRow(
-                        label = stringResource(R.string.settings_resolution_label),
-                        options = listOf("720p", "1080p"),
-                        selectedIndex = if (is1080p) 1 else 0,
-                        onSelect = { is1080p = it == 1 },
-                    )
-                    RowDivider()
-                    DiscordStepperField(
-                        label = stringResource(R.string.settings_bitrate_label),
-                        value = bitrate,
-                        onValueChange = { bitrate = it },
-                        min = 500,
-                        max = 20_000,
-                        step = 100,
-                        isError = !bitrateValid,
-                        info = stringResource(R.string.settings_bitrate_info),
-                    )
-                    DiscordHint(
-                        stringResource(
-                            R.string.settings_bitrate_presets_hint,
-                            if (is1080p) "1080p" else "720p",
-                            if (is60fps) "60" else "30",
-                        ),
-                    )
-                    Row(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        RecommendChip(
-                            text = stringResource(R.string.settings_preset_indoor, recIndoorKbps),
-                            selected = bitrateInt == recIndoorKbps,
-                            onClick = { bitrate = recIndoorKbps.toString() },
-                        )
-                        RecommendChip(
-                            text = stringResource(R.string.settings_preset_outdoor, recOutdoorKbps),
-                            selected = bitrateInt == recOutdoorKbps,
-                            onClick = { bitrate = recOutdoorKbps.toString() },
-                        )
-                    }
-                }
-
-                AdvancedToggle(
-                    expanded = showAdvanced,
-                    onClick = { showAdvanced = !showAdvanced },
-                )
-
-                AnimatedVisibility(
-                    visible = showAdvanced,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically(),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (!twitchDirect) {
-                            SectionLabel(stringResource(R.string.settings_section_connection))
-                            SettingsCard {
+                        AnimatedVisibility(
+                            visible = expertMode,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically(),
+                        ) {
+                            Column {
+                                RowDivider()
                                 DiscordSwitchRow(
                                     label = stringResource(R.string.settings_bonding_label),
                                     checked = bonding,
@@ -394,21 +485,49 @@ public fun SettingsScreen(
                                     info = stringResource(R.string.settings_latency_info),
                                 )
                             }
-                        } else {
-                            SectionLabel(stringResource(R.string.settings_section_twitch_extra))
-                            SettingsCard {
-                                DiscordField(
-                                    label = stringResource(R.string.settings_ingest_url_label),
-                                    value = twitchIngestUrl,
-                                    onValueChange = { twitchIngestUrl = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    info = stringResource(R.string.settings_ingest_url_info),
-                                )
-                            }
                         }
+                    }
+                }
 
-                        SectionLabel(stringResource(R.string.settings_section_video_extra))
-                        SettingsCard {
+                SectionLabel(stringResource(R.string.settings_section_video))
+                SettingsCard {
+                    DiscordSegmentedRow(
+                        label = stringResource(R.string.settings_resolution_label),
+                        options = listOf("720p", "1080p"),
+                        selectedIndex = if (is1080p) 1 else 0,
+                        onSelect = { is1080p = it == 1 },
+                    )
+                    RowDivider()
+                    DiscordStepperField(
+                        label = stringResource(R.string.settings_bitrate_label),
+                        value = bitrate,
+                        onValueChange = { bitrate = it },
+                        min = 500,
+                        max = 20_000,
+                        step = 100,
+                        isError = !bitrateValid,
+                        info = stringResource(R.string.settings_bitrate_info),
+                        trailing = {
+                            RecommendChip(
+                                text = stringResource(R.string.settings_preset_indoor, recIndoorKbps),
+                                selected = bitrateInt == recIndoorKbps,
+                                onClick = { bitrate = recIndoorKbps.toString() },
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            RecommendChip(
+                                text = stringResource(R.string.settings_preset_outdoor, recOutdoorKbps),
+                                selected = bitrateInt == recOutdoorKbps,
+                                onClick = { bitrate = recOutdoorKbps.toString() },
+                            )
+                        },
+                    )
+                    AnimatedVisibility(
+                        visible = expertMode,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
+                        Column {
+                            RowDivider()
                             DiscordSegmentedRow(
                                 label = stringResource(R.string.settings_fps_label),
                                 options = listOf("30 fps", "60 fps"),
@@ -416,122 +535,52 @@ public fun SettingsScreen(
                                 onSelect = { is60fps = it == 1 },
                             )
                         }
+                    }
+                }
 
-                        // пульт OBS предполагает свою машину-сервер рядом — со стримом напрямую в Twitch не сочетается
-                        if (!twitchDirect) {
-                            SectionLabel(stringResource(R.string.settings_section_obs))
-                            SettingsCard {
-                                DiscordSwitchRow(
-                                    label = stringResource(R.string.settings_obs_toggle_label),
-                                    checked = obsEnabled,
-                                    onCheckedChange = { obsEnabled = it },
-                                    info = stringResource(R.string.settings_obs_info),
-                                )
-                                if (obsEnabled) {
-                                    RowDivider()
-                                    Row {
-                                        DiscordField(
-                                            label = stringResource(R.string.settings_obs_port_label),
-                                            value = obsPort,
-                                            onValueChange = { obsPort = it },
-                                            keyboardType = KeyboardType.Number,
-                                            isError = !obsPortValid,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        DiscordField(
-                                            label = stringResource(R.string.settings_obs_password_label),
-                                            value = obsPassword,
-                                            onValueChange = { obsPassword = it },
-                                            modifier = Modifier.weight(2f),
-                                            info = stringResource(R.string.settings_obs_password_info),
-                                        )
-                                    }
+                // пульт OBS предполагает свою машину-сервер рядом — со стримом напрямую в Twitch не сочетается
+                AnimatedVisibility(
+                    visible = expertMode && !twitchDirect,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        SectionLabel(stringResource(R.string.settings_section_obs))
+                        SettingsCard {
+                            DiscordSwitchRow(
+                                label = stringResource(R.string.settings_obs_toggle_label),
+                                checked = obsEnabled,
+                                onCheckedChange = { obsEnabled = it },
+                                info = stringResource(R.string.settings_obs_info),
+                            )
+                            if (obsEnabled) {
+                                RowDivider()
+                                Row {
+                                    DiscordField(
+                                        label = stringResource(R.string.settings_obs_port_label),
+                                        value = obsPort,
+                                        onValueChange = { obsPort = it },
+                                        keyboardType = KeyboardType.Number,
+                                        isError = !obsPortValid,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    DiscordField(
+                                        label = stringResource(R.string.settings_obs_password_label),
+                                        value = obsPassword,
+                                        onValueChange = { obsPassword = it },
+                                        modifier = Modifier.weight(2f),
+                                        info = stringResource(R.string.settings_obs_password_info),
+                                    )
                                 }
                             }
                         }
                     }
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.settings_back_button))
-                    }
-                    Button(
-                        onClick = {
-                            onSave(
-                                StreamSettings(
-                                    host = host.trim(),
-                                    port = portInt ?: initial.port,
-                                    streamName = streamName.trim(),
-                                    passphrase = passphrase,
-                                    width = if (is1080p) 1920 else 1280,
-                                    height = if (is1080p) 1080 else 720,
-                                    fps = if (is60fps) 60 else 30,
-                                    // сервер свой и всегда умеет H.265 — меню кодека не показываем
-                                    videoCodec = VideoCodec.H265,
-                                    videoBitrateKbps = requireNotNull(bitrateInt),
-                                    // ABR и мин. битрейт живут в карточке статистики на стрим-экране
-                                    abrEnabled = initial.abrEnabled,
-                                    minVideoBitrateKbps = initial.minVideoBitrateKbps,
-                                    latencyMs = requireNotNull(latencyInt),
-                                    // бондинг и Twitch-напрямую взаимоисключающие — второе всегда побеждает
-                                    bondingEnabled = bonding && !twitchDirect,
-                                    srtlaHost = host.trim(),
-                                    srtlaPort = srtlaPortInt ?: 5000,
-                                    // пульт OBS не сочетается со стримом напрямую в Twitch — нет своей машины-сервера
-                                    obsEnabled = obsEnabled && !twitchDirect,
-                                    obsHost = host.trim(),
-                                    obsPort = obsPortInt ?: 4455,
-                                    obsPassword = obsPassword,
-                                    // чат настраивается на стрим-экране; тут просто не теряем значения
-                                    chatEnabled = initial.chatEnabled,
-                                    chatChannel = initial.chatChannel,
-                                    chatShowNicknames = initial.chatShowNicknames,
-                                    chatShowBadges = initial.chatShowBadges,
-                                    chatHideCommands = initial.chatHideCommands,
-                                    chatFontSizeSp = initial.chatFontSizeSp,
-                                    chatOpacityPercent = initial.chatOpacityPercent,
-                                    chatMessageLimit = initial.chatMessageLimit,
-                                    chatFadeTopEnabled = initial.chatFadeTopEnabled,
-                                    chatAutoEraseEnabled = initial.chatAutoEraseEnabled,
-                                    onboardingCompleted = initial.onboardingCompleted,
-                                    twitchDirectEnabled = twitchDirect,
-                                    twitchStreamKey = twitchStreamKey.trim(),
-                                    twitchIngestUrl = twitchIngestUrl.trim().ifBlank { initial.twitchIngestUrl },
-                                ),
-                            )
-                        },
-                        enabled = valid,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(R.string.settings_save_button))
-                    }
-                }
+                Spacer(Modifier.height(12.dp))
             }
         }
     }
-}
-
-@Composable
-private fun AdvancedToggle(
-    expanded: Boolean,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = stringResource(if (expanded) R.string.settings_advanced_hide else R.string.settings_advanced_show),
-        color = DiscordColors.accent,
-        style = MaterialTheme.typography.labelLarge,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    )
 }
 
 @Composable
@@ -545,9 +594,9 @@ private fun RecommendChip(
         color = if (selected) Color.White else DiscordColors.textSecondary,
         style = MaterialTheme.typography.labelLarge,
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(ButtonShape)
             .background(if (selected) DiscordColors.accent else DiscordColors.inputBackground)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 12.dp),
     )
 }
