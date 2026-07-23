@@ -46,6 +46,9 @@ public interface TwitchSession {
     /** id пользователя по логину; login == null — сам залогиненный. */
     public suspend fun resolveUserId(login: String?): String?
 
+    /** Ключ трансляции канала — null, если не залогинен или токен без scope channel:read:stream_key. */
+    public suspend fun streamKey(): String?
+
     /** Значки чата канала (set_id/version → url картинки): глобальные + канала. */
     public suspend fun chatBadges(broadcasterId: String): Map<String, String>
 

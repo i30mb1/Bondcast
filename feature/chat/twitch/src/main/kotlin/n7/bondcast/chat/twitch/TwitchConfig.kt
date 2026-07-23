@@ -16,5 +16,8 @@ public object TwitchConfig {
     /** Скоуп «кто сейчас в чате» (helix/chat/chatters) — счётчик и список зрителей. */
     public const val SCOPE_CHATTERS: String = "moderator:read:chatters"
 
+    /** Скоуп чтения ключа трансляции (helix/streams/key) — для Twitch-напрямую в настройках. */
+    public const val SCOPE_STREAM_KEY: String = "channel:read:stream_key"
+
     public val isConfigured: Boolean get() = CLIENT_ID.isNotBlank()
 }

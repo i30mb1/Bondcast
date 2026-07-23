@@ -16,6 +16,7 @@ dependencies {
 
     implementation(libs.streampack.core)
     implementation(libs.streampack.srt)
+    implementation(libs.streampack.rtmp)
     implementation(libs.srtdroid.core)
     implementation(libs.srtdroid.ktx)
 

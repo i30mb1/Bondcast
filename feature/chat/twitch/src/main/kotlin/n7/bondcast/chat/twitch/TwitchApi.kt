@@ -68,6 +68,15 @@ internal class TwitchApi(
         )
     }
 
+    /** Ключ трансляции канала (helix/streams/key) — нужен скоуп channel:read:stream_key. */
+    suspend fun getStreamKey(accessToken: String, broadcasterId: String): String? = withContext(Dispatchers.IO) {
+        val (code, text) = execute(helixGet("$HELIX_STREAM_KEY?broadcaster_id=$broadcasterId", accessToken))
+        if (code != 200) return@withContext null
+        val data = JSONObject(text).optJSONArray("data") ?: return@withContext null
+        if (data.length() == 0) return@withContext null
+        data.getJSONObject(0).optString("stream_key").ifBlank { null }
+    }
+
     /** id+login пользователя. login == null — сам залогиненный пользователь. */
     suspend fun getUser(accessToken: String, login: String?): Pair<String, String>? = withContext(Dispatchers.IO) {
         val url = if (login.isNullOrBlank()) HELIX_USERS else "$HELIX_USERS?login=$login"
@@ -184,6 +193,7 @@ internal class TwitchApi(
         const val ID_TOKEN = "https://id.twitch.tv/oauth2/token"
         const val ID_VALIDATE = "https://id.twitch.tv/oauth2/validate"
         const val HELIX_USERS = "https://api.twitch.tv/helix/users"
+        const val HELIX_STREAM_KEY = "https://api.twitch.tv/helix/streams/key"
         const val HELIX_EVENTSUB = "https://api.twitch.tv/helix/eventsub/subscriptions"
         const val HELIX_BADGES = "https://api.twitch.tv/helix/chat/badges"
         const val HELIX_BADGES_GLOBAL = "https://api.twitch.tv/helix/chat/badges/global"

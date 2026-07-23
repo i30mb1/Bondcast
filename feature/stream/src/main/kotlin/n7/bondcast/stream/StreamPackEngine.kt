@@ -15,6 +15,8 @@ import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
 import io.github.thibaultbee.streampack.core.streamers.single.cameraSingleStreamer
+import io.github.thibaultbee.streampack.ext.rtmp.configuration.mediadescriptor.RtmpMediaDescriptor
+import io.github.thibaultbee.streampack.ext.rtmp.elements.endpoints.RtmpEndpointFactory
 import io.github.thibaultbee.streampack.ext.srt.configuration.mediadescriptor.SrtMediaDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -23,6 +25,7 @@ import kotlinx.coroutines.sync.withLock
 import n7.bondcast.camerax.CameraXVideoSourceFactory
 import n7.bondcast.overlay.OverlayCompositor
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.settings.VideoCodec
 import n7.bondcast.uvc.UvcVideoSourceFactory
 import kotlin.math.roundToInt
 
@@ -36,6 +39,9 @@ internal class StreamPackEngine(
     private var streamer: SingleStreamer? = null
     private var sink: SendTimeSrtSink? = null
     private var appliedSettings: StreamSettings? = null
+
+    // таргет вморожен в endpointFactory на момент создания streamer — смена свой-сервер↔Twitch требует пересоздания
+    private var appliedTarget: Boolean? = null
     private val streamerLock = Mutex()
 
     override val lastError: Throwable?
@@ -43,18 +49,27 @@ internal class StreamPackEngine(
 
     @SuppressLint("MissingPermission")
     override suspend fun prepare(settings: StreamSettings): Unit = streamerLock.withLock {
+        if (streamer != null && appliedTarget != settings.twitchDirectEnabled) {
+            runCatching { streamer?.release() }
+            streamer = null
+            sink = null
+            appliedSettings = null
+        }
         val current = streamer ?: run {
-            // свой sink вместо штатного: без srcTime из MediaCodec PTS (см. SendTimeSrtSink)
-            val newSink = SendTimeSrtSink(Dispatchers.IO)
-            cameraSingleStreamer(
-                context,
-                endpointFactory = CompositeEndpointFactory(
+            val newSink = if (settings.twitchDirectEnabled) null else SendTimeSrtSink(Dispatchers.IO)
+            val factory = if (settings.twitchDirectEnabled) {
+                RtmpEndpointFactory()
+            } else {
+                // свой sink вместо штатного: без srcTime из MediaCodec PTS (см. SendTimeSrtSink)
+                CompositeEndpointFactory(
                     TsMuxer().apply { addService(createDefaultTsServiceInfo()) },
-                    newSink,
-                ),
-            ).also {
+                    requireNotNull(newSink),
+                )
+            }
+            cameraSingleStreamer(context, endpointFactory = factory).also {
                 streamer = it
                 sink = newSink
+                appliedTarget = settings.twitchDirectEnabled
                 val camId = initialCameraId() ?: defaultCameraId()
                 val res = runCatching { it.setVideoSource(sourceFactory(camId)) }
                 Log.i("StreamCamera", "init setVideoSource($camId) -> ${res.exceptionOrNull()?.toString() ?: "ok"}")
@@ -65,7 +80,8 @@ internal class StreamPackEngine(
         current.setConfig(
             AudioConfig(startBitrate = 128_000),
             VideoConfig(
-                mimeType = settings.videoCodec.mime,
+                // Twitch RTMP не понимает HEVC — форсим H.264 для прямого таргета
+                mimeType = if (settings.twitchDirectEnabled) VideoCodec.H264.mime else settings.videoCodec.mime,
                 startBitrate = settings.videoBitrateKbps * 1000,
                 resolution = Size(settings.width, settings.height),
                 fps = settings.fps,
@@ -77,17 +93,21 @@ internal class StreamPackEngine(
     override suspend fun startStream(settings: StreamSettings) {
         prepare(settings)
         val current = requireNotNull(streamer)
-        // open() блокирует до конца SRT-хендшейка (секунды при недоступном сервере) — держим его ВНЕ
+        // open() блокирует до конца хендшейка (секунды при недоступном сервере) — держим его ВНЕ
         // streamerLock, иначе switchCamera/setVideoBitrate висят до таймаута коннекта
-        current.open(
-            SrtMediaDescriptor(
-                host = settings.host,
-                port = settings.port,
-                streamId = settings.streamId,
-                passPhrase = settings.passphrase.ifBlank { null },
-                latency = settings.latencyMs,
-            ),
-        )
+        if (settings.twitchDirectEnabled) {
+            current.open(RtmpMediaDescriptor.fromUrl(settings.twitchRtmpUrl))
+        } else {
+            current.open(
+                SrtMediaDescriptor(
+                    host = settings.host,
+                    port = settings.port,
+                    streamId = settings.streamId,
+                    passPhrase = settings.passphrase.ifBlank { null },
+                    latency = settings.latencyMs,
+                ),
+            )
+        }
         current.startStream()
     }
 
@@ -215,5 +235,6 @@ internal class StreamPackEngine(
         streamer = null
         sink = null
         appliedSettings = null
+        appliedTarget = null
     }
 }

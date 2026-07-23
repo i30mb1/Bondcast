@@ -48,6 +48,9 @@ public class SettingsRepository(private val context: Context) {
             chatFadeTopEnabled = preferences[CHAT_FADE_TOP_ENABLED] ?: default.chatFadeTopEnabled,
             chatAutoEraseEnabled = preferences[CHAT_AUTO_ERASE_ENABLED] ?: default.chatAutoEraseEnabled,
             onboardingCompleted = preferences[ONBOARDING_COMPLETED] ?: default.onboardingCompleted,
+            twitchDirectEnabled = preferences[TWITCH_DIRECT_ENABLED] ?: default.twitchDirectEnabled,
+            twitchStreamKey = preferences[TWITCH_STREAM_KEY] ?: default.twitchStreamKey,
+            twitchIngestUrl = preferences[TWITCH_INGEST_URL] ?: default.twitchIngestUrl,
         )
     }
 
@@ -83,6 +86,9 @@ public class SettingsRepository(private val context: Context) {
             preferences[CHAT_FADE_TOP_ENABLED] = settings.chatFadeTopEnabled
             preferences[CHAT_AUTO_ERASE_ENABLED] = settings.chatAutoEraseEnabled
             preferences[ONBOARDING_COMPLETED] = settings.onboardingCompleted
+            preferences[TWITCH_DIRECT_ENABLED] = settings.twitchDirectEnabled
+            preferences[TWITCH_STREAM_KEY] = settings.twitchStreamKey
+            preferences[TWITCH_INGEST_URL] = settings.twitchIngestUrl
         }
     }
 
@@ -117,5 +123,8 @@ public class SettingsRepository(private val context: Context) {
         val CHAT_FADE_TOP_ENABLED = booleanPreferencesKey("chat_fade_top_enabled")
         val CHAT_AUTO_ERASE_ENABLED = booleanPreferencesKey("chat_auto_erase_enabled")
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val TWITCH_DIRECT_ENABLED = booleanPreferencesKey("twitch_direct_enabled")
+        val TWITCH_STREAM_KEY = stringPreferencesKey("twitch_stream_key")
+        val TWITCH_INGEST_URL = stringPreferencesKey("twitch_ingest_url")
     }
 }

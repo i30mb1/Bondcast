@@ -54,6 +54,12 @@ internal class TwitchSessionImpl(
         return api.getUser(token, login)?.first
     }
 
+    override suspend fun streamKey(): String? {
+        val token = freshAccessToken() ?: return null
+        val id = userId ?: return null
+        return runCatching { api.getStreamKey(token, id) }.getOrNull()
+    }
+
     override suspend fun chatBadges(broadcasterId: String): Map<String, String> {
         val token = freshAccessToken() ?: return emptyMap()
         val map = HashMap<String, String>()
@@ -81,7 +87,7 @@ internal class TwitchSessionImpl(
     }
 
     private suspend fun runDeviceLogin() {
-        val scopes = listOf(TwitchConfig.SCOPE_CHAT_READ, TwitchConfig.SCOPE_CHATTERS)
+        val scopes = listOf(TwitchConfig.SCOPE_CHAT_READ, TwitchConfig.SCOPE_CHATTERS, TwitchConfig.SCOPE_STREAM_KEY)
         val device = runCatching { api.requestDeviceCode(scopes) }.getOrElse {
             _authState.value = TwitchAuthState.Failed(it.message ?: "не удалось получить код")
             return

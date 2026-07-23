@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import n7.bondcast.DiscordColors
 import n7.bondcast.qr.QrPayload
 import n7.bondcast.settings.StreamSettings
@@ -57,6 +59,8 @@ public fun SettingsScreen(
     initial: StreamSettings,
     onSave: (StreamSettings) -> Unit,
     onBack: () -> Unit,
+    twitchLoggedIn: Boolean = false,
+    onFetchTwitchStreamKey: (suspend () -> String?)? = null,
 ) {
     LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
 
@@ -74,11 +78,18 @@ public fun SettingsScreen(
     var obsEnabled by remember { mutableStateOf(initial.obsEnabled) }
     var obsPort by remember { mutableStateOf(initial.obsPort.toString()) }
     var obsPassword by remember { mutableStateOf(initial.obsPassword) }
+    var twitchDirect by remember { mutableStateOf(initial.twitchDirectEnabled) }
+    var twitchStreamKey by remember { mutableStateOf(initial.twitchStreamKey) }
+    var twitchIngestUrl by remember { mutableStateOf(initial.twitchIngestUrl) }
+    var twitchFetching by remember { mutableStateOf(false) }
+    var twitchFetchError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     var showScanner by remember { mutableStateOf(false) }
     var showAdvanced by remember {
         mutableStateOf(
             initial.bondingEnabled || initial.obsEnabled || initial.passphrase.isNotBlank() ||
-                initial.latencyMs != 2000 || initial.fps >= 60,
+                initial.latencyMs != 2000 || initial.fps >= 60 ||
+                initial.twitchIngestUrl != StreamSettings().twitchIngestUrl,
         )
     }
     val context = LocalContext.current
@@ -94,11 +105,13 @@ public fun SettingsScreen(
     val srtlaPortValid = srtlaPortInt != null && srtlaPortInt in 1..65535
     // порт зависит от режима: бондинг шлёт на srtla_rec, иначе напрямую на SRT
     val activePortValid = if (bonding) srtlaPortValid else portValid
-    // пульт выключен — его поля скрыты и не проверяются
+    // пульт выключен (или недоступен в режиме Twitch-напрямую) — его поля скрыты и не проверяются
     val obsPortValid = obsPortInt != null && obsPortInt in 1..65535
-    val obsValid = !obsEnabled || obsPortValid
-    val destinationValid = host.isNotBlank() && activePortValid
-    val valid = streamName.isNotBlank() && bitrateValid && latencyValid && destinationValid && obsValid
+    val obsValid = twitchDirect || !obsEnabled || obsPortValid
+    // Twitch напрямую — валиден просто по ключу трансляции, свой сервер требует хост+порт+имя
+    val destinationValid = if (twitchDirect) twitchStreamKey.isNotBlank() else host.isNotBlank() && activePortValid
+    val nameValid = twitchDirect || streamName.isNotBlank()
+    val valid = nameValid && bitrateValid && latencyValid && destinationValid && obsValid
 
     // рекомендации для H.265 по гайду belabox: сложность сцены решает не меньше разрешения —
     // статичная комната прощает низкий битрейт, улица с листвой и движением просит почти вдвое больше
@@ -173,44 +186,113 @@ public fun SettingsScreen(
                         Text("📷 Сканировать QR")
                     }
                     RowDivider()
-                    Row {
+                    DiscordSwitchRow(
+                        label = "Напрямую в Twitch (без сервера)",
+                        checked = twitchDirect,
+                        onCheckedChange = { twitchDirect = it },
+                        info = "Кодирует H.264 и шлёт RTMP прямо на Twitch — свой SRT/SRTLA-сервер не нужен.\n\n" +
+                            "Чем платим:\n" +
+                            "• бондинг недоступен — одно соединение, без объединения сетей\n" +
+                            "• оборвалась сеть — оборвался эфир, как в обычном Larix/Streamlabs\n" +
+                            "• пульт OBS тоже недоступен — ему нужна своя машина-сервер рядом\n\n" +
+                            "Когда включать: нет своего сервера или устойчивость не критична. " +
+                            "Нужен бондинг или пульт OBS — выключи и подними свой сервер.",
+                    )
+                    if (twitchDirect) {
+                        RowDivider()
                         DiscordField(
-                            label = "Хост сервера",
-                            value = host,
-                            onValueChange = { host = it },
-                            // хост — это IP: Decimal даёт цифровую панель с точкой
-                            keyboardType = KeyboardType.Decimal,
-                            isError = host.isBlank(),
-                            modifier = Modifier.weight(2f),
-                            info = "Один IP на всё: SRT-сервер, srtla_rec для бондинга и пульт OBS " +
-                                "живут на этой машине. Меняешь тут — меняется везде.\n\n" +
-                                "Что вписать:\n" +
-                                "• IP компа в локалке (ipconfig → IPv4)\n" +
-                                "• или адрес облака (belabox, IRLToolkit)\n\n" +
-                                "Порт справа зависит от бондинга: с ним — порт srtla_rec, без — SRT-порт сервера.",
+                            label = "Ключ трансляции Twitch",
+                            value = twitchStreamKey,
+                            onValueChange = {
+                                twitchStreamKey = it
+                                twitchFetchError = null
+                            },
+                            isError = twitchStreamKey.isBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            info = "Creator Dashboard → Настройки → Трансляция → Основной ключ трансляции.\n\n" +
+                                "Держи в секрете: с ним кто угодно стримит в твой канал вместо тебя.",
                         )
+                        if (onFetchTwitchStreamKey != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                TextButton(
+                                    enabled = !twitchFetching,
+                                    onClick = {
+                                        twitchFetchError = null
+                                        twitchFetching = true
+                                        coroutineScope.launch {
+                                            val key = runCatching { onFetchTwitchStreamKey() }.getOrNull()
+                                            twitchFetching = false
+                                            if (key.isNullOrBlank()) {
+                                                twitchFetchError = if (twitchLoggedIn) {
+                                                    "Не получилось. Перелогинься в Twitch на стрим-экране " +
+                                                        "(нужен доступ к ключу трансляции) и попробуй снова."
+                                                } else {
+                                                    "Сначала войди в Twitch на стрим-экране (карточка чата)."
+                                                }
+                                            } else {
+                                                twitchStreamKey = key
+                                            }
+                                        }
+                                    },
+                                ) {
+                                    Text(if (twitchFetching) "Тяну ключ…" else "🔑 Взять из Twitch")
+                                }
+                            }
+                            twitchFetchError?.let {
+                                Text(
+                                    text = it,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                    } else {
+                        RowDivider()
+                        Row {
+                            DiscordField(
+                                label = "Хост сервера",
+                                value = host,
+                                onValueChange = { host = it },
+                                // хост — это IP: Decimal даёт цифровую панель с точкой
+                                keyboardType = KeyboardType.Decimal,
+                                isError = host.isBlank(),
+                                modifier = Modifier.weight(2f),
+                                info = "Один IP на всё: SRT-сервер, srtla_rec для бондинга и пульт OBS " +
+                                    "живут на этой машине. Меняешь тут — меняется везде.\n\n" +
+                                    "Что вписать:\n" +
+                                    "• IP компа в локалке (ipconfig → IPv4)\n" +
+                                    "• или адрес облака (belabox, IRLToolkit)\n\n" +
+                                    "Порт справа зависит от бондинга: с ним — порт srtla_rec, без — SRT-порт сервера.",
+                            )
+                            DiscordField(
+                                label = "Порт",
+                                value = if (bonding) srtlaPort else port,
+                                onValueChange = { if (bonding) srtlaPort = it else port = it },
+                                keyboardType = KeyboardType.Number,
+                                isError = !activePortValid,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        RowDivider()
                         DiscordField(
-                            label = "Порт",
-                            value = if (bonding) srtlaPort else port,
-                            onValueChange = { if (bonding) srtlaPort = it else port = it },
-                            keyboardType = KeyboardType.Number,
-                            isError = !activePortValid,
-                            modifier = Modifier.weight(1f),
+                            label = "Имя стрима",
+                            value = streamName,
+                            onValueChange = { streamName = it },
+                            isError = streamName.isBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            info = "Поток приедет на сервер как live/<имя>. Плеер потом ищет его по этому же имени.\n\n" +
+                                "Что вписать:\n" +
+                                "• латиницей, без пробелов\n" +
+                                "• «phone» скромно, «super_mega_stream_3000» тоже примем\n\n" +
+                                "Главное — чтобы совпадало с тем, что ждёт сервер/плеер.",
                         )
                     }
-                    RowDivider()
-                    DiscordField(
-                        label = "Имя стрима",
-                        value = streamName,
-                        onValueChange = { streamName = it },
-                        isError = streamName.isBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                        info = "Поток приедет на сервер как live/<имя>. Плеер потом ищет его по этому же имени.\n\n" +
-                            "Что вписать:\n" +
-                            "• латиницей, без пробелов\n" +
-                            "• «phone» скромно, «super_mega_stream_3000» тоже примем\n\n" +
-                            "Главное — чтобы совпадало с тем, что ждёт сервер/плеер.",
-                    )
                 }
 
                 SectionLabel("Видео")
@@ -269,47 +351,62 @@ public fun SettingsScreen(
                     exit = fadeOut() + shrinkVertically(),
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        SectionLabel("Подключение")
-                        SettingsCard {
-                            DiscordSwitchRow(
-                                label = "Бондинг (объединить сети)",
-                                checked = bonding,
-                                onCheckedChange = { bonding = it },
-                                info = "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
-                                    "и если одна прилегла отдохнуть — остальные тащат.\n\n" +
-                                    "Когда включать:\n" +
-                                    "• стрим на ходу, где сеть скачет\n" +
-                                    "• есть две-три сети сразу (Wi-Fi + SIM)\n\n" +
-                                    "Видео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать.",
-                            )
-                            RowDivider()
-                            DiscordField(
-                                label = "Passphrase",
-                                value = passphrase,
-                                onValueChange = { passphrase = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                info = "Секретный стук в дверь — AES-шифрование SRT.\n\n" +
-                                    "Как выбрать:\n" +
-                                    "• пусто — дверь нараспашку, для своего сервера ок\n" +
-                                    "• задал — сервер должен знать тот же секрет\n\n" +
-                                    "Не совпало с сервером — он сделает вид, что впервые тебя видит.",
-                            )
-                            RowDivider()
-                            DiscordStepperField(
-                                label = "Latency, мс",
-                                value = latency,
-                                onValueChange = { latency = it },
-                                min = 20,
-                                max = 8_000,
-                                step = 100,
-                                isError = !latencyValid,
-                                info = "Подушка безопасности SRT: сколько у потерянного пакета есть времени, " +
-                                    "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\n" +
-                                    "Что ставить:\n" +
-                                    "• 2000 — золотая середина, пара секунд задержки без артефактов\n" +
-                                    "• больше — для слабой/дальней сети\n" +
-                                    "• меньше 500 — только адреналиновым наркоманам",
-                            )
+                        if (!twitchDirect) {
+                            SectionLabel("Подключение")
+                            SettingsCard {
+                                DiscordSwitchRow(
+                                    label = "Бондинг (объединить сети)",
+                                    checked = bonding,
+                                    onCheckedChange = { bonding = it },
+                                    info = "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
+                                        "и если одна прилегла отдохнуть — остальные тащат.\n\n" +
+                                        "Когда включать:\n" +
+                                        "• стрим на ходу, где сеть скачет\n" +
+                                        "• есть две-три сети сразу (Wi-Fi + SIM)\n\n" +
+                                        "Видео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать.",
+                                )
+                                RowDivider()
+                                DiscordField(
+                                    label = "Passphrase",
+                                    value = passphrase,
+                                    onValueChange = { passphrase = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    info = "Секретный стук в дверь — AES-шифрование SRT.\n\n" +
+                                        "Как выбрать:\n" +
+                                        "• пусто — дверь нараспашку, для своего сервера ок\n" +
+                                        "• задал — сервер должен знать тот же секрет\n\n" +
+                                        "Не совпало с сервером — он сделает вид, что впервые тебя видит.",
+                                )
+                                RowDivider()
+                                DiscordStepperField(
+                                    label = "Latency, мс",
+                                    value = latency,
+                                    onValueChange = { latency = it },
+                                    min = 20,
+                                    max = 8_000,
+                                    step = 100,
+                                    isError = !latencyValid,
+                                    info = "Подушка безопасности SRT: сколько у потерянного пакета есть времени, " +
+                                        "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\n" +
+                                        "Что ставить:\n" +
+                                        "• 2000 — золотая середина, пара секунд задержки без артефактов\n" +
+                                        "• больше — для слабой/дальней сети\n" +
+                                        "• меньше 500 — только адреналиновым наркоманам",
+                                )
+                            }
+                        } else {
+                            SectionLabel("Twitch (доп.)")
+                            SettingsCard {
+                                DiscordField(
+                                    label = "Ingest URL",
+                                    value = twitchIngestUrl,
+                                    onValueChange = { twitchIngestUrl = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    info = "Обычно менять не нужно — live.twitch.tv сам разведёт на ближайший датацентр.\n\n" +
+                                        "Свой региональный ingest (для меньшего пинга) — со страницы twitch.tv/ingest, " +
+                                        "формат rtmp://<хост>/app.",
+                                )
+                            }
                         }
 
                         SectionLabel("Видео (доп.)")
@@ -322,41 +419,44 @@ public fun SettingsScreen(
                             )
                         }
 
-                        SectionLabel("Пульт OBS")
-                        SettingsCard {
-                            DiscordSwitchRow(
-                                label = "Пульт OBS",
-                                checked = obsEnabled,
-                                onCheckedChange = { obsEnabled = it },
-                                info = "Панель на стрим-экране, которая командует OBS на компе: сцены, эфир, запись.\n\n" +
-                                    "Как включить в OBS:\n" +
-                                    "• Сервис → Настройка сервера WebSocket\n" +
-                                    "• галочка «Включить сервер WebSocket»\n" +
-                                    "• порт и пароль — там же, кнопка «Показать сведения о подключении»\n\n" +
-                                    "Хост берётся общий — тот же IP, что сверху. Выключен — ни настроек, ни иконки.",
-                            )
-                            if (obsEnabled) {
-                                RowDivider()
-                                Row {
-                                    DiscordField(
-                                        label = "Порт OBS",
-                                        value = obsPort,
-                                        onValueChange = { obsPort = it },
-                                        keyboardType = KeyboardType.Number,
-                                        isError = !obsPortValid,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    DiscordField(
-                                        label = "Пароль WebSocket",
-                                        value = obsPassword,
-                                        onValueChange = { obsPassword = it },
-                                        modifier = Modifier.weight(2f),
-                                        info = "Тот же пароль, что в OBS.\n\n" +
-                                            "Где взять:\n" +
-                                            "• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n" +
-                                            "• или кнопка «Показать сведения о подключении»\n\n" +
-                                            "Галочка «Включить аутентификацию» снята — оставь пустым.",
-                                    )
+                        // пульт OBS предполагает свою машину-сервер рядом — со стримом напрямую в Twitch не сочетается
+                        if (!twitchDirect) {
+                            SectionLabel("Пульт OBS")
+                            SettingsCard {
+                                DiscordSwitchRow(
+                                    label = "Пульт OBS",
+                                    checked = obsEnabled,
+                                    onCheckedChange = { obsEnabled = it },
+                                    info = "Панель на стрим-экране, которая командует OBS на компе: сцены, эфир, запись.\n\n" +
+                                        "Как включить в OBS:\n" +
+                                        "• Сервис → Настройка сервера WebSocket\n" +
+                                        "• галочка «Включить сервер WebSocket»\n" +
+                                        "• порт и пароль — там же, кнопка «Показать сведения о подключении»\n\n" +
+                                        "Хост берётся общий — тот же IP, что сверху. Выключен — ни настроек, ни иконки.",
+                                )
+                                if (obsEnabled) {
+                                    RowDivider()
+                                    Row {
+                                        DiscordField(
+                                            label = "Порт OBS",
+                                            value = obsPort,
+                                            onValueChange = { obsPort = it },
+                                            keyboardType = KeyboardType.Number,
+                                            isError = !obsPortValid,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        DiscordField(
+                                            label = "Пароль WebSocket",
+                                            value = obsPassword,
+                                            onValueChange = { obsPassword = it },
+                                            modifier = Modifier.weight(2f),
+                                            info = "Тот же пароль, что в OBS.\n\n" +
+                                                "Где взять:\n" +
+                                                "• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n" +
+                                                "• или кнопка «Показать сведения о подключении»\n\n" +
+                                                "Галочка «Включить аутентификацию» снята — оставь пустым.",
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -390,10 +490,12 @@ public fun SettingsScreen(
                                     abrEnabled = initial.abrEnabled,
                                     minVideoBitrateKbps = initial.minVideoBitrateKbps,
                                     latencyMs = requireNotNull(latencyInt),
-                                    bondingEnabled = bonding,
+                                    // бондинг и Twitch-напрямую взаимоисключающие — второе всегда побеждает
+                                    bondingEnabled = bonding && !twitchDirect,
                                     srtlaHost = host.trim(),
                                     srtlaPort = srtlaPortInt ?: 5000,
-                                    obsEnabled = obsEnabled,
+                                    // пульт OBS не сочетается со стримом напрямую в Twitch — нет своей машины-сервера
+                                    obsEnabled = obsEnabled && !twitchDirect,
                                     obsHost = host.trim(),
                                     obsPort = obsPortInt ?: 4455,
                                     obsPassword = obsPassword,
@@ -409,6 +511,9 @@ public fun SettingsScreen(
                                     chatFadeTopEnabled = initial.chatFadeTopEnabled,
                                     chatAutoEraseEnabled = initial.chatAutoEraseEnabled,
                                     onboardingCompleted = initial.onboardingCompleted,
+                                    twitchDirectEnabled = twitchDirect,
+                                    twitchStreamKey = twitchStreamKey.trim(),
+                                    twitchIngestUrl = twitchIngestUrl.trim().ifBlank { initial.twitchIngestUrl },
                                 ),
                             )
                         },

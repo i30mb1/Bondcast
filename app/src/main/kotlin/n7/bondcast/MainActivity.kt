@@ -192,6 +192,8 @@ private fun App(graph: AppGraph, autostart: Boolean) {
                 showSettings = false
             },
             onBack = { showSettings = false },
+            twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
+            onFetchTwitchStreamKey = { graph.twitchChat.session.streamKey() },
         )
     } else {
         StreamScreen(

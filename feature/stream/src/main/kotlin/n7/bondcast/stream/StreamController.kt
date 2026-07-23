@@ -213,11 +213,15 @@ public class StreamController(
         _minBitrateKbps.value = settings.minVideoBitrateKbps
         foreground.start()
         val sampler = launch { sampleStats() }
-        val bonding = settings.bondingEnabled
+        // Twitch напрямую — одно RTMP-соединение, бондинг (SRTLA-релей) к нему не подключается
+        val bonding = settings.bondingEnabled && !settings.twitchDirectEnabled
         Log.i(
             TAG,
-            "сессия: bonding=$bonding " +
-                if (bonding) "srtla=${settings.srtlaHost}:${settings.srtlaPort}" else "srt=${settings.host}:${settings.port}",
+            "сессия: " + when {
+                settings.twitchDirectEnabled -> "twitch-direct ingest=${settings.twitchIngestUrl}"
+                bonding -> "bonding srtla=${settings.srtlaHost}:${settings.srtlaPort}"
+                else -> "srt=${settings.host}:${settings.port}"
+            },
         )
         try {
             var localPort: Int? = null

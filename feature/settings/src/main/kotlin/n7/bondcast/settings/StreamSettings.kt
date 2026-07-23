@@ -37,8 +37,13 @@ public data class StreamSettings(
     /** Стирать сообщения старше 30 секунд, независимо от лимита по количеству. */
     val chatAutoEraseEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
+    /** Twitch напрямую по RTMP, без своего сервера — форсит H.264, бондинг недоступен. */
+    val twitchDirectEnabled: Boolean = false,
+    val twitchStreamKey: String = "",
+    val twitchIngestUrl: String = "rtmp://live.twitch.tv/app",
 ) {
     /** streamid в формате SRS: поток попадёт в live/<streamName>. */
     val streamId: String get() = "#!::r=live/$streamName,m=publish"
     val url: String get() = "srt://$host:$port"
+    val twitchRtmpUrl: String get() = "${twitchIngestUrl.trimEnd('/')}/$twitchStreamKey"
 }

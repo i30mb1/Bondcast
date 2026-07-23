@@ -14,7 +14,7 @@ public interface StreamEngine {
     /** Создаёт пайплайн и применяет конфиг кодеков. Требует уже выданных разрешений камеры и микрофона. */
     suspend fun prepare(settings: StreamSettings)
 
-    /** Открывает SRT-соединение и начинает отправку. */
+    /** Открывает соединение (SRT на свой сервер или RTMP напрямую в Twitch) и начинает отправку. */
     suspend fun startStream(settings: StreamSettings)
 
     /** Ждёт, пока активное соединение не оборвётся. */

@@ -37,6 +37,8 @@ internal class TwitchSessionWithLogging(
 
     override suspend fun resolveUserId(login: String?): String? = origin.resolveUserId(login)
 
+    override suspend fun streamKey(): String? = origin.streamKey()
+
     override suspend fun chatBadges(broadcasterId: String): Map<String, String> = origin.chatBadges(broadcasterId)
 
     override suspend fun chatters(broadcasterId: String, moderatorId: String): TwitchChatters? = origin.chatters(broadcasterId, moderatorId)

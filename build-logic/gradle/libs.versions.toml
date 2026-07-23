@@ -46,6 +46,7 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 streampack-core = { group = "io.github.thibaultbee.streampack", name = "streampack-core", version.ref = "streampack" }
 streampack-srt = { group = "io.github.thibaultbee.streampack", name = "streampack-srt", version.ref = "streampack" }
+streampack-rtmp = { group = "io.github.thibaultbee.streampack", name = "streampack-rtmp", version.ref = "streampack" }
 srtdroid-core = { group = "io.github.thibaultbee.srtdroid", name = "srtdroid-core", version.ref = "srtdroid" }
 srtdroid-ktx = { group = "io.github.thibaultbee.srtdroid", name = "srtdroid-ktx", version.ref = "srtdroid" }
 camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camera" }
