@@ -5,6 +5,7 @@
 
 build
 android/release/*
+promo-video/**
 
 claude_task
 local.properties

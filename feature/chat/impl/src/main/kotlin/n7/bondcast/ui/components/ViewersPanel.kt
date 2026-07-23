@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
@@ -72,10 +73,4 @@ public fun ViewersPanel(
 }
 
 @Composable
-private fun pluralizeViewers(count: Int): String {
-    return if (count == 1) {
-        stringResource(R.string.viewers_panel_count_singular, count)
-    } else {
-        stringResource(R.string.viewers_panel_count_plural, count)
-    }
-}
+private fun pluralizeViewers(count: Int): String = pluralStringResource(R.plurals.viewers_panel_count, count, count)

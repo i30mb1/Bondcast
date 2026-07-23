@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Bondcast</string>
+
+    <string name="app_permission_rationale">"Для стрима нужны камера и микрофон"</string>
+    <string name="app_permission_grant_button">"Выдать разрешения"</string>
+
+    <string name="app_twitch_logged_in">"Вошёл: %1$s"</string>
+    <string name="app_twitch_awaiting_code">"Код %1$s — открой %2$s"</string>
+    <string name="app_twitch_login_failed">"Ошибка входа: %1$s"</string>
+    <string name="app_twitch_logged_out">"Не выполнен вход в Twitch"</string>
+
+    <string name="app_notification_channel_streaming">"Стрим"</string>
+    <string name="app_notification_content_text">"Идёт стрим"</string>
+    <string name="app_notification_stop_action">"Стоп"</string>
+</resources>

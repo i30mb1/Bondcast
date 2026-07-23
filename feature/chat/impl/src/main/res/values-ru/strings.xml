@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ChatPanel -->
+    <string name="chat_panel_title">Чат</string>
+    <string name="chat_panel_twitch_login_button">Войти в Twitch</string>
+    <string name="chat_panel_twitch_logout_button">Выйти из Twitch</string>
+    <string name="chat_panel_show_chat_label">Показывать чат</string>
+    <string name="chat_panel_channel_label">Канал</string>
+    <string name="chat_panel_channel_own_label">свой</string>
+    <string name="chat_panel_nicknames_label">Ники</string>
+    <string name="chat_panel_badges_label">Значки</string>
+    <string name="chat_panel_hide_commands_label">Прятать команды</string>
+    <string name="chat_panel_font_size_label">Шрифт</string>
+    <string name="chat_panel_opacity_label">Прозрачность</string>
+    <string name="chat_panel_message_limit_label">Лимит</string>
+    <string name="chat_panel_fade_top_label">Гаснуть к верху</string>
+    <string name="chat_panel_auto_erase_label">Стирать старые (30с)</string>
+    <string name="chat_panel_on_label">Вкл</string>
+    <string name="chat_panel_off_label">Выкл</string>
+    <string name="chat_panel_channel_dialog_title">КАНАЛ</string>
+    <string name="chat_panel_channel_dialog_hint">свой канал</string>
+
+    <!-- ViewersPanel -->
+    <string name="viewers_panel_title">Зрители</string>
+    <string name="viewers_panel_empty_label">Пока никого не видно в чате</string>
+    <plurals name="viewers_panel_count">
+        <item quantity="one">%1$d зритель</item>
+        <item quantity="few">%1$d зрителя</item>
+        <item quantity="many">%1$d зрителей</item>
+        <item quantity="other">%1$d зрителей</item>
+    </plurals>
+</resources>

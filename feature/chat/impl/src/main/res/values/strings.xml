@@ -23,6 +23,8 @@
     <!-- ViewersPanel -->
     <string name="viewers_panel_title">Viewers</string>
     <string name="viewers_panel_empty_label">Nobody\'s showing up in chat yet</string>
-    <string name="viewers_panel_count_singular">%1$d viewer</string>
-    <string name="viewers_panel_count_plural">%1$d viewers</string>
+    <plurals name="viewers_panel_count">
+        <item quantity="one">%1$d viewer</item>
+        <item quantity="other">%1$d viewers</item>
+    </plurals>
 </resources>

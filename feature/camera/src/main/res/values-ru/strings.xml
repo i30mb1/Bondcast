@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Camera panel -->
+    <string name="camera_panel_title">Камера</string>
+
+    <string name="camera_panel_on_button">"Вкл"</string>
+    <string name="camera_panel_off_button">"Выкл"</string>
+
+    <string name="camera_panel_preview_label">"Превью на экране"</string>
+    <string name="camera_panel_preview_info">"Картинка с камеры прямо на экране телефона. Зрителю всё равно — эфир идёт и без неё.\n\nКогда выключать:\n• телефон греется (экран жарит не хуже энкодера)\n• бережёшь батарею в долгом стриме"</string>
+
+    <string name="camera_panel_stabilization_label">"Стабилизация"</string>
+    <string name="camera_panel_stabilization_info">"Программно гасит тряску и дрожь рук — картинка плавнее на ходу.\n\nО чём помнить:\n• чуть подрезает края кадра\n• влезает не в любой режим (разрешение/fps)\n• на статичном штативе не нужна"</string>
+    <string name="camera_panel_stabilization_unsupported_hint">"Не влезла в текущий режим съёмки (разрешение/fps)."</string>
+
+    <string name="camera_panel_ae_awb_lock_label">"Заморозить экспозицию/ЦТ"</string>
+    <string name="camera_panel_ae_awb_lock_info">"Фиксирует экспозицию и баланс белого — картинка перестаёт «дышать» яркостью и цветом при панораме.\n\nКогда включать:\n• ведёшь камерой по сцене с разным светом\n• снимаешь экран/монитор (не мерцает)\n\nВыключи, если сам свет в сцене меняется."</string>
+
+    <string name="camera_panel_exposure_label">"Экспозиция"</string>
+    <string name="camera_panel_exposure_decrease_button">"−"</string>
+    <string name="camera_panel_exposure_increase_button">"+"</string>
+    <string name="camera_panel_exposure_zero_ev">"0 EV"</string>
+    <string name="camera_panel_exposure_value_ev">"%1$s EV"</string>
+
+    <string name="camera_panel_night_mode_label">"Ночной режим"</string>
+    <string name="camera_panel_night_mode_suggestion_hint">"Сцена тёмная — есть смысл включить."</string>
+</resources>

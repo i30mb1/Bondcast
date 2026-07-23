@@ -89,6 +89,7 @@ import n7.bondcast.ui.components.StatusDot
 import n7.bondcast.ui.components.StickerBadge
 import n7.bondcast.ui.components.ThermalPanel
 import n7.bondcast.ui.components.ViewersPanel
+import n7.bondcast.ui.components.diagonalStripesBackground
 import n7.bondcast.ui.components.healthColor
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
@@ -284,7 +285,7 @@ public fun StreamScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black),
+                    .diagonalStripesBackground(),
             )
         }
 

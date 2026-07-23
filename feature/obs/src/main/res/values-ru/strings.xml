@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="obs_panel_title">OBS · %1$s</string>
+    <string name="obs_panel_info">Пульт от OBS на компе — прямо из телефона 🎬\n\nЧто умеет:\n• тапнуть сцену — она уйдёт в программу\n• запустить/остановить эфир OBS\n• включить/выключить запись\n\nНе подключается? Проверь: OBS запущен, WebSocket включён, фаервол пускает.</string>
+
+    <string name="obs_auth_failed_error">OBS не принял пароль. Проверь его в настройках ⚙ и переоткрой панель.</string>
+    <string name="obs_retrying_error">Не достучались (#%1$d)%2$s. OBS запущен? WebSocket включён? Фаервол пускает?</string>
+
+    <string name="obs_scenes_label">Сцены</string>
+
+    <string name="obs_stream_stop_button">⏹ Эфир OBS</string>
+    <string name="obs_stream_start_button">▶ Эфир OBS</string>
+    <string name="obs_record_stop_button">⏹ Запись</string>
+    <string name="obs_record_start_button">⏺ Запись</string>
+
+    <string name="obs_stats_cpu_fps_label">CPU %1$s%% · %2$d fps</string>
+    <string name="obs_stats_dropped_frames_label">Пропуск кадров: рендер %1$d/%2$d · вывод %3$d/%4$d</string>
+    <string name="obs_stats_stream_label">Эфир %1$s%2$s</string>
+    <string name="obs_stats_stream_bitrate_suffix"> · ↑ %1$d kbps</string>
+    <string name="obs_stats_record_label">Запись %1$s</string>
+
+    <string name="obs_phase_disconnected_label">отключено</string>
+    <string name="obs_phase_connecting_label">подключение…</string>
+    <string name="obs_phase_connected_label">на связи</string>
+    <string name="obs_phase_auth_failed_label">неверный пароль</string>
+    <string name="obs_phase_retrying_label">реконнект #%1$d</string>
+</resources>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="thermal_panel_title">Температура</string>
+
+    <string name="thermal_status_label">Статус</string>
+    <string name="thermal_status_none">норма</string>
+    <string name="thermal_status_light">лёгкий нагрев</string>
+    <string name="thermal_status_moderate">умеренный нагрев</string>
+    <string name="thermal_status_severe">сильный нагрев</string>
+    <string name="thermal_status_critical">критический</string>
+    <string name="thermal_status_emergency">аварийный</string>
+    <string name="thermal_status_shutdown">отключение</string>
+    <string name="thermal_status_unknown">неизвестно</string>
+
+    <string name="thermal_load_label">Нагрузка</string>
+    <string name="thermal_battery_label">Батарея</string>
+    <string name="thermal_unit_percent">%</string>
+    <string name="thermal_unit_celsius">°C</string>
+
+    <string name="thermal_brightness_label">Яркость экрана</string>
+    <string name="thermal_brightness_auto">Авто</string>
+    <string name="thermal_brightness_50">50%</string>
+    <string name="thermal_brightness_25">25%</string>
+    <string name="thermal_brightness_10">10%</string>
+
+    <string name="thermal_cooldown_label">Что сделать, чтобы остыть</string>
+    <string name="thermal_advice_preview">🎥 Вырубить превью — экран греет не хуже энкодера</string>
+    <string name="thermal_advice_bitrate">📉 Опустить «Макс битрейт» — энкодер скажет спасибо</string>
+
+    <string name="thermal_info_main">Термометр телефона в реальном времени. Пока прохладно — стримь и ни о чём не думай 😎\n\nНачнёт греться — цвет поедет к красному, а ниже появятся кнопки-советы, как остыть.</string>
+    <string name="thermal_info_status">Как сам телефон оценивает свой нагрев: от «норма» до «аварийный». С «умеренного» система уже сама придушивает частоты — кадры могут поехать.\n\nЧто делать при нагреве:\n• выключить превью экрана (панель камеры)\n• опустить «Макс битрейт» (панель статистики)\n• снизить яркость кнопками ниже\n• снять чехол, увести от солнца</string>
+    <string name="thermal_info_load">Тепловой запас: насколько телефон близко к троттлингу. 0% — холоден и бодр, 100% — уже у предела и режет производительность.\n\nЧто делать, если растёт:\n• убрать превью и лишнюю яркость\n• снизить битрейт или разрешение/fps\n• дать телефону продышаться (тень, обдув)</string>
+    <string name="thermal_info_battery">Температура батареи — самый честный градусник корпуса. До ~40 °C норма, к 45 °C уже горячо, выше — телефон начнёт спасаться сам.\n\nЧто делать, если высоко:\n• отключить зарядку на ходу (пауэрбанк греет)\n• убрать превью и сбавить битрейт\n• проветрить корпус, снять чехол</string>
+</resources>

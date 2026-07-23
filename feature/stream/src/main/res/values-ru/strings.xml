@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- StickerBadge / GoLiveButton (StreetRail.kt) -->
+    <string name="stream_status_offline">"Не в эфире"</string>
+    <string name="stream_status_connecting">"Подключение…"</string>
+    <string name="stream_status_live">"В эфире"</string>
+    <string name="stream_status_reconnecting">"Реконнект #%1$d"</string>
+    <string name="stream_golive_start">"В эфир"</string>
+    <string name="stream_golive_stop">"Завершить"</string>
+
+    <!-- ConnectionHealthChip (HealthChip.kt) -->
+    <string name="stream_health_ok">"Связь: отлично"</string>
+    <string name="stream_health_warn">"Связь: шатко"</string>
+    <string name="stream_health_bad">"Связь: рвётся"</string>
+
+    <!-- StatsPanel / HudStats (StreamScreen.kt) -->
+    <string name="stream_stats_title">Статистика</string>
+    <string name="stream_max_bitrate_label">"Макс битрейт"</string>
+    <string name="stream_thermal_cap_text">"Термозащита режет до %1$d kbps"</string>
+    <string name="stream_latency_label">"Задержка"</string>
+    <string name="stream_abr_label">"Адаптивный битрейт (ABR)"</string>
+    <string name="stream_abr_on">"Вкл"</string>
+    <string name="stream_abr_off">"Выкл"</string>
+    <string name="stream_abr_min_text">"мин %1$d"</string>
+
+    <string name="stream_stat_bitrate_label">"Исходящий битрейт"</string>
+    <string name="stream_stat_bitrate_target">"цель %1$d kbps"</string>
+    <string name="stream_stat_bandwidth_label">"Полоса"</string>
+    <string name="stream_stat_loss_label">"Потери"</string>
+    <string name="stream_stat_retrans_label">"Ретр"</string>
+    <string name="stream_stat_buffer_label">"Буфер"</string>
+    <string name="stream_stat_drops_label">"Дропы"</string>
+    <string name="stream_stat_encoder_label">"Энкодер"</string>
+
+    <string name="stream_unit_ms">"мс"</string>
+    <string name="stream_unit_per_sec">"/с"</string>
+
+    <string name="stream_info_bitrate">"Сколько всего улетает в сеть прямо сейчас: видео + звук + служебные данные, поэтому в норме чуть выше цели из подписи снизу (это целевой видео-битрейт). Держится у цели или чуть выше — всё ок, про то же говорит цвет карточки.\n\nЕсли просел заметно ниже цели, ищи виновного ниже:\n• RTT и Потери растут — тормозит сеть\n• Энкодер и Буфер растут — не тянет телефон"</string>
+    <string name="stream_info_latency">"Буфер приёмника SRT: сколько времени есть на досыл потерянных пакетов.\nБольше — устойчивее к потерям, но выше задержка эфира. На слабой сотовой поднимай.\n\nМеняется прямо в эфире — стрим коротко переподключится с новым значением."</string>
+    <string name="stream_info_rtt">"Пинг до сервера и обратно, как в игре.\nДо ~120 мс — комфортно, 120–300 — сеть напряжена, больше — далеко или забита.\n\nЧто делать:\n• поднять «Задержку» — прямо в эфире\n• сменить сеть или точку, где ловит"</string>
+    <string name="stream_info_buffer">"Видео, которое телефон подготовил, но сеть ещё не подтвердила. Копится, когда канал не успевает.\nПочти пустой — хорошо. Подбирается к «Задержке» — дропы вот-вот.\n\nЧто делать:\n• сбавить битрейт или включить ABR\n• поднять «Задержку» — прямо в эфире"</string>
+    <string name="stream_info_loss">"Пакеты, потерянные где-то в сети; SRT замечает это и досылает их заново (см. Ретр рядом).\nНемного на сотовой — обычное дело, лечится само. Много — сеть слабая или перегружена.\n\nЧто делать, если много:\n• сбавить битрейт или включить ABR\n• сменить сеть или точку, где ловит"</string>
+    <string name="stream_info_drop">"Пакеты, которые SRT выбросил, не успев довезти — досылать было поздно, зритель их не увидит.\nЛюбой дроп = фриз или квадратики в эфире.\n\nСрочно:\n• опустить «Макс битрейт»\n• поднять «Задержку» — прямо в эфире\n• включить ABR"</string>
+    <string name="stream_info_retrans">"Сколько раз SRT досылал пакеты повторно из-за потерь (см. Потери рядом). Это защита, а не беда.\nНемного — нормальная работа SRT. Много и постоянно — сети не хватает места под битрейт.\n\nЧто делать, если постоянно:\n• сбавить битрейт или включить ABR\n• сменить сеть, где посвободнее"</string>
+    <string name="stream_info_bandwidth">"Прикидка SRT, сколько ещё способен пропустить канал сверх того, что ты уже шлёшь. Это ориентир, а не здоровье связи — потому и без цвета.\n\nКак читать:\n• держи битрейт процентов на 30 ниже неё\n• на мобильном и в бондинге цифра дрожит — не верь ей буквально"</string>
+    <string name="stream_info_encoder">"Насколько кодирование отстаёт от реального времени — успевает ли телефон сжимать кадры с камеры.\nРастёт → телефон не тянет (греется или битрейт не по зубам), у зрителя рывки. Сеть тут НЕ виновата.\n\nЧто делать:\n• опустить «Макс битрейт»\n• остудить телефон, выключить превью\n• снизить разрешение или fps"</string>
+    <string name="stream_info_max_bitrate">"Верхняя граница качества: выше этого битрейта не поднимаемся. ABR и термозащита работают ПОД ним.\n\nМеняется прямо в эфире (шаг 500 kbps), без «Стоп»:\n• сеть уверенно держит — подними, картинка чётче\n• стабильно не тянет — опусти"</string>
+    <string name="stream_info_abr">"Сам подруливает битрейт под сеть на лету: канал не тянет — снижает, отпустило — поднимает обратно к «Макс битрейт». Мягко приседает качеством вместо стоп-кадра.\n\nКак пользоваться:\n• вкл/выкл и «мин» меняются прямо в эфире\n• «мин» — нижняя граница, ниже неё не режет\n• выключишь — держит ровно «Макс битрейт»"</string>
+
+    <!-- LinksPanel transport labels -->
+    <string name="stream_transport_wifi">WiFi</string>
+    <string name="stream_transport_cellular">"Сотовая"</string>
+    <string name="stream_transport_ethernet">Ethernet</string>
+    <string name="stream_transport_relay">Bondlink</string>
+    <string name="stream_transport_unknown">"Сеть"</string>
+
+    <!-- Camera option labels (StreamPackEngine.kt, resolved via Context.getString, not @Composable) -->
+    <string name="stream_camera_front">"Фронт"</string>
+    <string name="stream_camera_front_numbered">"Фронт %1$d"</string>
+    <string name="stream_camera_main">"Осн"</string>
+    <string name="stream_camera_main_numbered">"Осн %1$d"</string>
+    <string name="stream_camera_ultra">"Ультра"</string>
+    <string name="stream_camera_tele">"Теле"</string>
+</resources>

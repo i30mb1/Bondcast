@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qr_scanner_title_label">Сканировать QR</string>
+    <string name="qr_scanner_hint_label">Наведи на QR: сведения OBS или настройки Bondcast</string>
+    <string name="qr_scanner_camera_open_error">Не удалось открыть камеру</string>
+    <string name="qr_scanner_camera_busy_error">Камера занята — останови эфир</string>
+</resources>
