@@ -12,8 +12,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.chat.impl.R
 import n7.bondcast.ui.street.StreetPanelScaffold
 import n7.bondcast.ui.street.streetBody
 
@@ -42,7 +44,7 @@ public fun ViewersPanel(
     names: List<String>,
     onClose: () -> Unit,
 ) {
-    StreetPanelScaffold(title = "Зрители", onClose = onClose) {
+    StreetPanelScaffold(title = stringResource(R.string.viewers_panel_title), onClose = onClose) {
         Text(
             text = pluralizeViewers(total),
             color = DiscordColors.accent,
@@ -50,7 +52,7 @@ public fun ViewersPanel(
         )
         if (names.isEmpty()) {
             Text(
-                text = "Пока никого не видно в чате",
+                text = stringResource(R.string.viewers_panel_empty_label),
                 color = DiscordColors.textMuted,
                 style = streetBody,
             )
@@ -69,14 +71,11 @@ public fun ViewersPanel(
     }
 }
 
+@Composable
 private fun pluralizeViewers(count: Int): String {
-    val mod100 = count % 100
-    val mod10 = count % 10
-    val word = when {
-        mod100 in 11..14 -> "зрителей"
-        mod10 == 1 -> "зритель"
-        mod10 in 2..4 -> "зрителя"
-        else -> "зрителей"
+    return if (count == 1) {
+        stringResource(R.string.viewers_panel_count_singular, count)
+    } else {
+        stringResource(R.string.viewers_panel_count_plural, count)
     }
-    return "$count $word"
 }

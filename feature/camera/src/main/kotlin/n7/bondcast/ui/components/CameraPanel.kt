@@ -8,9 +8,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.camera.R
 import n7.bondcast.stream.CameraOption
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
@@ -45,44 +47,58 @@ public fun CameraPanel(
     onLlbEnabled: (Boolean) -> Unit = {},
     nightModeSuggested: Boolean = false,
 ) {
-    StreetPanelScaffold(title = "Камера", onClose = onClose, modifier = modifier) {
+    val onLabel = stringResource(R.string.camera_panel_on_button)
+    val offLabel = stringResource(R.string.camera_panel_off_button)
+
+    StreetPanelScaffold(title = stringResource(R.string.camera_panel_title), onClose = onClose, modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             cameras.forEach { cam ->
                 StreetChip(cam.label, cam == current, Modifier.fillMaxWidth()) { onSelect(cam) }
             }
         }
 
-        PanelLabel("Превью на экране", info = INFO_PREVIEW)
+        PanelLabel(stringResource(R.string.camera_panel_preview_label), info = stringResource(R.string.camera_panel_preview_info))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StreetChip("Вкл", previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(true) }
-            StreetChip("Выкл", !previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(false) }
+            StreetChip(onLabel, previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(true) }
+            StreetChip(offLabel, !previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(false) }
         }
 
         if (cameraControlsAvailable && stabilizationSupported) {
-            PanelLabel("Стабилизация", info = INFO_STABILIZATION)
+            PanelLabel(
+                stringResource(R.string.camera_panel_stabilization_label),
+                info = stringResource(R.string.camera_panel_stabilization_info),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StreetChip("Вкл", stabilizationEnabled, Modifier.weight(1f)) { onStabilizationEnabled(true) }
-                StreetChip("Выкл", !stabilizationEnabled, Modifier.weight(1f)) { onStabilizationEnabled(false) }
+                StreetChip(onLabel, stabilizationEnabled, Modifier.weight(1f)) { onStabilizationEnabled(true) }
+                StreetChip(offLabel, !stabilizationEnabled, Modifier.weight(1f)) { onStabilizationEnabled(false) }
             }
             if (stabilizationEnabled && !stabilizationActive) {
-                PanelHint("Не влезла в текущий режим съёмки (разрешение/fps).")
+                PanelHint(stringResource(R.string.camera_panel_stabilization_unsupported_hint))
             }
         }
 
         if (cameraControlsAvailable) {
-            PanelLabel("Заморозить экспозицию/ЦТ", info = INFO_AE_AWB_LOCK)
+            PanelLabel(
+                stringResource(R.string.camera_panel_ae_awb_lock_label),
+                info = stringResource(R.string.camera_panel_ae_awb_lock_info),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StreetChip("Вкл", aeAwbLocked, Modifier.weight(1f)) { onAeAwbLocked(true) }
-                StreetChip("Выкл", !aeAwbLocked, Modifier.weight(1f)) { onAeAwbLocked(false) }
+                StreetChip(onLabel, aeAwbLocked, Modifier.weight(1f)) { onAeAwbLocked(true) }
+                StreetChip(offLabel, !aeAwbLocked, Modifier.weight(1f)) { onAeAwbLocked(false) }
             }
 
             if (exposureSupported) {
-                PanelLabel("Экспозиция")
+                PanelLabel(stringResource(R.string.camera_panel_exposure_label))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    StreetChip("−", false, Modifier.weight(1f), enabled = exposureIndex > exposureRange.first) {
+                    StreetChip(
+                        stringResource(R.string.camera_panel_exposure_decrease_button),
+                        false,
+                        Modifier.weight(1f),
+                        enabled = exposureIndex > exposureRange.first,
+                    ) {
                         onExposureIndexChange((exposureIndex - 1).coerceIn(exposureRange))
                     }
                     Text(
@@ -92,21 +108,26 @@ public fun CameraPanel(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.weight(1f),
                     )
-                    StreetChip("+", false, Modifier.weight(1f), enabled = exposureIndex < exposureRange.last) {
+                    StreetChip(
+                        stringResource(R.string.camera_panel_exposure_increase_button),
+                        false,
+                        Modifier.weight(1f),
+                        enabled = exposureIndex < exposureRange.last,
+                    ) {
                         onExposureIndexChange((exposureIndex + 1).coerceIn(exposureRange))
                     }
                 }
             }
 
             if (llbAvailable) {
-                PanelLabel("Ночной режим")
+                PanelLabel(stringResource(R.string.camera_panel_night_mode_label))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StreetChip("Вкл", llbEnabled, Modifier.weight(1f)) { onLlbEnabled(true) }
-                    StreetChip("Выкл", !llbEnabled, Modifier.weight(1f)) { onLlbEnabled(false) }
+                    StreetChip(onLabel, llbEnabled, Modifier.weight(1f)) { onLlbEnabled(true) }
+                    StreetChip(offLabel, !llbEnabled, Modifier.weight(1f)) { onLlbEnabled(false) }
                 }
                 if (nightModeSuggested) {
                     Text(
-                        text = "Сцена тёмная — есть смысл включить.",
+                        text = stringResource(R.string.camera_panel_night_mode_suggestion_hint),
                         color = DiscordColors.yellow,
                         style = streetBody,
                     )
@@ -130,25 +151,9 @@ internal fun PanelHint(text: String) {
     )
 }
 
+@Composable
 private fun formatEv(value: Float): String {
-    if (value == 0f) return "0 EV"
-    return (if (value > 0) "+" else "") + "%.1f EV".format(java.util.Locale.US, value)
+    if (value == 0f) return stringResource(R.string.camera_panel_exposure_zero_ev)
+    val formatted = (if (value > 0) "+" else "") + "%.1f".format(java.util.Locale.US, value)
+    return stringResource(R.string.camera_panel_exposure_value_ev, formatted)
 }
-
-private const val INFO_PREVIEW =
-    "Картинка с камеры прямо на экране телефона. Зрителю всё равно — эфир идёт и без неё.\n\n" +
-        "Когда выключать:\n" +
-        "• телефон греется (экран жарит не хуже энкодера)\n" +
-        "• бережёшь батарею в долгом стриме"
-private const val INFO_STABILIZATION =
-    "Программно гасит тряску и дрожь рук — картинка плавнее на ходу.\n\n" +
-        "О чём помнить:\n" +
-        "• чуть подрезает края кадра\n" +
-        "• влезает не в любой режим (разрешение/fps)\n" +
-        "• на статичном штативе не нужна"
-private const val INFO_AE_AWB_LOCK =
-    "Фиксирует экспозицию и баланс белого — картинка перестаёт «дышать» яркостью и цветом при панораме.\n\n" +
-        "Когда включать:\n" +
-        "• ведёшь камерой по сцене с разным светом\n" +
-        "• снимаешь экран/монитор (не мерцает)\n\n" +
-        "Выключи, если сам свет в сцене меняется."

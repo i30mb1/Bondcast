@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
@@ -154,10 +155,10 @@ private fun App(graph: AppGraph, autostart: Boolean) {
 
     val twitchAuth by graph.twitchChat.session.authState.collectAsState()
     val twitchStatus = when (val auth = twitchAuth) {
-        is TwitchAuthState.LoggedIn -> "Вошёл: ${auth.login}"
-        is TwitchAuthState.AwaitingCode -> "Код ${auth.userCode} — открой ${auth.verificationUri}"
-        is TwitchAuthState.Failed -> "Ошибка входа: ${auth.message}"
-        TwitchAuthState.LoggedOut -> "Не выполнен вход в Twitch"
+        is TwitchAuthState.LoggedIn -> stringResource(R.string.app_twitch_logged_in, auth.login)
+        is TwitchAuthState.AwaitingCode -> stringResource(R.string.app_twitch_awaiting_code, auth.userCode, auth.verificationUri)
+        is TwitchAuthState.Failed -> stringResource(R.string.app_twitch_login_failed, auth.message)
+        TwitchAuthState.LoggedOut -> stringResource(R.string.app_twitch_logged_out)
     }
     // на этапе кода откроем страницу активации в браузере
     LaunchedEffect(twitchAuth) {
@@ -193,6 +194,8 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             },
             onBack = { showSettings = false },
             twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
+            onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
+            onTwitchLogout = { graph.twitchChat.session.logout() },
             onFetchTwitchStreamKey = { graph.twitchChat.session.streamKey() },
         )
     } else {
@@ -223,9 +226,9 @@ private fun PermissionScreen(onRequest: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Для стрима нужны камера и микрофон")
+            Text(stringResource(R.string.app_permission_rationale))
             Button(onClick = onRequest) {
-                Text("Выдать разрешения")
+                Text(stringResource(R.string.app_permission_grant_button))
             }
         }
     }

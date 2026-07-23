@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qr_scanner_title_label">Scan QR</string>
+    <string name="qr_scanner_hint_label">Point at a QR code — OBS details or Bondcast settings</string>
+    <string name="qr_scanner_camera_open_error">Couldn\'t open the camera</string>
+    <string name="qr_scanner_camera_busy_error">Camera\'s busy — stop the stream first</string>
+</resources>

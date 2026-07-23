@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- StickerBadge / GoLiveButton (StreetRail.kt) -->
+    <string name="stream_status_offline">"Offline"</string>
+    <string name="stream_status_connecting">"Connecting…"</string>
+    <string name="stream_status_live">"Live"</string>
+    <string name="stream_status_reconnecting">"Reconnect #%1$d"</string>
+    <string name="stream_golive_start">"Go live"</string>
+    <string name="stream_golive_stop">"End stream"</string>
+
+    <!-- ConnectionHealthChip (HealthChip.kt) -->
+    <string name="stream_health_ok">"Signal: great"</string>
+    <string name="stream_health_warn">"Signal: shaky"</string>
+    <string name="stream_health_bad">"Signal: dying"</string>
+
+    <!-- StatsPanel / HudStats (StreamScreen.kt) -->
+    <string name="stream_stats_title">Stats</string>
+    <string name="stream_max_bitrate_label">"Max bitrate"</string>
+    <string name="stream_thermal_cap_text">"Thermal throttling caps it at %1$d kbps"</string>
+    <string name="stream_latency_label">"Latency"</string>
+    <string name="stream_abr_label">"Adaptive bitrate (ABR)"</string>
+    <string name="stream_abr_on">"On"</string>
+    <string name="stream_abr_off">"Off"</string>
+    <string name="stream_abr_min_text">"min %1$d"</string>
+
+    <string name="stream_stat_bitrate_label">"Outgoing bitrate"</string>
+    <string name="stream_stat_bitrate_target">"target %1$d kbps"</string>
+    <string name="stream_stat_bandwidth_label">"Bandwidth"</string>
+    <string name="stream_stat_loss_label">"Loss"</string>
+    <string name="stream_stat_retrans_label">"Retrans"</string>
+    <string name="stream_stat_buffer_label">"Buffer"</string>
+    <string name="stream_stat_drops_label">"Drops"</string>
+    <string name="stream_stat_encoder_label">"Encoder"</string>
+
+    <string name="stream_unit_ms">"ms"</string>
+    <string name="stream_unit_per_sec">"/s"</string>
+
+    <string name="stream_info_bitrate">"How much is actually flying out over the network right now: video + audio + protocol overhead — so it\'s normal for this to sit a bit above the target shown below (that\'s the target video bitrate). Hovering at or just above target = all good, and the card color agrees.\n\nIf it\'s noticeably below target, go hunt for the culprit:\n• RTT and Loss climbing — the network is choking\n• Encoder and Buffer climbing — the phone can\'t keep up"</string>
+    <string name="stream_info_latency">"SRT\'s receive buffer: how much time a lost packet gets to be resent.\nMore = tougher against packet loss, but a laggier stream. Turn it up on shaky cellular.\n\nChangeable live — the stream will briefly reconnect to apply the new value."</string>
+    <string name="stream_info_rtt">"Ping to the server and back, same idea as in a video game.\nUp to ~120 ms — comfortable. 120–300 — the network\'s under strain. More than that — it\'s far away or clogged.\n\nWhat to do:\n• raise \"Latency\" — works live\n• switch networks, or move somewhere with better signal"</string>
+    <string name="stream_info_buffer">"Video the phone has ready to go, but the network hasn\'t confirmed yet. Builds up when the pipe can\'t keep pace.\nNear empty is good. Creeping up toward \"Latency\" means drops are about to happen.\n\nWhat to do:\n• lower the bitrate or turn on ABR\n• raise \"Latency\" — works live"</string>
+    <string name="stream_info_loss">"Packets that got lost somewhere in the network; SRT notices and resends them (see Retrans next door).\nA little on cellular is completely normal and self-heals. A lot means the network is weak or overloaded.\n\nIf it\'s a lot:\n• lower the bitrate or turn on ABR\n• switch networks, or move somewhere with better signal"</string>
+    <string name="stream_info_drop">"Packets SRT gave up on delivering — too late to resend, so the viewer never sees them.\nAny drop = a freeze or blocky artifacts on stream.\n\nUrgent fixes:\n• lower \"Max bitrate\"\n• raise \"Latency\" — works live\n• turn on ABR"</string>
+    <string name="stream_info_retrans">"How many times SRT resent packets due to loss (see Loss next door). This is the safety net doing its job, not a disaster.\nA little is SRT working as intended. A lot, constantly, means the network doesn\'t have room for this bitrate.\n\nIf it\'s constant:\n• lower the bitrate or turn on ABR\n• switch to a less crowded network"</string>
+    <string name="stream_info_bandwidth">"SRT\'s estimate of how much more the pipe could carry on top of what you\'re already sending. It\'s a rough guide, not a health indicator — that\'s why it has no color.\n\nHow to read it:\n• keep your bitrate around 30%% below this number\n• on mobile and with bonding this number jitters around — don\'t take it too literally"</string>
+    <string name="stream_info_encoder">"How far encoding is lagging behind real time — is the phone actually keeping up compressing frames from the camera.\nClimbing = the phone can\'t keep up (overheating, or the bitrate is too ambitious), and the viewer gets stutters. The network is NOT the culprit here.\n\nWhat to do:\n• lower \"Max bitrate\"\n• let the phone cool down, turn off the preview\n• drop the resolution or frame rate"</string>
+    <string name="stream_info_max_bitrate">"The quality ceiling: we never go above this bitrate. ABR and thermal throttling both operate UNDER it.\n\nChangeable live (in 500 kbps steps), no need to hit Stop:\n• network holding up confidently — raise it for a sharper picture\n• consistently struggling — lower it"</string>
+    <string name="stream_info_abr">"Steers the bitrate itself on the fly: pipe can\'t keep up, it backs off; things ease up, it climbs back toward \"Max bitrate.\" A gentle quality dip instead of a frozen frame.\n\nHow to use it:\n• on/off and \"min\" are changeable live\n• \"min\" is the floor — it won\'t cut below that\n• turn it off and the bitrate just holds steady at \"Max bitrate\""</string>
+
+    <!-- LinksPanel transport labels -->
+    <string name="stream_transport_wifi">WiFi</string>
+    <string name="stream_transport_cellular">"Cellular"</string>
+    <string name="stream_transport_ethernet">Ethernet</string>
+    <string name="stream_transport_relay">Bondlink</string>
+    <string name="stream_transport_unknown">"Network"</string>
+
+    <!-- Camera option labels (StreamPackEngine.kt, resolved via Context.getString, not @Composable) -->
+    <string name="stream_camera_front">"Front"</string>
+    <string name="stream_camera_front_numbered">"Front %1$d"</string>
+    <string name="stream_camera_main">"Main"</string>
+    <string name="stream_camera_main_numbered">"Main %1$d"</string>
+    <string name="stream_camera_ultra">"Ultra"</string>
+    <string name="stream_camera_tele">"Tele"</string>
+</resources>

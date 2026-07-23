@@ -16,9 +16,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.stream.R
 import n7.bondcast.stream.HealthLevel
 import n7.bondcast.ui.street.SpringAppear
 import n7.bondcast.ui.street.StreetShape
@@ -32,9 +34,9 @@ internal fun ConnectionHealthChip(
 ) {
     if (overall == null) return
     val (dotColor, label) = when (overall) {
-        HealthLevel.OK -> DiscordColors.green to "Связь: отлично"
-        HealthLevel.WARN -> DiscordColors.yellow to "Связь: шатко"
-        HealthLevel.BAD -> DiscordColors.danger to "Связь: рвётся"
+        HealthLevel.OK -> DiscordColors.green to stringResource(R.string.stream_health_ok)
+        HealthLevel.WARN -> DiscordColors.yellow to stringResource(R.string.stream_health_warn)
+        HealthLevel.BAD -> DiscordColors.danger to stringResource(R.string.stream_health_bad)
     }
     SpringAppear(modifier = modifier) {
         Row(

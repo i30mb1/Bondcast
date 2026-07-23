@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,6 +58,7 @@ import n7.bondcast.camerax.CameraXPreviewBus
 import n7.bondcast.camerax.setAeAwbLock
 import n7.bondcast.camerax.setLowLightBoost
 import n7.bondcast.chat.impl.ChatController
+import n7.bondcast.feature.stream.R
 import n7.bondcast.obs.ObsController
 import n7.bondcast.obs.ObsPhase
 import n7.bondcast.settings.StreamSettings
@@ -518,86 +520,18 @@ private const val PANEL_CAMERAS = "cameras"
 private const val PANEL_OBS = "obs"
 private const val PANEL_VIEWERS = "viewers"
 
-private const val INFO_BITRATE =
-    "Сколько всего улетает в сеть прямо сейчас: видео + звук + служебные данные, поэтому " +
-        "в норме чуть выше цели из подписи снизу (это целевой видео-битрейт). " +
-        "Держится у цели или чуть выше — всё ок, про то же говорит цвет карточки.\n\n" +
-        "Если просел заметно ниже цели, ищи виновного ниже:\n" +
-        "• RTT и Потери растут — тормозит сеть\n" +
-        "• Энкодер и Буфер растут — не тянет телефон"
-private const val INFO_LATENCY =
-    "Буфер приёмника SRT: сколько времени есть на досыл потерянных пакетов.\n" +
-        "Больше — устойчивее к потерям, но выше задержка эфира. На слабой сотовой поднимай.\n\n" +
-        "Меняется прямо в эфире — стрим коротко переподключится с новым значением."
-private const val INFO_RTT =
-    "Пинг до сервера и обратно, как в игре.\n" +
-        "До ~120 мс — комфортно, 120–300 — сеть напряжена, больше — далеко или забита.\n\n" +
-        "Что делать:\n" +
-        "• поднять «Задержку» — прямо в эфире\n" +
-        "• сменить сеть или точку, где ловит"
-private const val INFO_BUFFER =
-    "Видео, которое телефон подготовил, но сеть ещё не подтвердила. Копится, когда канал не успевает.\n" +
-        "Почти пустой — хорошо. Подбирается к «Задержке» — дропы вот-вот.\n\n" +
-        "Что делать:\n" +
-        "• сбавить битрейт или включить ABR\n" +
-        "• поднять «Задержку» — прямо в эфире"
-private const val INFO_LOSS =
-    "Пакеты, потерянные где-то в сети; SRT замечает это и досылает их заново (см. Ретр рядом).\n" +
-        "Немного на сотовой — обычное дело, лечится само. Много — сеть слабая или перегружена.\n\n" +
-        "Что делать, если много:\n" +
-        "• сбавить битрейт или включить ABR\n" +
-        "• сменить сеть или точку, где ловит"
-private const val INFO_DROP =
-    "Пакеты, которые SRT выбросил, не успев довезти — досылать было поздно, зритель их не увидит.\n" +
-        "Любой дроп = фриз или квадратики в эфире.\n\n" +
-        "Срочно:\n" +
-        "• опустить «Макс битрейт»\n" +
-        "• поднять «Задержку» — прямо в эфире\n" +
-        "• включить ABR"
-private const val INFO_RETRANS =
-    "Сколько раз SRT досылал пакеты повторно из-за потерь (см. Потери рядом). Это защита, а не беда.\n" +
-        "Немного — нормальная работа SRT. Много и постоянно — сети не хватает места под битрейт.\n\n" +
-        "Что делать, если постоянно:\n" +
-        "• сбавить битрейт или включить ABR\n" +
-        "• сменить сеть, где посвободнее"
-private const val INFO_BANDWIDTH =
-    "Прикидка SRT, сколько ещё способен пропустить канал сверх того, что ты уже шлёшь. " +
-        "Это ориентир, а не здоровье связи — потому и без цвета.\n\n" +
-        "Как читать:\n" +
-        "• держи битрейт процентов на 30 ниже неё\n" +
-        "• на мобильном и в бондинге цифра дрожит — не верь ей буквально"
-private const val INFO_ENCODER =
-    "Насколько кодирование отстаёт от реального времени — успевает ли телефон сжимать кадры с камеры.\n" +
-        "Растёт → телефон не тянет (греется или битрейт не по зубам), у зрителя рывки. Сеть тут НЕ виновата.\n\n" +
-        "Что делать:\n" +
-        "• опустить «Макс битрейт»\n" +
-        "• остудить телефон, выключить превью\n" +
-        "• снизить разрешение или fps"
-private const val INFO_MAX_BITRATE =
-    "Верхняя граница качества: выше этого битрейта не поднимаемся. ABR и термозащита работают ПОД ним.\n\n" +
-        "Меняется прямо в эфире (шаг 500 kbps), без «Стоп»:\n" +
-        "• сеть уверенно держит — подними, картинка чётче\n" +
-        "• стабильно не тянет — опусти"
-private const val INFO_ABR =
-    "Сам подруливает битрейт под сеть на лету: канал не тянет — снижает, отпустило — поднимает " +
-        "обратно к «Макс битрейт». Мягко приседает качеством вместо стоп-кадра.\n\n" +
-        "Как пользоваться:\n" +
-        "• вкл/выкл и «мин» меняются прямо в эфире\n" +
-        "• «мин» — нижняя граница, ниже неё не режет\n" +
-        "• выключишь — держит ровно «Макс битрейт»"
-
 @Composable
 private fun StatsPanel(
     controller: StreamController,
     bitrateCap: Float?,
     onClose: () -> Unit,
 ) {
-    StreetPanelScaffold(title = "Статистика", onClose = onClose) {
+    StreetPanelScaffold(title = stringResource(R.string.stream_stats_title), onClose = onClose) {
         HudStats(controller)
         LinksPanel(controller)
         Spacer(Modifier.height(2.dp))
         val liveMax by controller.maxBitrateKbps.collectAsState()
-        StreetSectionLabel("Макс битрейт", info = INFO_MAX_BITRATE)
+        StreetSectionLabel(stringResource(R.string.stream_max_bitrate_label), info = stringResource(R.string.stream_info_max_bitrate))
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -615,13 +549,13 @@ private fun StatsPanel(
         }
         if (bitrateCap != null) {
             Text(
-                text = "Термозащита режет до ${(liveMax * bitrateCap).roundToInt()} kbps",
+                text = stringResource(R.string.stream_thermal_cap_text, (liveMax * bitrateCap).roundToInt()),
                 color = DiscordColors.textSecondary,
                 style = streetBody,
             )
         }
         val liveLatency by controller.latencyMs.collectAsState()
-        StreetSectionLabel("Задержка", info = INFO_LATENCY)
+        StreetSectionLabel(stringResource(R.string.stream_latency_label), info = stringResource(R.string.stream_info_latency))
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -629,7 +563,7 @@ private fun StatsPanel(
         ) {
             StreetChip("−", false, Modifier.weight(1f)) { controller.setLatency(liveLatency - 250) }
             Text(
-                text = "$liveLatency мс",
+                text = "$liveLatency ${stringResource(R.string.stream_unit_ms)}",
                 color = DiscordColors.textSecondary,
                 style = streetBody,
                 textAlign = TextAlign.Center,
@@ -639,13 +573,13 @@ private fun StatsPanel(
         }
         val abrOn by controller.abrEnabled.collectAsState()
         val liveMin by controller.minBitrateKbps.collectAsState()
-        StreetSectionLabel("Адаптивный битрейт (ABR)", info = INFO_ABR)
+        StreetSectionLabel(stringResource(R.string.stream_abr_label), info = stringResource(R.string.stream_info_abr))
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            StreetChip("Вкл", abrOn, Modifier.weight(1f)) { controller.setAbrEnabled(true) }
-            StreetChip("Выкл", !abrOn, Modifier.weight(1f)) { controller.setAbrEnabled(false) }
+            StreetChip(stringResource(R.string.stream_abr_on), abrOn, Modifier.weight(1f)) { controller.setAbrEnabled(true) }
+            StreetChip(stringResource(R.string.stream_abr_off), !abrOn, Modifier.weight(1f)) { controller.setAbrEnabled(false) }
         }
         if (abrOn) {
             Row(
@@ -655,7 +589,7 @@ private fun StatsPanel(
             ) {
                 StreetChip("−", false, Modifier.weight(1f)) { controller.setMinBitrate(liveMin - 100) }
                 Text(
-                    text = "мин $liveMin",
+                    text = stringResource(R.string.stream_abr_min_text, liveMin),
                     color = DiscordColors.textSecondary,
                     style = streetBody,
                     textAlign = TextAlign.Center,
@@ -676,15 +610,17 @@ private fun HudStats(controller: StreamController) {
     // чтобы панель сразу выглядела так, какой будет в эфире
     val s = stats
     val h = health
+    val msUnit = stringResource(R.string.stream_unit_ms)
+    val perSecUnit = stringResource(R.string.stream_unit_per_sec)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StreetStatCard(
-            label = "Исходящий битрейт",
+            label = stringResource(R.string.stream_stat_bitrate_label),
             value = s?.sendRateKbps?.toString() ?: "—",
             unit = "kbps",
-            sub = if (bitrate > 0) "цель $bitrate kbps" else null,
+            sub = if (bitrate > 0) stringResource(R.string.stream_stat_bitrate_target, bitrate) else null,
             modifier = Modifier.fillMaxWidth(),
             labelColor = healthColor(h?.rateLevel),
-            info = INFO_BITRATE,
+            info = stringResource(R.string.stream_info_bitrate),
         )
         // база сети рядом: RTT — задержка, Полоса — сколько ещё есть в запасе
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -692,63 +628,63 @@ private fun HudStats(controller: StreamController) {
                 "RTT",
                 s?.rttMs?.toString() ?: "—",
                 Modifier.weight(1f),
-                unit = "мс",
+                unit = msUnit,
                 labelColor = healthColor(h?.rttLevel),
-                info = INFO_RTT,
+                info = stringResource(R.string.stream_info_rtt),
             )
             StreetStatCard(
-                "Полоса",
+                stringResource(R.string.stream_stat_bandwidth_label),
                 s?.bandwidthKbps?.toString() ?: "—",
                 Modifier.weight(1f),
                 unit = "kbps",
                 labelColor = DiscordColors.textSecondary,
-                info = INFO_BANDWIDTH,
+                info = stringResource(R.string.stream_info_bandwidth),
             )
         }
         // причина рядом со следствием: Потери → Ретр их же лечит
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StreetStatCard(
-                "Потери",
+                stringResource(R.string.stream_stat_loss_label),
                 h?.lossPerSec?.toString() ?: "—",
                 Modifier.weight(1f),
-                unit = "/с",
+                unit = perSecUnit,
                 labelColor = healthColor(h?.lossLevel),
-                info = INFO_LOSS,
+                info = stringResource(R.string.stream_info_loss),
             )
             StreetStatCard(
-                "Ретр",
+                stringResource(R.string.stream_stat_retrans_label),
                 h?.retransPerSec?.toString() ?: "—",
                 Modifier.weight(1f),
-                unit = "/с",
+                unit = perSecUnit,
                 labelColor = healthColor(h?.retransLevel),
-                info = INFO_RETRANS,
+                info = stringResource(R.string.stream_info_retrans),
             )
         }
         // причина рядом со следствием: Буфер переполняется → идут Дропы
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StreetStatCard(
-                "Буфер",
+                stringResource(R.string.stream_stat_buffer_label),
                 s?.sndBufferMs?.toString() ?: "—",
                 Modifier.weight(1f),
-                unit = "мс",
+                unit = msUnit,
                 labelColor = healthColor(h?.bufLevel),
-                info = INFO_BUFFER,
+                info = stringResource(R.string.stream_info_buffer),
             )
             StreetStatCard(
-                "Дропы",
+                stringResource(R.string.stream_stat_drops_label),
                 h?.dropPerSec?.toString() ?: "—",
                 Modifier.weight(1f),
-                unit = "/с",
+                unit = perSecUnit,
                 labelColor = healthColor(h?.dropLevel),
-                info = INFO_DROP,
+                info = stringResource(R.string.stream_info_drop),
             )
         }
         StreetStatCard(
-            label = "Энкодер",
+            label = stringResource(R.string.stream_stat_encoder_label),
             value = s?.let { formatLag(it.encoderLagMs) } ?: "—",
             modifier = Modifier.fillMaxWidth(),
             labelColor = healthColor(h?.encoderLevel),
-            info = INFO_ENCODER,
+            info = stringResource(R.string.stream_info_encoder),
         )
     }
 }
@@ -803,12 +739,13 @@ private fun LinksPanel(controller: StreamController) {
     }
 }
 
+@Composable
 private fun Transport.label(): String = when (this) {
-    Transport.WIFI -> "WiFi"
-    Transport.CELLULAR -> "Сотовая"
-    Transport.ETHERNET -> "Ethernet"
-    Transport.RELAY -> "Bondlink"
-    Transport.UNKNOWN -> "Сеть"
+    Transport.WIFI -> stringResource(R.string.stream_transport_wifi)
+    Transport.CELLULAR -> stringResource(R.string.stream_transport_cellular)
+    Transport.ETHERNET -> stringResource(R.string.stream_transport_ethernet)
+    Transport.RELAY -> stringResource(R.string.stream_transport_relay)
+    Transport.UNKNOWN -> stringResource(R.string.stream_transport_unknown)
 }
 
 private fun formatRate(kbps: Int): String {
@@ -818,7 +755,7 @@ private fun formatRate(kbps: Int): String {
 
 private fun formatLag(ms: Int): String {
     val tenths = (ms + 50) / 100
-    return if (ms >= 1000) "+${tenths / 10}.${tenths % 10}с" else "${ms}мс"
+    return if (ms >= 1000) "+${tenths / 10}.${tenths % 10}s" else "${ms}ms"
 }
 
 private fun Context.findActivity(): Activity? {

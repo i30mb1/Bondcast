@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ChatPanel -->
+    <string name="chat_panel_title">Chat</string>
+    <string name="chat_panel_twitch_login_button">Log in to Twitch</string>
+    <string name="chat_panel_twitch_logout_button">Log out of Twitch</string>
+    <string name="chat_panel_show_chat_label">Show chat</string>
+    <string name="chat_panel_channel_label">Channel</string>
+    <string name="chat_panel_channel_own_label">own</string>
+    <string name="chat_panel_nicknames_label">Nicknames</string>
+    <string name="chat_panel_badges_label">Badges</string>
+    <string name="chat_panel_hide_commands_label">Hide commands</string>
+    <string name="chat_panel_font_size_label">Font</string>
+    <string name="chat_panel_opacity_label">Opacity</string>
+    <string name="chat_panel_message_limit_label">Limit</string>
+    <string name="chat_panel_fade_top_label">Fade toward top</string>
+    <string name="chat_panel_auto_erase_label">Auto-erase old (30s)</string>
+    <string name="chat_panel_on_label">On</string>
+    <string name="chat_panel_off_label">Off</string>
+    <string name="chat_panel_channel_dialog_title">CHANNEL</string>
+    <string name="chat_panel_channel_dialog_hint">own channel</string>
+
+    <!-- ViewersPanel -->
+    <string name="viewers_panel_title">Viewers</string>
+    <string name="viewers_panel_empty_label">Nobody\'s showing up in chat yet</string>
+    <string name="viewers_panel_count_singular">%1$d viewer</string>
+    <string name="viewers_panel_count_plural">%1$d viewers</string>
+</resources>

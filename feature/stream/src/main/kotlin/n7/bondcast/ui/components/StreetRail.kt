@@ -45,10 +45,12 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.stream.R
 import n7.bondcast.stream.StreamPhase
 import n7.bondcast.ui.street.SpringAppear
 import n7.bondcast.ui.street.StreetShape
@@ -183,14 +185,14 @@ internal fun StickerBadge(
     modifier: Modifier = Modifier,
 ) {
     val (dotColor, label) = when (phase) {
-        is StreamPhase.Idle -> DiscordColors.textMuted to "Не в эфире"
+        is StreamPhase.Idle -> DiscordColors.textMuted to stringResource(R.string.stream_status_offline)
 
-        is StreamPhase.Connecting -> DiscordColors.yellow to "Подключение…"
+        is StreamPhase.Connecting -> DiscordColors.yellow to stringResource(R.string.stream_status_connecting)
 
-        is StreamPhase.Live -> DiscordColors.accent to "В эфире"
+        is StreamPhase.Live -> DiscordColors.accent to stringResource(R.string.stream_status_live)
 
         is StreamPhase.Retrying ->
-            DiscordColors.danger to "Реконнект #${phase.attempt}"
+            DiscordColors.danger to stringResource(R.string.stream_status_reconnecting, phase.attempt)
     }
     val interaction = remember { MutableInteractionSource() }
     SpringAppear(modifier = modifier) {
@@ -285,7 +287,7 @@ internal fun GoLiveButton(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = (if (streaming) "Завершить" else "В эфир").upper(),
+                text = stringResource(if (streaming) R.string.stream_golive_stop else R.string.stream_golive_start).upper(),
                 color = Color.White,
                 style = streetButton,
             )

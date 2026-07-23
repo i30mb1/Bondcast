@@ -29,12 +29,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.chat.impl.R
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.street.StreetChip
 import n7.bondcast.ui.street.StreetPanelScaffold
@@ -59,36 +61,52 @@ public fun ChatPanel(
 ) {
     var channelDialog by remember { mutableStateOf(false) }
 
-    StreetPanelScaffold(title = "Чат", onClose = onClose) {
+    StreetPanelScaffold(title = stringResource(R.string.chat_panel_title), onClose = onClose) {
         Text(
             text = twitchStatus,
             color = DiscordColors.textSecondary,
             style = streetBody,
         )
         StreetChip(
-            text = if (twitchLoggedIn) "Выйти из Twitch" else "Войти в Twitch",
+            text = if (twitchLoggedIn) {
+                stringResource(R.string.chat_panel_twitch_logout_button)
+            } else {
+                stringResource(R.string.chat_panel_twitch_login_button)
+            },
             selected = twitchLoggedIn,
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (twitchLoggedIn) onTwitchLogout() else onTwitchLogin()
         }
 
-        ToggleRow("Показывать чат", settings.chatEnabled) { onUpdate(settings.copy(chatEnabled = it)) }
+        ToggleRow(stringResource(R.string.chat_panel_show_chat_label), settings.chatEnabled) {
+            onUpdate(settings.copy(chatEnabled = it))
+        }
         ChannelRow(settings.chatChannel) { channelDialog = true }
-        ToggleRow("Ники", settings.chatShowNicknames) { onUpdate(settings.copy(chatShowNicknames = it)) }
-        ToggleRow("Значки", settings.chatShowBadges) { onUpdate(settings.copy(chatShowBadges = it)) }
-        ToggleRow("Прятать команды", settings.chatHideCommands) { onUpdate(settings.copy(chatHideCommands = it)) }
-        StepperRow("Шрифт", settings.chatFontSizeSp, "") {
+        ToggleRow(stringResource(R.string.chat_panel_nicknames_label), settings.chatShowNicknames) {
+            onUpdate(settings.copy(chatShowNicknames = it))
+        }
+        ToggleRow(stringResource(R.string.chat_panel_badges_label), settings.chatShowBadges) {
+            onUpdate(settings.copy(chatShowBadges = it))
+        }
+        ToggleRow(stringResource(R.string.chat_panel_hide_commands_label), settings.chatHideCommands) {
+            onUpdate(settings.copy(chatHideCommands = it))
+        }
+        StepperRow(stringResource(R.string.chat_panel_font_size_label), settings.chatFontSizeSp, "") {
             onUpdate(settings.copy(chatFontSizeSp = (settings.chatFontSizeSp + it).coerceIn(10, 40)))
         }
-        StepperRow("Прозрачность", settings.chatOpacityPercent, "%", step = 5) {
+        StepperRow(stringResource(R.string.chat_panel_opacity_label), settings.chatOpacityPercent, "%", step = 5) {
             onUpdate(settings.copy(chatOpacityPercent = (settings.chatOpacityPercent + it).coerceIn(0, 100)))
         }
-        StepperRow("Лимит", settings.chatMessageLimit, "", step = 5) {
+        StepperRow(stringResource(R.string.chat_panel_message_limit_label), settings.chatMessageLimit, "", step = 5) {
             onUpdate(settings.copy(chatMessageLimit = (settings.chatMessageLimit + it).coerceIn(5, 200)))
         }
-        ToggleRow("Гаснуть к верху", settings.chatFadeTopEnabled) { onUpdate(settings.copy(chatFadeTopEnabled = it)) }
-        ToggleRow("Стирать старые (30с)", settings.chatAutoEraseEnabled) { onUpdate(settings.copy(chatAutoEraseEnabled = it)) }
+        ToggleRow(stringResource(R.string.chat_panel_fade_top_label), settings.chatFadeTopEnabled) {
+            onUpdate(settings.copy(chatFadeTopEnabled = it))
+        }
+        ToggleRow(stringResource(R.string.chat_panel_auto_erase_label), settings.chatAutoEraseEnabled) {
+            onUpdate(settings.copy(chatAutoEraseEnabled = it))
+        }
     }
 
     if (channelDialog) {
@@ -121,8 +139,8 @@ private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         RowLabel(label, Modifier.weight(1f))
-        StreetChip("Вкл", value, Modifier.width(56.dp)) { onChange(true) }
-        StreetChip("Выкл", !value, Modifier.width(56.dp)) { onChange(false) }
+        StreetChip(stringResource(R.string.chat_panel_on_label), value, Modifier.width(56.dp)) { onChange(true) }
+        StreetChip(stringResource(R.string.chat_panel_off_label), !value, Modifier.width(56.dp)) { onChange(false) }
     }
 }
 
@@ -156,9 +174,9 @@ private fun ChannelRow(channel: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        RowLabel("Канал", Modifier.weight(1f))
+        RowLabel(stringResource(R.string.chat_panel_channel_label), Modifier.weight(1f))
         Text(
-            text = channel.ifBlank { "свой" },
+            text = channel.ifBlank { stringResource(R.string.chat_panel_channel_own_label) },
             color = DiscordColors.textSecondary,
             style = streetBody,
         )
@@ -190,7 +208,7 @@ private fun ChannelDialog(initial: String, onConfirm: (String) -> Unit, onDismis
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(text = "КАНАЛ", color = DiscordColors.accent, style = streetLabel)
+                Text(text = stringResource(R.string.chat_panel_channel_dialog_title), color = DiscordColors.accent, style = streetLabel)
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -202,7 +220,7 @@ private fun ChannelDialog(initial: String, onConfirm: (String) -> Unit, onDismis
                     Box(modifier = Modifier.weight(1f)) {
                         if (text.isEmpty()) {
                             Text(
-                                text = "свой канал",
+                                text = stringResource(R.string.chat_panel_channel_dialog_hint),
                                 color = DiscordColors.textMuted,
                                 style = MaterialTheme.typography.bodyLarge,
                             )

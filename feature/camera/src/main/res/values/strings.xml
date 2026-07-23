@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Camera panel -->
+    <string name="camera_panel_title">Camera</string>
+
+    <string name="camera_panel_on_button">"On"</string>
+    <string name="camera_panel_off_button">"Off"</string>
+
+    <string name="camera_panel_preview_label">"On-screen preview"</string>
+    <string name="camera_panel_preview_info">"The camera feed, right there on your phone screen. The viewer doesn\'t care either way — the stream keeps going without it.\n\nWhen to turn it off:\n• the phone\'s getting hot (the screen roasts about as hard as the encoder)\n• saving battery on a long stream"</string>
+
+    <string name="camera_panel_stabilization_label">"Stabilization"</string>
+    <string name="camera_panel_stabilization_info">"Smooths out shaky hands in software — steadier picture while you\'re moving.\n\nGood to know:\n• crops the frame edges a bit\n• doesn\'t fit every mode (resolution/fps)\n• pointless on a tripod"</string>
+    <string name="camera_panel_stabilization_unsupported_hint">"Didn\'t fit the current shooting mode (resolution/fps)."</string>
+
+    <string name="camera_panel_ae_awb_lock_label">"Lock exposure/white balance"</string>
+    <string name="camera_panel_ae_awb_lock_info">"Locks exposure and white balance — the picture stops \"breathing\" brightness and color while you pan.\n\nWhen to turn it on:\n• panning across a scene with mixed lighting\n• filming a screen/monitor (stops the flicker)\n\nTurn it off if the actual light in the scene keeps changing."</string>
+
+    <string name="camera_panel_exposure_label">"Exposure"</string>
+    <string name="camera_panel_exposure_decrease_button">"−"</string>
+    <string name="camera_panel_exposure_increase_button">"+"</string>
+    <string name="camera_panel_exposure_zero_ev">"0 EV"</string>
+    <string name="camera_panel_exposure_value_ev">"%1$s EV"</string>
+
+    <string name="camera_panel_night_mode_label">"Night mode"</string>
+    <string name="camera_panel_night_mode_suggestion_hint">"Scene\'s dark — the camera thinks it\'s worth flipping on."</string>
+</resources>

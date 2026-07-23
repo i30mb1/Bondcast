@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">Bondcast</string>
+
+    <string name="app_permission_rationale">"Streaming needs the camera and mic"</string>
+    <string name="app_permission_grant_button">"Grant permissions"</string>
+
+    <string name="app_twitch_logged_in">"Logged in: %1$s"</string>
+    <string name="app_twitch_awaiting_code">"Code %1$s — open %2$s"</string>
+    <string name="app_twitch_login_failed">"Login failed: %1$s"</string>
+    <string name="app_twitch_logged_out">"Not logged into Twitch"</string>
+
+    <string name="app_notification_channel_streaming">"Streaming"</string>
+    <string name="app_notification_content_text">"Stream in progress"</string>
+    <string name="app_notification_stop_action">"Stop"</string>
 </resources>

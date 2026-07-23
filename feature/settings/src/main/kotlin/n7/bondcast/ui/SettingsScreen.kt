@@ -37,10 +37,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.settings.R
 import n7.bondcast.qr.QrPayload
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.settings.VideoCodec
@@ -60,6 +62,8 @@ public fun SettingsScreen(
     onSave: (StreamSettings) -> Unit,
     onBack: () -> Unit,
     twitchLoggedIn: Boolean = false,
+    onTwitchLogin: (() -> Unit)? = null,
+    onTwitchLogout: (() -> Unit)? = null,
     onFetchTwitchStreamKey: (suspend () -> String?)? = null,
 ) {
     LockScreenOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
@@ -151,7 +155,7 @@ public fun SettingsScreen(
                     }
 
                     is QrPayload.Unknown ->
-                        Toast.makeText(context, "QR не распознан", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.settings_qr_unrecognized), Toast.LENGTH_SHORT).show()
                 }
                 showScanner = false
             },
@@ -169,13 +173,13 @@ public fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            DiscordTopBar(title = "Настройки", onBack = onBack)
+            DiscordTopBar(title = stringResource(R.string.settings_title), onBack = onBack)
 
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                SectionLabel("Сервер")
+                SectionLabel(stringResource(R.string.settings_section_server))
                 SettingsCard {
                     Button(
                         onClick = { showScanner = true },
@@ -183,25 +187,19 @@ public fun SettingsScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
-                        Text("📷 Сканировать QR")
+                        Text(stringResource(R.string.settings_scan_qr_button))
                     }
                     RowDivider()
                     DiscordSwitchRow(
-                        label = "Напрямую в Twitch (без сервера)",
+                        label = stringResource(R.string.settings_twitch_direct_label),
                         checked = twitchDirect,
                         onCheckedChange = { twitchDirect = it },
-                        info = "Кодирует H.264 и шлёт RTMP прямо на Twitch — свой SRT/SRTLA-сервер не нужен.\n\n" +
-                            "Чем платим:\n" +
-                            "• бондинг недоступен — одно соединение, без объединения сетей\n" +
-                            "• оборвалась сеть — оборвался эфир, как в обычном Larix/Streamlabs\n" +
-                            "• пульт OBS тоже недоступен — ему нужна своя машина-сервер рядом\n\n" +
-                            "Когда включать: нет своего сервера или устойчивость не критична. " +
-                            "Нужен бондинг или пульт OBS — выключи и подними свой сервер.",
+                        info = stringResource(R.string.settings_twitch_direct_info),
                     )
                     if (twitchDirect) {
                         RowDivider()
                         DiscordField(
-                            label = "Ключ трансляции Twitch",
+                            label = stringResource(R.string.settings_twitch_stream_key_label),
                             value = twitchStreamKey,
                             onValueChange = {
                                 twitchStreamKey = it
@@ -209,38 +207,63 @@ public fun SettingsScreen(
                             },
                             isError = twitchStreamKey.isBlank(),
                             modifier = Modifier.fillMaxWidth(),
-                            info = "Creator Dashboard → Настройки → Трансляция → Основной ключ трансляции.\n\n" +
-                                "Держи в секрете: с ним кто угодно стримит в твой канал вместо тебя.",
+                            info = stringResource(R.string.settings_twitch_stream_key_info),
                         )
-                        if (onFetchTwitchStreamKey != null) {
+                        if (onTwitchLogin != null && onTwitchLogout != null || onFetchTwitchStreamKey != null) {
+                            val fetchErrorRelogin = stringResource(R.string.settings_twitch_fetch_error_relogin)
+                            val fetchErrorLoginFirst = stringResource(R.string.settings_twitch_fetch_error_login_first)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                TextButton(
-                                    enabled = !twitchFetching,
-                                    onClick = {
-                                        twitchFetchError = null
-                                        twitchFetching = true
-                                        coroutineScope.launch {
-                                            val key = runCatching { onFetchTwitchStreamKey() }.getOrNull()
-                                            twitchFetching = false
-                                            if (key.isNullOrBlank()) {
-                                                twitchFetchError = if (twitchLoggedIn) {
-                                                    "Не получилось. Перелогинься в Twitch на стрим-экране " +
-                                                        "(нужен доступ к ключу трансляции) и попробуй снова."
+                                if (onTwitchLogin != null && onTwitchLogout != null) {
+                                    TextButton(
+                                        onClick = { if (twitchLoggedIn) onTwitchLogout() else onTwitchLogin() },
+                                    ) {
+                                        Text(
+                                            stringResource(
+                                                if (twitchLoggedIn) {
+                                                    R.string.settings_twitch_logout_button
                                                 } else {
-                                                    "Сначала войди в Twitch на стрим-экране (карточка чата)."
+                                                    R.string.settings_twitch_login_button
+                                                },
+                                            ),
+                                        )
+                                    }
+                                }
+                                if (onFetchTwitchStreamKey != null) {
+                                    TextButton(
+                                        enabled = !twitchFetching,
+                                        onClick = {
+                                            twitchFetchError = null
+                                            twitchFetching = true
+                                            coroutineScope.launch {
+                                                val key = runCatching { onFetchTwitchStreamKey() }.getOrNull()
+                                                twitchFetching = false
+                                                if (key.isNullOrBlank()) {
+                                                    twitchFetchError = if (twitchLoggedIn) {
+                                                        fetchErrorRelogin
+                                                    } else {
+                                                        fetchErrorLoginFirst
+                                                    }
+                                                } else {
+                                                    twitchStreamKey = key
                                                 }
-                                            } else {
-                                                twitchStreamKey = key
                                             }
-                                        }
-                                    },
-                                ) {
-                                    Text(if (twitchFetching) "Тяну ключ…" else "🔑 Взять из Twitch")
+                                        },
+                                    ) {
+                                        Text(
+                                            stringResource(
+                                                if (twitchFetching) {
+                                                    R.string.settings_twitch_fetch_key_button_loading
+                                                } else {
+                                                    R.string.settings_twitch_fetch_key_button
+                                                },
+                                            ),
+                                        )
+                                    }
                                 }
                             }
                             twitchFetchError?.let {
@@ -256,22 +279,17 @@ public fun SettingsScreen(
                         RowDivider()
                         Row {
                             DiscordField(
-                                label = "Хост сервера",
+                                label = stringResource(R.string.settings_host_label),
                                 value = host,
                                 onValueChange = { host = it },
                                 // хост — это IP: Decimal даёт цифровую панель с точкой
                                 keyboardType = KeyboardType.Decimal,
                                 isError = host.isBlank(),
                                 modifier = Modifier.weight(2f),
-                                info = "Один IP на всё: SRT-сервер, srtla_rec для бондинга и пульт OBS " +
-                                    "живут на этой машине. Меняешь тут — меняется везде.\n\n" +
-                                    "Что вписать:\n" +
-                                    "• IP компа в локалке (ipconfig → IPv4)\n" +
-                                    "• или адрес облака (belabox, IRLToolkit)\n\n" +
-                                    "Порт справа зависит от бондинга: с ним — порт srtla_rec, без — SRT-порт сервера.",
+                                info = stringResource(R.string.settings_host_info),
                             )
                             DiscordField(
-                                label = "Порт",
+                                label = stringResource(R.string.settings_port_label),
                                 value = if (bonding) srtlaPort else port,
                                 onValueChange = { if (bonding) srtlaPort = it else port = it },
                                 keyboardType = KeyboardType.Number,
@@ -281,46 +299,42 @@ public fun SettingsScreen(
                         }
                         RowDivider()
                         DiscordField(
-                            label = "Имя стрима",
+                            label = stringResource(R.string.settings_stream_name_label),
                             value = streamName,
                             onValueChange = { streamName = it },
                             isError = streamName.isBlank(),
                             modifier = Modifier.fillMaxWidth(),
-                            info = "Поток приедет на сервер как live/<имя>. Плеер потом ищет его по этому же имени.\n\n" +
-                                "Что вписать:\n" +
-                                "• латиницей, без пробелов\n" +
-                                "• «phone» скромно, «super_mega_stream_3000» тоже примем\n\n" +
-                                "Главное — чтобы совпадало с тем, что ждёт сервер/плеер.",
+                            info = stringResource(R.string.settings_stream_name_info),
                         )
                     }
                 }
 
-                SectionLabel("Видео")
+                SectionLabel(stringResource(R.string.settings_section_video))
                 SettingsCard {
                     DiscordSegmentedRow(
-                        label = "Разрешение",
+                        label = stringResource(R.string.settings_resolution_label),
                         options = listOf("720p", "1080p"),
                         selectedIndex = if (is1080p) 1 else 0,
                         onSelect = { is1080p = it == 1 },
                     )
                     RowDivider()
                     DiscordStepperField(
-                        label = "Битрейт видео, kbps",
+                        label = stringResource(R.string.settings_bitrate_label),
                         value = bitrate,
                         onValueChange = { bitrate = it },
                         min = 500,
                         max = 20_000,
                         step = 100,
                         isError = !bitrateValid,
-                        info = "Сколько килобит в секунду тратим на красоту. H.265 умеет в магию сжатия, " +
-                            "так что задирать не нужно: выше рекомендации картинка почти не хорошеет, " +
-                            "зато телефон греется и роняет кадры.\n\n" +
-                            "Как выбрать:\n" +
-                            "• жми пресет ниже — мы уже посчитали\n" +
-                            "• комната статичная — прощает низкий битрейт\n" +
-                            "• улица с листвой и движением — самый прожорливый контент",
+                        info = stringResource(R.string.settings_bitrate_info),
                     )
-                    DiscordHint("💡 Пресеты под ${if (is1080p) "1080p" else "720p"}·${if (is60fps) "60" else "30"} fps — тапни, применю:")
+                    DiscordHint(
+                        stringResource(
+                            R.string.settings_bitrate_presets_hint,
+                            if (is1080p) "1080p" else "720p",
+                            if (is60fps) "60" else "30",
+                        ),
+                    )
                     Row(
                         modifier = Modifier
                             .padding(horizontal = 16.dp)
@@ -328,12 +342,12 @@ public fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         RecommendChip(
-                            text = "🏠 Комната ≈ $recIndoorKbps",
+                            text = stringResource(R.string.settings_preset_indoor, recIndoorKbps),
                             selected = bitrateInt == recIndoorKbps,
                             onClick = { bitrate = recIndoorKbps.toString() },
                         )
                         RecommendChip(
-                            text = "🌳 Улица ≈ $recOutdoorKbps",
+                            text = stringResource(R.string.settings_preset_outdoor, recOutdoorKbps),
                             selected = bitrateInt == recOutdoorKbps,
                             onClick = { bitrate = recOutdoorKbps.toString() },
                         )
@@ -352,67 +366,51 @@ public fun SettingsScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (!twitchDirect) {
-                            SectionLabel("Подключение")
+                            SectionLabel(stringResource(R.string.settings_section_connection))
                             SettingsCard {
                                 DiscordSwitchRow(
-                                    label = "Бондинг (объединить сети)",
+                                    label = stringResource(R.string.settings_bonding_label),
                                     checked = bonding,
                                     onCheckedChange = { bonding = it },
-                                    info = "Собирает Wi-Fi и сотовую в одну пати: пакеты бегут по всем сетям сразу, " +
-                                        "и если одна прилегла отдохнуть — остальные тащат.\n\n" +
-                                        "Когда включать:\n" +
-                                        "• стрим на ходу, где сеть скачет\n" +
-                                        "• есть две-три сети сразу (Wi-Fi + SIM)\n\n" +
-                                        "Видео уходит на srtla_rec, а не напрямую на SRT-порт. Дома можно и не включать.",
+                                    info = stringResource(R.string.settings_bonding_info),
                                 )
                                 RowDivider()
                                 DiscordField(
-                                    label = "Passphrase",
+                                    label = stringResource(R.string.settings_passphrase_label),
                                     value = passphrase,
                                     onValueChange = { passphrase = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    info = "Секретный стук в дверь — AES-шифрование SRT.\n\n" +
-                                        "Как выбрать:\n" +
-                                        "• пусто — дверь нараспашку, для своего сервера ок\n" +
-                                        "• задал — сервер должен знать тот же секрет\n\n" +
-                                        "Не совпало с сервером — он сделает вид, что впервые тебя видит.",
+                                    info = stringResource(R.string.settings_passphrase_info),
                                 )
                                 RowDivider()
                                 DiscordStepperField(
-                                    label = "Latency, мс",
+                                    label = stringResource(R.string.settings_latency_label),
                                     value = latency,
                                     onValueChange = { latency = it },
                                     min = 20,
                                     max = 8_000,
                                     step = 100,
                                     isError = !latencyValid,
-                                    info = "Подушка безопасности SRT: сколько у потерянного пакета есть времени, " +
-                                        "чтобы досдаться повторно. Больше — стабильнее, но зритель дальше от реальности.\n\n" +
-                                        "Что ставить:\n" +
-                                        "• 2000 — золотая середина, пара секунд задержки без артефактов\n" +
-                                        "• больше — для слабой/дальней сети\n" +
-                                        "• меньше 500 — только адреналиновым наркоманам",
+                                    info = stringResource(R.string.settings_latency_info),
                                 )
                             }
                         } else {
-                            SectionLabel("Twitch (доп.)")
+                            SectionLabel(stringResource(R.string.settings_section_twitch_extra))
                             SettingsCard {
                                 DiscordField(
-                                    label = "Ingest URL",
+                                    label = stringResource(R.string.settings_ingest_url_label),
                                     value = twitchIngestUrl,
                                     onValueChange = { twitchIngestUrl = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    info = "Обычно менять не нужно — live.twitch.tv сам разведёт на ближайший датацентр.\n\n" +
-                                        "Свой региональный ingest (для меньшего пинга) — со страницы twitch.tv/ingest, " +
-                                        "формат rtmp://<хост>/app.",
+                                    info = stringResource(R.string.settings_ingest_url_info),
                                 )
                             }
                         }
 
-                        SectionLabel("Видео (доп.)")
+                        SectionLabel(stringResource(R.string.settings_section_video_extra))
                         SettingsCard {
                             DiscordSegmentedRow(
-                                label = "Частота кадров",
+                                label = stringResource(R.string.settings_fps_label),
                                 options = listOf("30 fps", "60 fps"),
                                 selectedIndex = if (is60fps) 1 else 0,
                                 onSelect = { is60fps = it == 1 },
@@ -421,24 +419,19 @@ public fun SettingsScreen(
 
                         // пульт OBS предполагает свою машину-сервер рядом — со стримом напрямую в Twitch не сочетается
                         if (!twitchDirect) {
-                            SectionLabel("Пульт OBS")
+                            SectionLabel(stringResource(R.string.settings_section_obs))
                             SettingsCard {
                                 DiscordSwitchRow(
-                                    label = "Пульт OBS",
+                                    label = stringResource(R.string.settings_obs_toggle_label),
                                     checked = obsEnabled,
                                     onCheckedChange = { obsEnabled = it },
-                                    info = "Панель на стрим-экране, которая командует OBS на компе: сцены, эфир, запись.\n\n" +
-                                        "Как включить в OBS:\n" +
-                                        "• Сервис → Настройка сервера WebSocket\n" +
-                                        "• галочка «Включить сервер WebSocket»\n" +
-                                        "• порт и пароль — там же, кнопка «Показать сведения о подключении»\n\n" +
-                                        "Хост берётся общий — тот же IP, что сверху. Выключен — ни настроек, ни иконки.",
+                                    info = stringResource(R.string.settings_obs_info),
                                 )
                                 if (obsEnabled) {
                                     RowDivider()
                                     Row {
                                         DiscordField(
-                                            label = "Порт OBS",
+                                            label = stringResource(R.string.settings_obs_port_label),
                                             value = obsPort,
                                             onValueChange = { obsPort = it },
                                             keyboardType = KeyboardType.Number,
@@ -446,15 +439,11 @@ public fun SettingsScreen(
                                             modifier = Modifier.weight(1f),
                                         )
                                         DiscordField(
-                                            label = "Пароль WebSocket",
+                                            label = stringResource(R.string.settings_obs_password_label),
                                             value = obsPassword,
                                             onValueChange = { obsPassword = it },
                                             modifier = Modifier.weight(2f),
-                                            info = "Тот же пароль, что в OBS.\n\n" +
-                                                "Где взять:\n" +
-                                                "• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n" +
-                                                "• или кнопка «Показать сведения о подключении»\n\n" +
-                                                "Галочка «Включить аутентификацию» снята — оставь пустым.",
+                                            info = stringResource(R.string.settings_obs_password_info),
                                         )
                                     }
                                 }
@@ -470,7 +459,7 @@ public fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
-                        Text("Назад")
+                        Text(stringResource(R.string.settings_back_button))
                     }
                     Button(
                         onClick = {
@@ -520,7 +509,7 @@ public fun SettingsScreen(
                         enabled = valid,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Сохранить")
+                        Text(stringResource(R.string.settings_save_button))
                     }
                 }
             }
@@ -534,7 +523,7 @@ private fun AdvancedToggle(
     onClick: () -> Unit,
 ) {
     Text(
-        text = if (expanded) "▾ Скрыть доп. настройки" else "▸ Показать доп. настройки",
+        text = stringResource(if (expanded) R.string.settings_advanced_hide else R.string.settings_advanced_show),
         color = DiscordColors.accent,
         style = MaterialTheme.typography.labelLarge,
         modifier = Modifier

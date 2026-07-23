@@ -24,9 +24,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.settings.R
 import n7.bondcast.qr.QrPayload
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.ui.components.DiscordField
@@ -92,7 +94,7 @@ public fun OnboardingScreen(
                     }
 
                     is QrPayload.Unknown ->
-                        Toast.makeText(context, "QR не распознан", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.settings_qr_unrecognized), Toast.LENGTH_SHORT).show()
                 }
                 showScanner = false
             },
@@ -116,9 +118,9 @@ public fun OnboardingScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(top = 24.dp),
             )
-            DiscordHint("Укажи, куда отправлять эфир — свой сервер, облако или отсканируй QR. Остальное уже настроено, поправишь потом в настройках.")
+            DiscordHint(stringResource(R.string.onboarding_hint))
 
-            SectionLabel("Куда стримить")
+            SectionLabel(stringResource(R.string.onboarding_section_destination))
             SettingsCard {
                 Button(
                     onClick = { showScanner = true },
@@ -126,29 +128,28 @@ public fun OnboardingScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
-                    Text("📷 Сканировать QR")
+                    Text(stringResource(R.string.settings_scan_qr_button))
                 }
                 RowDivider()
                 DiscordSwitchRow(
-                    label = "Объединить сети (SIM + Wi-Fi)",
+                    label = stringResource(R.string.onboarding_bonding_label),
                     checked = bonding,
                     onCheckedChange = { bonding = it },
-                    info = "Шлём эфир по всем сетям сразу — если одна прилегла, тащат остальные. " +
-                        "Надёжнее в движении. Видео уходит на srtla_rec, порт справа поменяется.",
+                    info = stringResource(R.string.onboarding_bonding_info),
                 )
                 RowDivider()
                 Row {
                     DiscordField(
-                        label = "Хост сервера",
+                        label = stringResource(R.string.settings_host_label),
                         value = host,
                         onValueChange = { host = it },
                         keyboardType = KeyboardType.Decimal,
                         isError = host.isBlank(),
                         modifier = Modifier.weight(2f),
-                        info = "IP компа в локалке (ipconfig → IPv4) или адрес облака (belabox, IRLToolkit).",
+                        info = stringResource(R.string.onboarding_host_info),
                     )
                     DiscordField(
-                        label = "Порт",
+                        label = stringResource(R.string.settings_port_label),
                         value = if (bonding) srtlaPort else port,
                         onValueChange = { if (bonding) srtlaPort = it else port = it },
                         keyboardType = KeyboardType.Number,
@@ -158,12 +159,12 @@ public fun OnboardingScreen(
                 }
                 RowDivider()
                 DiscordField(
-                    label = "Имя стрима",
+                    label = stringResource(R.string.settings_stream_name_label),
                     value = streamName,
                     onValueChange = { streamName = it },
                     isError = streamName.isBlank(),
                     modifier = Modifier.fillMaxWidth(),
-                    info = "Поток приедет на сервер как live/<имя>. Латиницей, без пробелов.",
+                    info = stringResource(R.string.onboarding_stream_name_info),
                 )
             }
 
@@ -191,7 +192,7 @@ public fun OnboardingScreen(
                     .fillMaxWidth()
                     .padding(vertical = 20.dp),
             ) {
-                Text("Готово")
+                Text(stringResource(R.string.onboarding_done_button))
             }
         }
     }

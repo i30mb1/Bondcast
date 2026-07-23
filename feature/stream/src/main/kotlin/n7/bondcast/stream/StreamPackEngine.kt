@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import n7.bondcast.camerax.CameraXVideoSourceFactory
+import n7.bondcast.feature.stream.R
 import n7.bondcast.overlay.OverlayCompositor
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.settings.VideoCodec
@@ -155,7 +156,12 @@ internal class StreamPackEngine(
         val defaultId = back.firstOrNull() ?: ids.firstOrNull()
         val options = mutableListOf<CameraOption>()
         dedupByFocal(manager, front, defaultId).forEachIndexed { i, id ->
-            options.add(CameraOption(id, if (i == 0) "Фронт" else "Фронт ${i + 1}", true))
+            val label = if (i == 0) {
+                context.getString(R.string.stream_camera_front)
+            } else {
+                context.getString(R.string.stream_camera_front_numbered, i + 1)
+            }
+            options.add(CameraOption(id, label, true))
         }
         val backSorted = dedupByFocal(manager, back, defaultId).sortedBy { focalOf(manager, it) ?: Float.MAX_VALUE }
         backSorted.forEachIndexed { i, id ->
@@ -213,12 +219,12 @@ internal class StreamPackEngine(
     }
 
     private fun backLabel(index: Int, count: Int): String = when {
-        count <= 1 -> "Осн"
-        count == 2 -> if (index == 0) "Ультра" else "Осн"
-        index == 0 -> "Ультра"
-        index == count - 1 -> "Теле"
-        index == 1 -> "Осн"
-        else -> "Осн $index"
+        count <= 1 -> context.getString(R.string.stream_camera_main)
+        count == 2 -> context.getString(if (index == 0) R.string.stream_camera_ultra else R.string.stream_camera_main)
+        index == 0 -> context.getString(R.string.stream_camera_ultra)
+        index == count - 1 -> context.getString(R.string.stream_camera_tele)
+        index == 1 -> context.getString(R.string.stream_camera_main)
+        else -> context.getString(R.string.stream_camera_main_numbered, index)
     }
 
     override suspend fun stopStream() {

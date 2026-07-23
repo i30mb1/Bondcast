@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="obs_panel_title">OBS · %1$s</string>
+    <string name="obs_panel_info">A remote control for OBS running on your other computer — straight from your phone 🎬\n\nWhat it can do:\n• tap a scene — it goes live in the program\n• start/stop the OBS stream\n• turn recording on/off\n\nNot connecting? Check: OBS is running, WebSocket is enabled, and the firewall isn\'t blocking it.</string>
+
+    <string name="obs_auth_failed_error">OBS didn\'t accept the password. Check it in settings ⚙ and reopen the panel.</string>
+    <string name="obs_retrying_error">Couldn\'t reach it (#%1$d)%2$s. Is OBS running? Is WebSocket on? Is the firewall letting it through?</string>
+
+    <string name="obs_scenes_label">Scenes</string>
+
+    <string name="obs_stream_stop_button">⏹ OBS Stream</string>
+    <string name="obs_stream_start_button">▶ OBS Stream</string>
+    <string name="obs_record_stop_button">⏹ Recording</string>
+    <string name="obs_record_start_button">⏺ Recording</string>
+
+    <string name="obs_stats_cpu_fps_label">CPU %1$s%% · %2$d fps</string>
+    <string name="obs_stats_dropped_frames_label">Dropped frames: render %1$d/%2$d · output %3$d/%4$d</string>
+    <string name="obs_stats_stream_label">Stream %1$s%2$s</string>
+    <string name="obs_stats_stream_bitrate_suffix"> · ↑ %1$d kbps</string>
+    <string name="obs_stats_record_label">Recording %1$s</string>
+
+    <string name="obs_phase_disconnected_label">offline</string>
+    <string name="obs_phase_connecting_label">connecting…</string>
+    <string name="obs_phase_connected_label">connected</string>
+    <string name="obs_phase_auth_failed_label">wrong password</string>
+    <string name="obs_phase_retrying_label">reconnecting #%1$d</string>
+</resources>

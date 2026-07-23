@@ -29,7 +29,7 @@ internal class StreamService : Service() {
             return START_NOT_STICKY
         }
 
-        val channel = NotificationChannel(CHANNEL_ID, "Стрим", NotificationManager.IMPORTANCE_LOW)
+        val channel = NotificationChannel(CHANNEL_ID, getString(R.string.app_notification_channel_streaming), NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val contentIntent = PendingIntent.getActivity(
@@ -46,11 +46,11 @@ internal class StreamService : Service() {
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stream_notification)
-            .setContentTitle("Bondcast")
-            .setContentText("Идёт стрим")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.app_notification_content_text))
             .setOngoing(true)
             .setContentIntent(contentIntent)
-            .addAction(0, "Стоп", stopIntent)
+            .addAction(0, getString(R.string.app_notification_stop_action), stopIntent)
             .build()
 
         // типы camera/microphone для foreground-сервиса появились в API 30; на API 29 шлём без типа

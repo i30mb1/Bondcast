@@ -89,7 +89,7 @@ internal class TwitchSessionImpl(
     private suspend fun runDeviceLogin() {
         val scopes = listOf(TwitchConfig.SCOPE_CHAT_READ, TwitchConfig.SCOPE_CHATTERS, TwitchConfig.SCOPE_STREAM_KEY)
         val device = runCatching { api.requestDeviceCode(scopes) }.getOrElse {
-            _authState.value = TwitchAuthState.Failed(it.message ?: "не удалось получить код")
+            _authState.value = TwitchAuthState.Failed(it.message ?: "couldn't get a code")
             return
         }
         _authState.value = TwitchAuthState.AwaitingCode(device.userCode, device.verificationUri)
@@ -110,12 +110,12 @@ internal class TwitchSessionImpl(
                 else -> Unit // Pending или сетевой сбой — ждём дальше
             }
         }
-        _authState.value = TwitchAuthState.Failed("код истёк")
+        _authState.value = TwitchAuthState.Failed("code expired")
     }
 
     private suspend fun finishLogin(success: TokenResult.Success) {
         val validate = api.validate(success.access) ?: run {
-            _authState.value = TwitchAuthState.Failed("валидация токена не прошла")
+            _authState.value = TwitchAuthState.Failed("token validation failed")
             return
         }
         val fresh = TwitchTokens(

@@ -183,7 +183,7 @@ internal class TwitchApi(
             )
         }
         val message = json?.optString("message").orEmpty()
-        return if (message.contains("authorization_pending")) TokenResult.Pending else TokenResult.Failed(message.ifBlank { "код $code" })
+        return if (message.contains("authorization_pending")) TokenResult.Pending else TokenResult.Failed(message.ifBlank { "error $code" })
     }
 
     private fun execute(request: Request): Pair<Int, String> = okHttp.newCall(request).execute().use { it.code to (it.body?.string().orEmpty()) }

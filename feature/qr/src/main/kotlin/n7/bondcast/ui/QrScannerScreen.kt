@@ -34,11 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.LifecycleOwner
 import n7.bondcast.DiscordColors
+import n7.bondcast.feature.qr.R
 import n7.bondcast.qr.BarcodeAnalyzer
 import n7.bondcast.qr.QrPayload
 import n7.bondcast.qr.qrPayloadParser
@@ -64,10 +66,13 @@ public fun QrScannerScreen(
     var provider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var boundUseCases by remember { mutableStateOf<Array<UseCase>>(emptyArray()) }
 
+    val cameraOpenError = stringResource(R.string.qr_scanner_camera_open_error)
+    val cameraBusyError = stringResource(R.string.qr_scanner_camera_busy_error)
+
     LaunchedEffect(lifecycleOwner) {
         val cameraProvider = runCatching { ProcessCameraProvider.awaitInstance(context) }.getOrNull()
         if (cameraProvider == null) {
-            error = "Не удалось открыть камеру"
+            error = cameraOpenError
             return@LaunchedEffect
         }
         provider = cameraProvider
@@ -92,7 +97,7 @@ public fun QrScannerScreen(
         // без unbindAll(): чтобы не сорвать живой эфир, снимаем только свои use-case на выходе
         runCatching {
             cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-        }.onFailure { error = "Камера занята — останови эфир" }
+        }.onFailure { error = cameraBusyError }
     }
 
     DisposableEffect(Unit) {
@@ -115,9 +120,9 @@ public fun QrScannerScreen(
                 .border(3.dp, DiscordColors.accent, RoundedCornerShape(20.dp)),
         )
 
-        DiscordTopBar(title = "Сканировать QR", onBack = onBack)
+        DiscordTopBar(title = stringResource(R.string.qr_scanner_title_label), onBack = onBack)
 
-        val hint = error ?: "Наведи на QR: сведения OBS или настройки Bondcast"
+        val hint = error ?: stringResource(R.string.qr_scanner_hint_label)
         Text(
             text = hint,
             color = if (error != null) DiscordColors.accent else Color.White,
