@@ -32,6 +32,10 @@ const STREAM_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 // Имя ведущего идёт в URL оверлея (?host=...) и в innerHTML — не URL-путь и не файловое
 // имя, поэтому ограничение мягче: просто разумная длина, без переводов строк.
 const HOST_NAME_RE = /^[^\r\n]{1,40}$/;
+// GigaAM модели, которые реально пригодны как ASR-декодер для нашего asr.py
+// (transcribe() → текст) — не весь список из gigaam._MODEL_HASHES: например "ssl" —
+// это self-supervised backbone без текстового выхода, предлагать его в UI бессмысленно.
+const ASR_MODELS = ['v3_e2e_rnnt', 'v3_e2e_ctc'];
 
 // Субтитры (asr-obs) — отдельный тяжёлый GPU-контейнер, живёт вне ALLOWED/SPECS:
 // его Env зависит от того, к какому стриму сейчас подключили, поэтому generic
@@ -470,7 +474,7 @@ async function imageExists() {
   }
 }
 
-function captionsSpec(streamName) {
+function captionsSpec(streamName, asrModel, speakerThreshold) {
   // Эталон голоса появляется только после успешного энроллмента (см.
   // /api/captions/enroll) — до этого speaker-gate явно выключаем, чтобы не
   // упасть на .npy-файле, который либо не существует, либо (баг Docker при
@@ -483,6 +487,8 @@ function captionsSpec(streamName) {
       `ASR_OBS_SOURCE_URL=srt://srs:10080?streamid=live/${streamName}`,
       'ASR_OBS_CONFIG=/srv/config.yaml',
       `ASR_OBS_SPEAKER_ENABLED=${speakerEnabled}`,
+      `ASR_OBS_ASR_MODEL=${asrModel}`,
+      `ASR_OBS_SPEAKER_THRESHOLD=${speakerThreshold}`,
     ],
     ExposedPorts: { '8765/tcp': {} },
     HostConfig: {
@@ -620,6 +626,9 @@ app.post('/api/captions/connect', async (req, res) => {
   if (!STREAM_NAME_RE.test(name)) {
     return res.status(400).json({ error: 'некорректное имя стрима' });
   }
+  const asrModel = ASR_MODELS.includes(req.body && req.body.asrModel) ? req.body.asrModel : ASR_MODELS[0];
+  const rawThreshold = Number(req.body && req.body.speakerThreshold);
+  const speakerThreshold = Number.isFinite(rawThreshold) ? Math.min(1, Math.max(0, rawThreshold)) : 0.25;
   if (!PROJECT_ROOT) {
     return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
   }
@@ -636,7 +645,7 @@ app.post('/api/captions/connect', async (req, res) => {
 
     ensureReferenceFileIsReal();
     await ensureNetwork();
-    const container = await docker.createContainer(captionsSpec(name));
+    const container = await docker.createContainer(captionsSpec(name, asrModel, speakerThreshold));
     await container.start();
     res.json({ ok: true, streamName: name });
   } catch (e) {

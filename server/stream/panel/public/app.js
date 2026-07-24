@@ -318,6 +318,32 @@ hostNameInputEl.addEventListener('input', () => {
   localStorage.setItem(HOST_NAME_KEY, hostNameInputEl.value.trim());
 });
 
+// --- Настройки распознавания (asr_model, speaker_threshold) -----------------
+// В отличие от оформления оверлея эти два реально влияют на то, как считает
+// GPU-контейнер — но состояние тоже держим только в браузере (localStorage) и
+// просто подмешиваем в тело POST /api/captions/connect при подключении, не
+// заводя отдельный эндпоинт «сохранить настройки». Правило то же — меняются
+// только при следующем подключении, не на лету у уже работающего контейнера.
+const RECOGNITION_DEFAULTS = { asrModel: 'v3_e2e_rnnt', speakerThreshold: 0.25 };
+const recognitionInputs = {
+  asrModel: document.getElementById('asrModelSelect'),
+  speakerThreshold: document.getElementById('speakerThreshold'),
+};
+const speakerThresholdOutEl = document.getElementById('speakerThresholdOut');
+Object.keys(recognitionInputs).forEach((key) => {
+  const el = recognitionInputs[key];
+  const stored = localStorage.getItem(`bondcast_${key}`);
+  el.value = stored !== null ? stored : RECOGNITION_DEFAULTS[key];
+});
+speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
+recognitionInputs.asrModel.addEventListener('input', () => {
+  localStorage.setItem('bondcast_asrModel', recognitionInputs.asrModel.value);
+});
+recognitionInputs.speakerThreshold.addEventListener('input', () => {
+  localStorage.setItem('bondcast_speakerThreshold', recognitionInputs.speakerThreshold.value);
+  speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
+});
+
 // --- Оформление оверлея ------------------------------------------------------
 // Чисто клиентская настройка (overlay/index.html читает те же имена параметров
 // из URL) — панели/докеру про них знать не нужно, поэтому без похода на сервер:
@@ -331,15 +357,11 @@ const overlayInputs = {
   bgColor: document.getElementById('overlayBgColor'),
   bgOpacity: document.getElementById('overlayBgOpacity'),
 };
-Object.keys(overlayInputs).forEach((key) => {
-  const el = overlayInputs[key];
-  const stored = localStorage.getItem(`bondcast_overlay_${key}`);
-  el.value = stored !== null ? stored : OVERLAY_DEFAULTS[key];
-  el.addEventListener('input', () => {
-    localStorage.setItem(`bondcast_overlay_${key}`, el.value);
-    renderStreamCards(latestStreams); // перерисовать ссылку на оверлей с новыми параметрами
-  });
-});
+const overlayOutputs = {
+  size: document.getElementById('overlaySizeOut'),
+  lines: document.getElementById('overlayLinesOut'),
+  bgOpacity: document.getElementById('overlayBgOpacityOut'),
+};
 
 function hexToRgba(hex, alpha) {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
@@ -347,6 +369,29 @@ function hexToRgba(hex, alpha) {
   const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+function updateOverlayPreview() {
+  const preview = document.getElementById('overlayPreview');
+  preview.style.setProperty('--prev-size', `${overlayInputs.size.value}px`);
+  preview.style.setProperty('--prev-host', overlayInputs.hostColor.value);
+  preview.style.setProperty('--prev-guest', overlayInputs.guestColor.value);
+  preview.style.setProperty('--prev-bg', hexToRgba(overlayInputs.bgColor.value, Number(overlayInputs.bgOpacity.value) / 100));
+  if (overlayOutputs.size) overlayOutputs.size.textContent = overlayInputs.size.value;
+  if (overlayOutputs.lines) overlayOutputs.lines.textContent = overlayInputs.lines.value;
+  if (overlayOutputs.bgOpacity) overlayOutputs.bgOpacity.textContent = `${overlayInputs.bgOpacity.value}%`;
+}
+
+Object.keys(overlayInputs).forEach((key) => {
+  const el = overlayInputs[key];
+  const stored = localStorage.getItem(`bondcast_overlay_${key}`);
+  el.value = stored !== null ? stored : OVERLAY_DEFAULTS[key];
+  el.addEventListener('input', () => {
+    localStorage.setItem(`bondcast_overlay_${key}`, el.value);
+    updateOverlayPreview();
+    renderStreamCards(latestStreams); // перерисовать ссылку на оверлей с новыми параметрами
+  });
+});
+updateOverlayPreview();
 
 function buildOverlayUrl(baseUrl) {
   try {
@@ -373,7 +418,13 @@ function captionsButtonHtml(streamName) {
   if (captionsState.buildStatus === 'building') return '<button disabled>Собираю образ…</button>';
   if (!captionsState.imageExists) return '<button class="cap-build">Собрать образ для субтитров</button>';
   if (captionsState.connected && captionsState.streamName === streamName) {
-    return '<button class="cap-disconnect primary">Субтитры: отключить</button>';
+    // Модель/порог применяются только при пересоздании контейнера — «Применить»
+    // делает это одним кликом (тот же /connect, что и подключение с нуля), не
+    // заставляя сперва жать «Отключить».
+    return (
+      `<button class="cap-connect" data-name="${escapeHtml(streamName)}" title="Переподключить с текущими настройками распознавания">Применить настройки</button>` +
+      '<button class="cap-disconnect primary">Субтитры: отключить</button>'
+    );
   }
   return `<button class="cap-connect" data-name="${escapeHtml(streamName)}">Субтитры: подключить</button>`;
 }
@@ -503,7 +554,11 @@ async function connectCaptions(name) {
     const res = await fetch('/api/captions/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({
+        name,
+        asrModel: recognitionInputs.asrModel.value,
+        speakerThreshold: recognitionInputs.speakerThreshold.value,
+      }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');

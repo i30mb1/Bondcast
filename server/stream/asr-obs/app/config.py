@@ -34,11 +34,11 @@ class Config:
         return Config(
             source_url=os.environ.get("ASR_OBS_SOURCE_URL") or data.get("source_url", "srt://127.0.0.1:10080?streamid=live/stream"),
             sample_rate=int(data.get("sample_rate", 16000)),
-            asr_model=data.get("asr_model", "v3_e2e_rnnt"),
+            asr_model=os.environ.get("ASR_OBS_ASR_MODEL") or data.get("asr_model", "v3_e2e_rnnt"),
             device=data.get("device", "cuda"),
             speaker_enabled=(speaker_enabled_env.lower() in ("1", "true", "yes")) if speaker_enabled_env is not None else bool(data.get("speaker_enabled", True)),
             speaker_reference=data.get("speaker_reference", "reference.npy"),
-            speaker_threshold=float(data.get("speaker_threshold", 0.25)),
+            speaker_threshold=float(os.environ.get("ASR_OBS_SPEAKER_THRESHOLD") or data.get("speaker_threshold", 0.25)),
             ws_host=data.get("ws_host", "0.0.0.0"),
             ws_port=int(data.get("ws_port", 8765)),
             max_segment_sec=float(data.get("max_segment_sec", 20.0)),
