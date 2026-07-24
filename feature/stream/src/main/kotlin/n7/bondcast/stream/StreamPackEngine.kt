@@ -4,17 +4,18 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.net.Uri
 import android.util.Log
 import android.util.Size
-import io.github.thibaultbee.srtdroid.core.models.Stats
 import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.createDefaultTsServiceInfo
+import io.github.thibaultbee.streampack.core.elements.encoders.AudioCodecConfig
+import io.github.thibaultbee.streampack.core.elements.encoders.VideoCodecConfig
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.CompositeEndpointFactory
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.muxers.ts.TsMuxer
 import io.github.thibaultbee.streampack.core.elements.sources.video.IVideoSourceInternal
-import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
-import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
 import io.github.thibaultbee.streampack.core.streamers.single.cameraSingleStreamer
+import io.github.thibaultbee.streampack.core.streamers.single.setConfig
 import io.github.thibaultbee.streampack.ext.rtmp.configuration.mediadescriptor.RtmpMediaDescriptor
 import io.github.thibaultbee.streampack.ext.rtmp.elements.endpoints.RtmpEndpointFactory
 import io.github.thibaultbee.streampack.ext.srt.configuration.mediadescriptor.SrtMediaDescriptor
@@ -79,8 +80,8 @@ internal class StreamPackEngine(
         if (appliedSettings == settings) return@withLock
         if (current.isStreamingFlow.value) return@withLock
         current.setConfig(
-            AudioConfig(startBitrate = 128_000),
-            VideoConfig(
+            AudioCodecConfig(startBitrate = 128_000),
+            VideoCodecConfig(
                 // Twitch RTMP не понимает HEVC — форсим H.264 для прямого таргета
                 mimeType = if (settings.twitchDirectEnabled) VideoCodec.H264.mime else settings.videoCodec.mime,
                 startBitrate = settings.videoBitrateKbps * 1000,
@@ -97,7 +98,7 @@ internal class StreamPackEngine(
         // open() блокирует до конца хендшейка (секунды при недоступном сервере) — держим его ВНЕ
         // streamerLock, иначе switchCamera/setVideoBitrate висят до таймаута коннекта
         if (settings.twitchDirectEnabled) {
-            current.open(RtmpMediaDescriptor.fromUrl(settings.twitchRtmpUrl))
+            current.open(RtmpMediaDescriptor(Uri.parse(settings.twitchRtmpUrl)))
         } else {
             current.open(
                 SrtMediaDescriptor(
@@ -120,7 +121,7 @@ internal class StreamPackEngine(
     override suspend fun readStats(): StreamStats? = streamerLock.withLock {
         val current = streamer ?: return@withLock null
         if (!current.isOpenFlow.value) return@withLock null
-        val stats = runCatching { current.endpoint.metrics as? Stats }.getOrNull() ?: return@withLock null
+        val stats = runCatching { sink?.metrics }.getOrNull() ?: return@withLock null
         StreamStats(
             sendRateKbps = (stats.mbpsSendRate * 1000).roundToInt(),
             rttMs = stats.msRTT.roundToInt(),

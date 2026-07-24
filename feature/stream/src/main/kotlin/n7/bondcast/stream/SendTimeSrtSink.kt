@@ -70,9 +70,10 @@ internal class SendTimeSrtSink(private val coroutineDispatcher: CoroutineDispatc
             return (wallMs - mediaMs).coerceAtLeast(0L).toInt()
         }
 
-    override val metrics: Stats
+    // не переопределяет ISink: в 3.2.0 метрики — отдельный generic-интерфейс (WithEndpointMetrics),
+    // а нам проще брать srt-статистику напрямую у собственного сокета
+    val metrics: Stats?
         get() = socket?.bistats(clear = true, instantaneous = true)
-            ?: throw IllegalStateException("Socket is not initialized")
 
     private val _isOpenFlow = MutableStateFlow(false)
     override val isOpenFlow = _isOpenFlow.asStateFlow()

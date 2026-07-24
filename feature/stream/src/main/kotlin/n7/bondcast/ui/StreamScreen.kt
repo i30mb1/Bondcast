@@ -345,7 +345,7 @@ public fun StreamScreen(
         RailFadeColumn(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 24.dp, end = 8.dp, bottom = 4.dp)
+                .padding(top = 4.dp, end = 8.dp, bottom = 4.dp)
                 .fillMaxHeight(),
         ) {
             var index = 0
