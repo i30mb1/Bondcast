@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bondcast Stream — свой сервер для трансляций</title>
+<style>
+  /* Палитра 1:1 с панелью управления (panel/public) и темой мобильного приложения */
+  :root {
+    --bg: #0e0e0e; --elevated: #232323; --input-bg: #161616; --divider: #2a2a2a;
+    --text: #eeeeee; --muted: #999999; --muted2: #666666;
+    --green: #2fbf5b; --amber: #fbbf24; --accent: #ff3c3c; --accent-pressed: #d42f2f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 32px 20px 60px; max-width: 640px; margin: 0 auto; line-height: 1.55;
+  }
+  h1 {
+    font-size: 26px; margin: 8px 0 4px;
+    font-style: italic; font-weight: 900; letter-spacing: 0.03em;
+  }
+  p.lead { color: var(--muted); font-size: 15px; margin: 0 0 28px; }
+
+  .diagram {
+    background: var(--elevated); border: 1px solid var(--divider); border-radius: 10px;
+    padding: 14px 16px; font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+    color: var(--muted); overflow-x: auto; white-space: pre; margin: 0 0 32px;
+  }
+
+  .card {
+    background: var(--elevated); border: 1px solid var(--divider); border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 20px;
+  }
+  .card.warn { border-color: var(--amber); }
+  .card h2 {
+    font-size: 13px; margin: 0 0 10px; color: var(--accent);
+    font-style: italic; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .card.warn h2 { color: var(--amber); }
+  .card p { margin: 0 0 10px; font-size: 14px; color: var(--text); }
+  .card p:last-child { margin-bottom: 0; }
+  .card code {
+    background: var(--input-bg); border-radius: 5px; padding: 1px 6px;
+    font-family: "SF Mono", Consolas, monospace; font-size: 13px;
+  }
+
+  .cta {
+    display: block; text-align: center; background: var(--accent); color: #fff;
+    text-decoration: none; font-size: 17px; font-weight: 700; padding: 16px 20px;
+    border-radius: 12px; margin: 8px 0 6px;
+  }
+  .cta:hover { background: var(--accent-pressed); }
+  .cta-note { text-align: center; color: var(--muted2); font-size: 12px; margin: 0 0 32px; }
+
+  .footnote { color: var(--muted2); font-size: 12px; margin-top: -12px; margin-bottom: 32px; }
+  .footnote summary { cursor: pointer; color: var(--muted); }
+
+  .steps { padding-left: 20px; font-size: 14px; color: var(--text); }
+  .steps li { margin-bottom: 6px; }
+
+  .netcheck { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; }
+  .dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.bad { background: var(--accent); }
+  code.ip { background: var(--input-bg); border-radius: 6px; padding: 3px 8px; font-family: "SF Mono", Consolas, monospace; }
+
+  a.dev-link {
+    display: block; text-align: center; color: var(--muted2); font-size: 13px;
+    text-decoration: none; margin-top: 36px;
+  }
+  a.dev-link:hover { color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Bondcast Stream</h1>
+  <p class="lead">Свой сервер для трансляций из приложения Bondcast — принимает бондинг-стрим с телефона и раздаёт его дальше. Ставится на свой компьютер в один клик.</p>
+
+  <div class="diagram">телефон (N линков) ──▶ приём с бондингом ──▶ видеосервер ──▶ зрители / OBS
+Панель в браузере показывает адрес и QR для телефона.</div>
+
+  <div class="card warn">
+    <h2>Прежде чем скачивать</h2>
+    <p>
+      Windows при первом запуске почти наверняка покажет синий экран
+      «Windows защитила ваш компьютер» — это стандартное предупреждение для
+      новых программ без платной цифровой подписи, не признак вируса.
+      Нажми <b>«Подробнее»</b>, затем <b>«Выполнить в любом случае»</b>.
+    </p>
+  </div>
+
+  <a class="cta" href="https://github.com/i30mb1/bondcast-stream/releases/latest/download/BondcastStream-Setup.exe">
+    ⬇ Скачать установщик для Windows
+  </a>
+  <p class="cta-note">Бесплатно. Один .exe-файл, ничего распаковывать не нужно.</p>
+
+  <div class="card">
+    <h2>Что произойдёт</h2>
+    <ol class="steps">
+      <li>Запускаешь скачанный файл — мастер установки на русском.</li>
+      <li>Если на компьютере ещё нет Docker Desktop — установщик поставит его сам
+        (может попросить один раз перезагрузить компьютер — просто нажми на ярлык
+        на рабочем столе ещё раз после перезагрузки).</li>
+      <li>На рабочем столе и в меню Пуск появится ярлык «Запустить трансляцию».</li>
+      <li>Открывается панель в браузере — там адрес и QR-код для телефона.</li>
+    </ol>
+  </div>
+
+  <div class="card" id="netcheck">
+    <h2>Проверь сеть прямо сейчас</h2>
+    <div class="netcheck" id="netcheckStatus"><span class="dot"></span>определяю внешний IP…</div>
+    <p style="margin-top:10px;">Это тот адрес, на который телефон будет подключаться из интернета — он же появится в панели после установки. Если на компьютере включён VPN, здесь покажет адрес VPN, а не настоящий адрес роутера — на время трансляции VPN лучше выключить.</p>
+  </div>
+
+  <details class="footnote">
+    <summary>Что ставится под капотом, если интересно</summary>
+    Внутри — <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>
+    (бесплатный для личного использования и небольших компаний) и три контейнера:
+    видеосервер <a href="https://ossrs.io/">SRS</a>, приёмник бондинга <code>srtla-rec</code>
+    и веб-панель управления ими. Исходники и ручная установка — по ссылке внизу страницы.
+  </details>
+
+  <a class="dev-link" href="https://github.com/i30mb1/bondcast-stream">Для разработчиков: исходники и git clone →</a>
+
+  <script>
+    (async () => {
+      const el = document.getElementById('netcheckStatus');
+      try {
+        const res = await fetch('https://api.ipify.org?format=json');
+        const data = await res.json();
+        el.innerHTML = `<span class="dot ok"></span>Твой внешний IP: <code class="ip">${data.ip}</code>`;
+      } catch (e) {
+        el.innerHTML = `<span class="dot bad"></span>Не удалось определить IP — проверь подключение к интернету.`;
+      }
+    })();
+  </script>
+</body>
+</html>

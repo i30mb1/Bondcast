@@ -1,0 +1,13 @@
+source_url: "srt://127.0.0.1:10080?streamid=live/stream"
+sample_rate: 16000
+asr_model: "v3_e2e_rnnt"
+device: "cuda"
+speaker_enabled: false
+speaker_reference: "reference.npy"
+speaker_threshold: 0.25
+ws_host: "0.0.0.0"
+ws_port: 8765
+max_segment_sec: 20.0
+partial_interval_sec: 0.7
+min_speaker_sec: 1.0
+reconnect_delay_sec: 2.0

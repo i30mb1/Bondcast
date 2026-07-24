@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Docker не найден — Stream Panel</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36;
+    --text: #e6e8ec; --muted: #8b92a3; --accent: #5b8def; --red: #f87171;
+  }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 32px; max-width: 480px; text-align: center;
+  }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%; background: var(--red);
+    display: inline-block; margin-right: 8px; box-shadow: 0 0 8px var(--red);
+  }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+  a.btn {
+    display: inline-block; background: var(--accent); color: #fff; text-decoration: none;
+    padding: 10px 20px; border-radius: 8px; font-size: 14px;
+  }
+  a.btn:hover { filter: brightness(1.1); }
+  .hint { margin-top: 16px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1><span class="dot"></span>Docker не установлен</h1>
+    <p>
+      Эта панель управляет сервисами (видеосервер, приём стрима, панель) через Docker —
+      без него запустить их нельзя. Установи Docker Desktop, перезапусти компьютер, если попросит,
+      и нажми на ярлык <b>«Запустить трансляцию»</b> на рабочем столе ещё раз.
+    </p>
+    <a class="btn" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener">
+      Скачать Docker Desktop
+    </a>
+    <div class="hint">После установки Docker Desktop должен быть запущен (иконка кита в трее).</div>
+  </div>
+</body>
+</html>

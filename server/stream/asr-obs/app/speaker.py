@@ -49,6 +49,6 @@ class EcapaSpeakerGate:
 
 
 def speaker_gate(enabled: bool, reference_path: str, sample_rate: int, threshold: float) -> SpeakerGate:
-    if not enabled or not Path(reference_path).exists():
+    if not enabled or not Path(reference_path).is_file():
         return AlwaysHostGate()
     return EcapaSpeakerGate(reference_path, sample_rate, threshold)

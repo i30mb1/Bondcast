@@ -1,0 +1,92 @@
+networks:
+  bondcast-net:
+    name: bondcast-net
+
+services:
+  srs:
+    image: ossrs/srs:v6.0-r0
+    container_name: srs
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    restart: unless-stopped
+    networks: [bondcast-net]
+    ports:
+      - "1935:1935"
+      - "1985:1985"
+      - "8080:8080"
+      - "10080:10080/udp"
+    volumes:
+      - ./srs/srs.conf:/usr/local/srs/conf/srs.conf
+
+  srtla-rec:
+    build: ./srtla-rec
+    image: srtla-rec:latest
+    container_name: srtla-rec
+    entrypoint: ["srtla_rec"]
+    command: ["5000", "srs", "10080"]
+    restart: unless-stopped
+    networks: [bondcast-net]
+    ports:
+      - "5000:5000/udp"
+    depends_on:
+      - srs
+
+  panel:
+    build: ./panel
+    image: stream-panel:latest
+    container_name: stream-panel
+    restart: unless-stopped
+    networks: [bondcast-net]
+    ports:
+      - "8081:8081"
+    environment:
+      # Абсолютный путь к этой папке на хосте — нужен панели, чтобы монтировать
+      # правильные bind-пути при пересоздании удалённых контейнеров. Задаётся start.bat.
+      - PROJECT_ROOT=${PROJECT_ROOT}
+      # LAN IP(-ы) этой машины — панель сама их не видит (сидит в Docker-сети),
+      # поэтому start.bat вычисляет их снаружи (PowerShell) и передаёт сюда.
+      - HOST_IPS=${HOST_IPS}
+      - PANEL_USER=
+      - PANEL_PASS=
+    volumes:
+      # Доступ к Docker Engine — стартовать/стопать/пересоздавать остальные сервисы.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Контекст сборки asr-worker — панель билдит образ сама (кнопка «Собрать» в дашборде),
+      # ей нужен физический доступ к файлам, не только хостовый путь для Binds.
+      - ./asr-obs:/build-context/asr-obs:ro
+
+  # Тяжёлый GPU-сервис (распознавание речи в субтитры) — НЕ поднимается на обычный
+  # "docker compose up -d" (profiles), собирается лениво по кнопке в панели
+  # (POST /api/captions/build), запускается/пересоздаётся под конкретный стрим через
+  # POST /api/captions/connect. deploy.resources здесь — на случай прямого "docker compose
+  # up asr-worker" в обход панели; сама панель транслирует это в HostConfig.DeviceRequests.
+  asr-worker:
+    build: ./asr-obs
+    image: bondcast-asr-worker:latest
+    profiles: ["captions"]
+    networks: [bondcast-net]
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./asr-obs/config.yaml:/srv/config.yaml:ro
+      - ./asr-obs/reference.npy:/srv/reference.npy:ro
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Статичный оверлей субтитров для OBS Browser Source — лёгкий, всегда доступен.
+  overlay:
+    image: nginx:alpine
+    restart: unless-stopped
+    networks: [bondcast-net]
+    volumes:
+      - ./asr-obs/overlay:/usr/share/nginx/html:ro
+    ports:
+      - "8082:80"
+
+volumes:
+  hf-cache:

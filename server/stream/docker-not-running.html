@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Docker не запущен — Stream Panel</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36;
+    --text: #e6e8ec; --muted: #8b92a3; --accent: #5b8def; --amber: #fbbf24;
+  }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 32px; max-width: 480px; text-align: center;
+  }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%; background: var(--amber);
+    display: inline-block; margin-right: 8px; box-shadow: 0 0 8px var(--amber);
+  }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+  code {
+    background: #0a0c10; border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 6px; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1><span class="dot"></span>Docker Desktop не отвечает</h1>
+    <p>
+      Программа уже пыталась запустить Docker Desktop сама и подождала
+      пару минут — не получилось. Открой Docker Desktop из меню Пуск вручную и
+      посмотри, не показывает ли он ошибку. Если он просто долго думает —
+      дождись, пока иконка кита в трее перестанет "грузиться", и нажми на ярлык
+      «Запустить трансляцию» на рабочем столе ещё раз. Если ошибка — может
+      помочь перезагрузка компьютера.
+    </p>
+  </div>
+</body>
+</html>

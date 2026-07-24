@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bondcast — панель</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  /* Палитра и типографика — 1:1 с core/ui/Theme.kt и street/StreetType.kt мобильного приложения */
+  :root {
+    --bg: #0e0e0e;
+    --elevated: #232323;
+    --input-bg: #161616;
+    --text: #eeeeee;
+    --text-secondary: #aaaaaa;
+    --text-muted: #666666;
+    --divider: #2a2a2a;
+    --accent: #ff3c3c;
+    --accent-pressed: #d42f2f;
+    --green: #2fbf5b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 24px; max-width: 720px; margin: 0 auto;
+  }
+  h1.title {
+    font-size: 20px; margin: 24px 0 4px;
+    font-style: italic; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  a.back-link { display: inline-block; color: var(--text-muted); font-size: 13px; text-decoration: none; margin-bottom: 24px; }
+  a.back-link:hover { color: var(--text); }
+
+  .section-label {
+    font-size: 12px; font-style: italic; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--accent); margin: 24px 4px 8px;
+  }
+
+  .list-card { background: var(--bg); border: 1px solid var(--divider); border-radius: 8px; overflow: hidden; }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--divider); }
+  .row:first-child { border-top: none; }
+  .row-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.stopped { background: var(--accent); }
+
+  .row-label { flex: 1; min-width: 0; }
+  .row-label b { font-size: 14px; font-weight: 600; }
+  .row-meta { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  button {
+    background: var(--elevated); color: var(--text-secondary);
+    border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; white-space: nowrap;
+  }
+  button.primary { background: var(--accent); color: #fff; }
+  button:hover:not(:disabled):not(.primary) { background: #2c2c2c; }
+  button.primary:hover:not(:disabled) { background: var(--accent-pressed); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .field { padding: 12px 16px; border-top: 1px solid var(--divider); }
+  .field:first-child { border-top: none; }
+  .field label {
+    display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .field.inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .field.inline label { margin: 0; }
+
+  .name-row { display: flex; gap: 8px; }
+  input[type=text] {
+    background: var(--input-bg); border: 1px solid transparent; color: var(--text);
+    padding: 10px 12px; border-radius: 8px; font-size: 13px; width: 100%;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  button.dice-btn { flex-shrink: 0; font-size: 16px; padding: 0 14px; line-height: 1; }
+
+  .host-block h4 {
+    margin: 0; padding: 12px 16px 4px; font-size: 11px; font-weight: normal;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;
+    border-top: 1px solid var(--divider);
+  }
+  .subgroup-title {
+    margin: 4px 0 0; padding: 10px 16px 2px; font-size: 12px; font-weight: 600;
+    color: var(--text);
+  }
+  .addr-row { display: flex; align-items: center; gap: 8px; padding: 6px 16px; }
+  .addr-row span.addr-label {
+    width: 150px; flex-shrink: 0; font-size: 12px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .addr-row code {
+    flex: 1; min-width: 0; background: var(--input-bg); border-radius: 6px;
+    padding: 6px 10px; font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .addr-row button { padding: 6px 12px; flex-shrink: 0; }
+
+  /* "?" с подсказкой-пузырём — что именно сделать с этим полем, куда его вставить */
+  .info {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 50%; background: var(--elevated);
+    color: var(--text-muted); font-size: 10px; font-weight: 700; cursor: help;
+    flex-shrink: 0; position: relative;
+  }
+  .info:hover, .info:focus { color: #fff; background: var(--accent); outline: none; }
+  .info .bubble {
+    display: none; position: absolute; bottom: 130%; left: 0; margin-bottom: 4px;
+    background: #1a1a1a; color: var(--text); border: 1px solid var(--divider);
+    border-radius: 8px; padding: 10px 12px; font-size: 12px; font-weight: normal;
+    line-height: 1.5; width: 240px; z-index: 20; white-space: normal; text-align: left;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  .info:hover .bubble, .info:focus .bubble { display: block; }
+
+  /* Свёрнутые подпункты внутри карточки подключения (другие способы посмотреть / стрим с компа) */
+  details.nested { margin: 2px 0; }
+  details.nested summary {
+    cursor: pointer; font-size: 12px; color: var(--text-muted); list-style: none; padding: 8px 16px;
+  }
+  details.nested summary:hover { color: var(--text); }
+  details.nested summary::-webkit-details-marker { display: none; }
+  details.nested summary::before { content: "▸ "; }
+  details.nested[open] summary::before { content: "▾ "; }
+
+  details.advanced { margin-top: 24px; }
+  details.advanced summary {
+    cursor: pointer; font-size: 12px; font-style: italic; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); padding: 8px 4px; list-style: none;
+  }
+  details.advanced summary::-webkit-details-marker { display: none; }
+  details.advanced summary::before { content: "▸ "; }
+  details.advanced[open] summary::before { content: "▾ "; }
+  details.advanced .list-card { margin-top: 8px; }
+
+  video { width: 100%; background: #000; border-radius: 8px; display: block; }
+  .tabs { display: flex; gap: 4px; padding: 12px 16px 0; }
+  .tabs button { background: var(--input-bg); }
+  .tabs button.active { background: var(--accent); color: #fff; }
+  pre#log {
+    background: var(--input-bg); border-radius: 8px; margin: 12px 16px;
+    padding: 10px; height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .stats { display: flex; gap: 20px; padding: 12px 16px 0; font-size: 13px; color: var(--text-muted); }
+  .stats b { color: var(--text); font-size: 16px; font-family: "SF Mono", Consolas, monospace; }
+  canvas#bitrateChart { max-height: 140px; margin: 12px 16px 16px; }
+</style>
+</head>
+<body>
+  <h1 class="title">Bondcast</h1>
+  <a href="index.html" class="back-link">← Быстрый старт</a>
+
+  <div class="section-label">Сервисы</div>
+  <div class="list-card" id="cards"></div>
+
+  <div class="section-label">Активные стримы</div>
+  <div class="list-card" id="streamCards">
+    <div class="row"><span class="row-label"><span class="row-meta">пока никто не стримит</span></span></div>
+  </div>
+
+  <div class="section-label">Подключение</div>
+  <div class="list-card">
+    <div class="field">
+      <label for="streamName">Имя стрима</label>
+      <div class="name-row">
+        <input type="text" id="streamName" />
+        <button type="button" class="dice-btn" id="regenName" title="Сгенерировать другое имя">🎲</button>
+      </div>
+    </div>
+    <div id="connections"></div>
+  </div>
+
+  <details class="advanced">
+    <summary>Диагностика — логи, битрейт, превью</summary>
+    <div class="list-card">
+      <div class="field inline">
+        <label>Превью (HTTP-FLV)</label>
+        <button id="loadVideo">Загрузить</button>
+      </div>
+      <div class="field">
+        <video id="videoEl" controls muted></video>
+      </div>
+
+      <div class="stats">
+        <div>avg 30s: <b id="ikAvg30">—</b> kbps</div>
+        <div>avg 5s: <b id="ikAvg5">—</b> kbps</div>
+      </div>
+      <canvas id="bitrateChart" height="60"></canvas>
+
+      <div class="tabs">
+        <button data-name="srs" class="active">srs</button>
+        <button data-name="srtla-rec">srtla-rec</button>
+      </div>
+      <pre id="log"></pre>
+    </div>
+  </details>
+
+  <script src="https://cdn.jsdelivr.net/npm/flv.js@1/dist/flv.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

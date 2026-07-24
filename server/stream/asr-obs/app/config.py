@@ -31,7 +31,7 @@ class Config:
         if p.exists():
             data = yaml.safe_load(p.read_text()) or {}
         return Config(
-            source_url=data.get("source_url", "srt://127.0.0.1:10080?streamid=live/stream"),
+            source_url=os.environ.get("ASR_OBS_SOURCE_URL") or data.get("source_url", "srt://127.0.0.1:10080?streamid=live/stream"),
             sample_rate=int(data.get("sample_rate", 16000)),
             asr_model=data.get("asr_model", "v3_e2e_rnnt"),
             device=data.get("device", "cuda"),
