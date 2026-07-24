@@ -318,6 +318,50 @@ hostNameInputEl.addEventListener('input', () => {
   localStorage.setItem(HOST_NAME_KEY, hostNameInputEl.value.trim());
 });
 
+// --- Оформление оверлея ------------------------------------------------------
+// Чисто клиентская настройка (overlay/index.html читает те же имена параметров
+// из URL) — панели/докеру про них знать не нужно, поэтому без похода на сервер:
+// значения хранятся в localStorage и подмешиваются в overlayUrl прямо в браузере.
+const OVERLAY_DEFAULTS = { size: 34, lines: 3, hostColor: '#ff3b30', guestColor: '#34c759', bgColor: '#000000', bgOpacity: 60 };
+const overlayInputs = {
+  size: document.getElementById('overlaySize'),
+  lines: document.getElementById('overlayLines'),
+  hostColor: document.getElementById('overlayHostColor'),
+  guestColor: document.getElementById('overlayGuestColor'),
+  bgColor: document.getElementById('overlayBgColor'),
+  bgOpacity: document.getElementById('overlayBgOpacity'),
+};
+Object.keys(overlayInputs).forEach((key) => {
+  const el = overlayInputs[key];
+  const stored = localStorage.getItem(`bondcast_overlay_${key}`);
+  el.value = stored !== null ? stored : OVERLAY_DEFAULTS[key];
+  el.addEventListener('input', () => {
+    localStorage.setItem(`bondcast_overlay_${key}`, el.value);
+    renderStreamCards(latestStreams); // перерисовать ссылку на оверлей с новыми параметрами
+  });
+});
+
+function hexToRgba(hex, alpha) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return `rgba(0,0,0,${alpha})`;
+  const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function buildOverlayUrl(baseUrl) {
+  try {
+    const u = new URL(baseUrl);
+    u.searchParams.set('size', overlayInputs.size.value || OVERLAY_DEFAULTS.size);
+    u.searchParams.set('lines', overlayInputs.lines.value || OVERLAY_DEFAULTS.lines);
+    u.searchParams.set('hostColor', overlayInputs.hostColor.value || OVERLAY_DEFAULTS.hostColor);
+    u.searchParams.set('guestColor', overlayInputs.guestColor.value || OVERLAY_DEFAULTS.guestColor);
+    u.searchParams.set('bg', hexToRgba(overlayInputs.bgColor.value, (Number(overlayInputs.bgOpacity.value) || OVERLAY_DEFAULTS.bgOpacity) / 100));
+    return u.toString();
+  } catch (e) {
+    return baseUrl; // overlayUrl ещё не пришёл с сервера (null) — просто ничего не подмешиваем
+  }
+}
+
 function formatCodec(video, audio) {
   const parts = [];
   if (video) parts.push(`${video.codec} ${video.width}x${video.height}`);
@@ -335,7 +379,12 @@ function captionsButtonHtml(streamName) {
 }
 
 function enrollButtonHtml(streamName) {
-  if (!captionsState.imageExists) return ''; // нечем считать эмбеддинг без образа — сначала «Собрать»
+  // Кнопка всегда видна (раньше пропадала совсем, пока не собран образ — выглядело
+  // как «не работает»); без образа — просто задизейблена с понятной причиной,
+  // а не молча исчезает.
+  if (!captionsState.imageExists) {
+    return '<button disabled title="Сначала собери образ — кнопка «Собрать образ для субтитров» справа">🎙 Записать голос ведущего</button>';
+  }
   if (captionsState.enrollStatus === 'running') return '<button disabled>Идёт запись…</button>';
   const label = captionsState.hasVoiceReference ? 'Перезаписать голос' : 'Записать голос ведущего';
   return `<button class="cap-enroll" data-name="${escapeHtml(streamName)}" title="${ENROLL_DURATION_SEC} секунд — говорить должен только ведущий">🎙 ${label}</button>`;
@@ -349,7 +398,7 @@ function hostStatusHtml() {
     return `<div class="row"><span class="row-label"><span class="row-meta">Запись не удалась: ${escapeHtml(captionsState.enrollError || '')}</span></span></div>`;
   }
   if (captionsState.hasVoiceReference) {
-    return `<div class="row"><span class="row-label"><span class="row-meta">Эталон голоса записан${captionsState.hostName ? ': ' + escapeHtml(captionsState.hostName) : ''} — реплики других делятся на «Гость»</span></span></div>`;
+    return `<div class="row"><span class="row-label"><span class="row-meta">Эталон голоса записан${captionsState.hostName ? ': ' + escapeHtml(captionsState.hostName) : ''} — реплики других помечаются как «Кто-то»</span></span></div>`;
   }
   return '';
 }
@@ -375,7 +424,7 @@ function renderStreamCards(streams) {
     </div>
     ${
       captionsState.connected && captionsState.streamName === s.name
-        ? addrRow('Оверлей для OBS', captionsState.overlayUrl, 'Добавь как Browser Source в OBS — субтитры поверх видео.')
+        ? addrRow('Оверлей для OBS', buildOverlayUrl(captionsState.overlayUrl), 'Добавь как Browser Source в OBS — субтитры поверх видео. Оформление ниже.')
         : ''
     }`,
     )

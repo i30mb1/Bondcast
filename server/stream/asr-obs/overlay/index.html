@@ -5,20 +5,26 @@
 <title>Bondcast captions</title>
 <style>
   html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  :root {
+    --caption-size: 34px;
+    --host-color: #ff3b30;
+    --guest-color: #34c759;
+    --caption-bg: rgba(0,0,0,0.6);
+  }
   #captions {
-    position: absolute; left: 0; right: 0; bottom: 40px;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    position: absolute; left: 40px; right: 40px; bottom: 40px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
     font-family: "Inter", system-ui, sans-serif;
   }
   .line {
     max-width: 80vw; padding: 8px 16px; border-radius: 10px;
-    background: rgba(0,0,0,0.6); color: #fff;
-    font-size: 34px; font-weight: 600; line-height: 1.2;
+    background: var(--caption-bg); color: #fff;
+    font-size: var(--caption-size); font-weight: 600; line-height: 1.2;
     text-shadow: 0 2px 4px rgba(0,0,0,0.8);
     transition: opacity 0.15s ease;
   }
-  .host .name { color: #ff3b30; }
-  .guest .name { color: #34c759; }
+  .host .name { color: var(--host-color); }
+  .guest .name { color: var(--guest-color); }
   .name { margin-right: 10px; font-weight: 800; }
   .partial { opacity: 0.65; }
 </style>
@@ -33,13 +39,28 @@
 
   var WS_URL = queryParam("ws") || "ws://" + location.hostname + ":8765";
   var HOST_NAME = queryParam("host") || "Ведущий";
-  var MAX_LINES = 3;
+  var MAX_LINES = Math.max(1, parseInt(queryParam("lines"), 10) || 3);
   var container = document.getElementById("captions");
   var activeSeq = null;
   var activeEl = null;
 
+  // Оформление — через CSS custom properties, значения берём из URL (?size=/?hostColor=/
+  // ?guestColor=/?bg=), не валидируем строго: некорректный CSS-цвет браузер просто
+  // проигнорирует и останется дефолт, ничего не сломает и не выполнится как код.
+  (function applyStyleParams() {
+    var root = document.documentElement.style;
+    var size = parseInt(queryParam("size"), 10);
+    if (size > 0) root.setProperty("--caption-size", size + "px");
+    var hostColor = queryParam("hostColor");
+    if (hostColor) root.setProperty("--host-color", hostColor);
+    var guestColor = queryParam("guestColor");
+    if (guestColor) root.setProperty("--guest-color", guestColor);
+    var bg = queryParam("bg");
+    if (bg) root.setProperty("--caption-bg", bg);
+  })();
+
   function label(speaker) {
-    return speaker === "host" ? HOST_NAME : "Гость";
+    return speaker === "host" ? HOST_NAME : "Кто-то";
   }
 
   function escapeHtml(s) {
