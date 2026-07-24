@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 
 from .events import Segment
+
+log = logging.getLogger("speaker")
 
 HOST = "host"
 GUEST = "guest"
@@ -45,10 +48,14 @@ class EcapaSpeakerGate:
             return GUEST
         emb = self.embed(pcm)
         similarity = float(np.dot(emb, self._reference))
-        return HOST if similarity >= self._threshold else GUEST
+        speaker = HOST if similarity >= self._threshold else GUEST
+        log.info("[%.2f-%.2f] speaker=%s similarity=%.3f (порог %.3f)", segment.start, segment.end, speaker, similarity, self._threshold)
+        return speaker
 
 
 def speaker_gate(enabled: bool, reference_path: str, sample_rate: int, threshold: float) -> SpeakerGate:
     if not enabled or not Path(reference_path).is_file():
+        log.info("speaker gate: выключен (enabled=%s, эталон %s) — все реплики будут host", enabled, reference_path)
         return AlwaysHostGate()
+    log.info("speaker gate: ECAPA включён, эталон %s, порог %.3f", reference_path, threshold)
     return EcapaSpeakerGate(reference_path, sample_rate, threshold)

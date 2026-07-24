@@ -12,9 +12,16 @@ from .speaker import speaker_gate
 from .vad import vad
 
 
+log = logging.getLogger("main")
+
+
 def build_and_run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     cfg = Config.load()
+    log.info(
+        "старт: source=%s model=%s device=%s speaker_enabled=%s ws=%s:%d",
+        cfg.source_url, cfg.asr_model, cfg.device, cfg.speaker_enabled, cfg.ws_host, cfg.ws_port,
+    )
     source = audio_source(cfg.source_url, cfg.sample_rate, cfg.reconnect_delay_sec)
     detector = vad(cfg.sample_rate, cfg.max_segment_sec, cfg.partial_interval_sec)
     recognizer = asr(cfg.asr_model, cfg.sample_rate, cfg.device)

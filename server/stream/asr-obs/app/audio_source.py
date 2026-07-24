@@ -25,6 +25,7 @@ class FfmpegAudioSource:
         self._running = False
 
     def _spawn(self) -> subprocess.Popen:
+        log.info("подключаюсь к источнику: %s", self._url)
         return subprocess.Popen(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Protocol
 
 import websockets
 
 from .events import CaptionEvent
+
+log = logging.getLogger("publisher")
 
 
 class Publisher(Protocol):
@@ -21,10 +24,12 @@ class WsPublisher:
 
     async def _handler(self, ws):
         self._clients.add(ws)
+        log.info("оверлей подключился: %s, всего клиентов: %d", ws.remote_address, len(self._clients))
         try:
             await ws.wait_closed()
         finally:
             self._clients.discard(ws)
+            log.info("оверлей отключился: %s, осталось клиентов: %d", ws.remote_address, len(self._clients))
 
     async def serve(self) -> None:
         async with websockets.serve(self._handler, self._host, self._port):
