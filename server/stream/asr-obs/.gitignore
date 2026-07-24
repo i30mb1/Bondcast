@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
 reference.npy
+host_name.txt
 host_samples/

@@ -26,20 +26,31 @@
 <body>
 <div id="captions"></div>
 <script>
-  var match = location.search.match(/[?&]ws=([^&]+)/);
-  var WS_URL = match ? decodeURIComponent(match[1]) : "ws://" + location.hostname + ":8765";
+  function queryParam(name) {
+    var m = location.search.match(new RegExp("[?&]" + name + "=([^&]+)"));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  var WS_URL = queryParam("ws") || "ws://" + location.hostname + ":8765";
+  var HOST_NAME = queryParam("host") || "Ведущий";
   var MAX_LINES = 3;
   var container = document.getElementById("captions");
   var activeSeq = null;
   var activeEl = null;
 
   function label(speaker) {
-    return speaker === "host" ? "Ведущий" : "Гость";
+    return speaker === "host" ? HOST_NAME : "Гость";
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
   }
 
   function fill(el, evt) {
     el.className = "line " + evt.speaker + (evt.final ? "" : " partial");
-    el.innerHTML = '<span class="name">' + label(evt.speaker) + ':</span>' + evt.text;
+    el.innerHTML = '<span class="name">' + escapeHtml(label(evt.speaker)) + ':</span>' + escapeHtml(evt.text);
   }
 
   function trim() {

@@ -302,8 +302,21 @@ openLogStream(currentTab);
 // текстового поля выше (для ручного OBS/QR), здесь опрашиваем сам SRS через
 // панель (/api/streams), чтобы показать, что реально сейчас идёт в эфир.
 const streamCardsEl = document.getElementById('streamCards');
-let captionsState = { connected: false, streamName: null, overlayUrl: null, imageExists: false, buildStatus: 'idle', buildError: null };
+let captionsState = {
+  connected: false, streamName: null, overlayUrl: null, imageExists: false, buildStatus: 'idle', buildError: null,
+  hostName: null, hasVoiceReference: false, enrollStatus: 'idle', enrollError: null,
+};
 let capBusy = false; // защита от повторного клика, пока предыдущее действие ещё в полёте
+
+// Должно совпадать с ENROLL_DURATION_SEC в panel/server.js — тут используется только
+// для текста кнопки, реальную длительность записи задаёт сервер.
+const ENROLL_DURATION_SEC = 15;
+const HOST_NAME_KEY = 'bondcast_host_name';
+const hostNameInputEl = document.getElementById('hostNameInput');
+hostNameInputEl.value = localStorage.getItem(HOST_NAME_KEY) || '';
+hostNameInputEl.addEventListener('input', () => {
+  localStorage.setItem(HOST_NAME_KEY, hostNameInputEl.value.trim());
+});
 
 function formatCodec(video, audio) {
   const parts = [];
@@ -321,12 +334,32 @@ function captionsButtonHtml(streamName) {
   return `<button class="cap-connect" data-name="${escapeHtml(streamName)}">Субтитры: подключить</button>`;
 }
 
+function enrollButtonHtml(streamName) {
+  if (!captionsState.imageExists) return ''; // нечем считать эмбеддинг без образа — сначала «Собрать»
+  if (captionsState.enrollStatus === 'running') return '<button disabled>Идёт запись…</button>';
+  const label = captionsState.hasVoiceReference ? 'Перезаписать голос' : 'Записать голос ведущего';
+  return `<button class="cap-enroll" data-name="${escapeHtml(streamName)}" title="${ENROLL_DURATION_SEC} секунд — говорить должен только ведущий">🎙 ${label}</button>`;
+}
+
+function hostStatusHtml() {
+  if (captionsState.enrollStatus === 'running') {
+    return `<div class="row"><span class="row-label"><span class="row-meta">🎙 Запись голоса — говори ${ENROLL_DURATION_SEC}с без пауз, лог ниже</span></span></div>`;
+  }
+  if (captionsState.enrollStatus === 'error') {
+    return `<div class="row"><span class="row-label"><span class="row-meta">Запись не удалась: ${escapeHtml(captionsState.enrollError || '')}</span></span></div>`;
+  }
+  if (captionsState.hasVoiceReference) {
+    return `<div class="row"><span class="row-label"><span class="row-meta">Эталон голоса записан${captionsState.hostName ? ': ' + escapeHtml(captionsState.hostName) : ''} — реплики других делятся на «Гость»</span></span></div>`;
+  }
+  return '';
+}
+
 function renderStreamCards(streams) {
   if (!streams.length) {
     streamCardsEl.innerHTML = '<div class="row"><span class="row-label"><span class="row-meta">пока никто не стримит</span></span></div>';
     return;
   }
-  streamCardsEl.innerHTML = streams
+  streamCardsEl.innerHTML = hostStatusHtml() + streams
     .map(
       (s) => `
     <div class="row">
@@ -336,6 +369,7 @@ function renderStreamCards(streams) {
       </div>
       <div class="row-actions">
         <button class="watch-stream" data-name="${escapeHtml(s.name)}">Смотреть</button>
+        ${enrollButtonHtml(s.name)}
         ${captionsButtonHtml(s.name)}
       </div>
     </div>
@@ -359,6 +393,7 @@ function renderStreamCards(streams) {
   streamCardsEl.querySelectorAll('.cap-build').forEach((btn) => { btn.onclick = buildCaptions; });
   streamCardsEl.querySelectorAll('.cap-connect').forEach((btn) => { btn.onclick = () => connectCaptions(btn.dataset.name); });
   streamCardsEl.querySelectorAll('.cap-disconnect').forEach((btn) => { btn.onclick = disconnectCaptions; });
+  streamCardsEl.querySelectorAll('.cap-enroll').forEach((btn) => { btn.onclick = () => enrollHost(btn.dataset.name); });
   streamCardsEl.querySelectorAll('.copy-addr').forEach((btn) => {
     btn.onclick = () => {
       navigator.clipboard.writeText(btn.dataset.value);
@@ -455,8 +490,60 @@ function openBuildLogStream() {
   document.querySelector('details.advanced').open = true;
   currentSource = new EventSource('/api/captions/build/logs');
   currentSource.onmessage = (e) => appendLog(e.data);
-  currentSource.addEventListener('done', () => pollStreamsAndCaptions());
-  currentSource.onerror = () => appendLog('[поток логов сборки прерван]');
+  currentSource.addEventListener('done', () => {
+    currentSource.close(); // сборка кончилась — дальше эндпоинту стримить нечего, не держим соединение
+    pollStreamsAndCaptions();
+  });
+  // EventSource по умолчанию переподключается на любое закрытие соединения — тут это
+  // не нужно (сборка не повторяется сама), close() останавливает автопереподключение.
+  currentSource.onerror = () => {
+    appendLog('[поток логов сборки прерван]');
+    currentSource.close();
+  };
+}
+
+async function enrollHost(streamName) {
+  const hostName = hostNameInputEl.value.trim();
+  if (!hostName) {
+    hostNameInputEl.focus();
+    alert('Сначала впиши имя ведущего.');
+    return;
+  }
+  if (capBusy) return;
+  capBusy = true;
+  try {
+    const res = await fetch('/api/captions/enroll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ streamName, hostName }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'unknown error');
+    openEnrollLogStream();
+  } catch (e) {
+    alert(`Запись голоса: ${e.message}`);
+  } finally {
+    capBusy = false;
+    pollStreamsAndCaptions();
+  }
+}
+
+function openEnrollLogStream() {
+  // Тот же приём, что и у сборки образа (openBuildLogStream) — тот же <pre id="log">,
+  // временно переключённый на другой источник.
+  if (currentSource) currentSource.close();
+  logLines = [];
+  logEl.textContent = '';
+  document.querySelector('details.advanced').open = true;
+  currentSource = new EventSource('/api/containers/asr-enroll/logs');
+  currentSource.onmessage = (e) => appendLog(e.data);
+  // Контейнер asr-enroll удаляется сразу после записи (см. server.js) — без close()
+  // EventSource по умолчанию переподключался бы к уже несуществующему контейнеру
+  // раз в ~3с бесконечно, спамя одну и ту же строку в лог (поймано вживую при тесте).
+  currentSource.onerror = () => {
+    appendLog('[поток логов записи прерван]');
+    currentSource.close();
+  };
 }
 
 pollStreamsAndCaptions();

@@ -30,12 +30,13 @@ class Config:
         p = Path(resolved)
         if p.exists():
             data = yaml.safe_load(p.read_text()) or {}
+        speaker_enabled_env = os.environ.get("ASR_OBS_SPEAKER_ENABLED")
         return Config(
             source_url=os.environ.get("ASR_OBS_SOURCE_URL") or data.get("source_url", "srt://127.0.0.1:10080?streamid=live/stream"),
             sample_rate=int(data.get("sample_rate", 16000)),
             asr_model=data.get("asr_model", "v3_e2e_rnnt"),
             device=data.get("device", "cuda"),
-            speaker_enabled=bool(data.get("speaker_enabled", True)),
+            speaker_enabled=(speaker_enabled_env.lower() in ("1", "true", "yes")) if speaker_enabled_env is not None else bool(data.get("speaker_enabled", True)),
             speaker_reference=data.get("speaker_reference", "reference.npy"),
             speaker_threshold=float(data.get("speaker_threshold", 0.25)),
             ws_host=data.get("ws_host", "0.0.0.0"),

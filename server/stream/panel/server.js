@@ -1,5 +1,6 @@
 const express = require('express');
 const Docker = require('dockerode');
+const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
 const { EventEmitter } = require('events');
@@ -28,6 +29,9 @@ const NETWORK = 'bondcast-net';
 // Имя стрима идёт в SRT streamid / URL-адреса — то же ограничение символов, что уже
 // негласно подразумевает генератор имён в app.js/setup.js (adjective-noun-число).
 const STREAM_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+// Имя ведущего идёт в URL оверлея (?host=...) и в innerHTML — не URL-путь и не файловое
+// имя, поэтому ограничение мягче: просто разумная длина, без переводов строк.
+const HOST_NAME_RE = /^[^\r\n]{1,40}$/;
 
 // Субтитры (asr-obs) — отдельный тяжёлый GPU-контейнер, живёт вне ALLOWED/SPECS:
 // его Env зависит от того, к какому стриму сейчас подключили, поэтому generic
@@ -35,6 +39,49 @@ const STREAM_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const CAPTIONS_CONTAINER = 'asr-worker';
 const CAPTIONS_IMAGE = 'bondcast-asr-worker:latest';
 const CAPTIONS_OVERLAY_PORT = 8082;
+const ENROLL_CONTAINER = 'asr-enroll';
+const ENROLL_DURATION_SEC = 15;
+
+// Тот же каталог, что панель монтирует себе на запись для сборки образа
+// (docker-compose.yml: ./asr-obs:/build-context/asr-obs) — переиспользуем его и для
+// эталона голоса/имени ведущего: панель пишет их напрямую на диск, без похода в
+// контейнер asr-worker/asr-enroll, они лишь читают то же самое через свой bind.
+const ASR_OBS_DIR = '/build-context/asr-obs';
+const REFERENCE_PATH = path.join(ASR_OBS_DIR, 'reference.npy');
+const HOST_NAME_PATH = path.join(ASR_OBS_DIR, 'host_name.txt');
+
+function readHostName() {
+  try {
+    return fs.readFileSync(HOST_NAME_PATH, 'utf8').trim() || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function hasVoiceReference() {
+  try {
+    return fs.statSync(REFERENCE_PATH).isFile();
+  } catch (e) {
+    return false;
+  }
+}
+
+// Docker bind-mount несуществующего хостового файла молча создаёт на его месте
+// ПУСТУЮ ДИРЕКТОРИЮ (и на хосте, и в контейнере) — не файл. До первого энроллмента
+// reference.npy на диске не существует вообще, и как только его первым бинд-маунтит
+// любой контейнер (asr-worker или asr-enroll), там появляется директория, на которой
+// потом падает np.load()/np.save() внутри Python (уже ловили оба раза). Вызывать перед
+// каждым созданием контейнера, который монтирует REFERENCE_PATH — идемпотентно и дёшево.
+function ensureReferenceFileIsReal() {
+  try {
+    const st = fs.statSync(REFERENCE_PATH);
+    if (st.isFile()) return;
+    fs.rmSync(REFERENCE_PATH, { recursive: true, force: true }); // фантомная директория от прошлого бага
+  } catch (e) {
+    // ENOENT — файла ещё нет, это нормально, просто создаём ниже
+  }
+  fs.closeSync(fs.openSync(REFERENCE_PATH, 'w'));
+}
 
 const SPECS = {
   srs: {
@@ -97,6 +144,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 function checkAllowed(req, res, next) {
   if (!ALLOWED.includes(req.params.name)) {
+    return res.status(403).json({ error: `container "${req.params.name}" is not managed by this panel` });
+  }
+  next();
+}
+
+// Логи отдельно от start/stop/recreate: у asr-worker/asr-enroll нет статичного SPECS
+// (Env зависит от текущего стрима/энроллмента), но посмотреть их лог — безопасно и
+// нужно для диагностики, так что список для /logs шире, чем ALLOWED.
+const LOGGABLE = [...ALLOWED, CAPTIONS_CONTAINER, ENROLL_CONTAINER];
+function checkLoggable(req, res, next) {
+  if (!LOGGABLE.includes(req.params.name)) {
     return res.status(403).json({ error: `container "${req.params.name}" is not managed by this panel` });
   }
   next();
@@ -308,7 +366,7 @@ app.post('/api/containers/:name/stop', checkAllowed, async (req, res) => {
   }
 });
 
-app.get('/api/containers/:name/logs', checkAllowed, async (req, res) => {
+app.get('/api/containers/:name/logs', checkLoggable, async (req, res) => {
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -340,6 +398,14 @@ app.get('/api/containers/:name/logs', checkAllowed, async (req, res) => {
   stderr.on('data', send);
 
   const keepAlive = setInterval(() => res.write(':keep-alive\n\n'), 15000);
+
+  // srs/srtla-rec живут долго (restart: unless-stopped) и это раньше не бросалось в
+  // глаза, но у asr-worker/asr-enroll контейнер реально останавливается и удаляется —
+  // без этого SSE-соединение просто зависало бы открытым (только keep-alive) навсегда.
+  logStream.on('end', () => {
+    clearInterval(keepAlive);
+    res.end();
+  });
 
   req.on('close', () => {
     clearInterval(keepAlive);
@@ -381,6 +447,14 @@ let buildLog = [];
 const buildEmitter = new EventEmitter();
 const MAX_BUILD_LOG_LINES = 1000;
 
+// Живой энроллмент голоса ведущего (см. /api/captions/enroll) — прогресс/итог
+// живёт в памяти процесса так же, как buildStatus у сборки образа: это штучная
+// операция на 15-20 секунд, не постоянный поток, переживать перезапуск панели ей
+// незачем — единственный переживающий рестарт факт (сам эталон + имя) лежит на
+// диске (reference.npy, host_name.txt), читается заново при каждом /status.
+let enrollStatus = 'idle'; // idle | running | done | error
+let enrollError = null;
+
 function pushBuildLine(line) {
   buildLog.push(line);
   if (buildLog.length > MAX_BUILD_LOG_LINES) buildLog.shift();
@@ -397,12 +471,18 @@ async function imageExists() {
 }
 
 function captionsSpec(streamName) {
+  // Эталон голоса появляется только после успешного энроллмента (см.
+  // /api/captions/enroll) — до этого speaker-gate явно выключаем, чтобы не
+  // упасть на .npy-файле, который либо не существует, либо (баг Docker при
+  // отсутствующем bind-source) окажется пустой директорией.
+  const speakerEnabled = hasVoiceReference();
   return {
     name: CAPTIONS_CONTAINER,
     Image: CAPTIONS_IMAGE,
     Env: [
       `ASR_OBS_SOURCE_URL=srt://srs:10080?streamid=live/${streamName}`,
       'ASR_OBS_CONFIG=/srv/config.yaml',
+      `ASR_OBS_SPEAKER_ENABLED=${speakerEnabled}`,
     ],
     ExposedPorts: { '8765/tcp': {} },
     HostConfig: {
@@ -414,10 +494,36 @@ function captionsSpec(streamName) {
       Binds: [
         `${hostPath('asr-obs\\config.yaml')}:/srv/config.yaml:ro`,
         `${hostPath('asr-obs\\reference.npy')}:/srv/reference.npy:ro`,
+        'hf-cache:/root/.cache/huggingface',
       ],
       // dockerode говорит с Engine API напрямую, минуя docker-compose —
       // compose-синтаксис deploy.resources.reservations.devices тут не работает,
       // нужен «сырой» Engine API эквивалент того, во что compose его транслирует.
+      DeviceRequests: [{ Driver: 'nvidia', Count: 1, Capabilities: [['gpu']] }],
+      NetworkMode: NETWORK,
+    },
+  };
+}
+
+function enrollSpec(streamName, durationSec) {
+  return {
+    name: ENROLL_CONTAINER,
+    Image: CAPTIONS_IMAGE,
+    Entrypoint: ['python3', '-m', 'app.live_enroll'],
+    Cmd: [
+      '--source-url', `srt://srs:10080?streamid=live/${streamName}`,
+      '--duration', String(durationSec),
+      '--out', '/srv/reference.npy',
+    ],
+    Env: ['ASR_OBS_CONFIG=/srv/config.yaml'],
+    HostConfig: {
+      RestartPolicy: { Name: 'no' },
+      Binds: [
+        `${hostPath('asr-obs\\config.yaml')}:/srv/config.yaml:ro`,
+        // Не :ro — сюда пишем результат энроллмента.
+        `${hostPath('asr-obs\\reference.npy')}:/srv/reference.npy`,
+        'hf-cache:/root/.cache/huggingface',
+      ],
       DeviceRequests: [{ Driver: 'nvidia', Count: 1, Capabilities: [['gpu']] }],
       NetworkMode: NETWORK,
     },
@@ -486,22 +592,26 @@ app.get('/api/captions/status', async (req, res) => {
   const hasImage = await imageExists();
   const localIps = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const overlayHost = localIps[0] || 'localhost';
-  const overlayUrl = `http://${overlayHost}:${CAPTIONS_OVERLAY_PORT}/index.html`;
+  const hostName = readHostName();
+  const overlayUrl = `http://${overlayHost}:${CAPTIONS_OVERLAY_PORT}/index.html` + (hostName ? `?host=${encodeURIComponent(hostName)}` : '');
+  const common = {
+    overlayUrl,
+    imageExists: hasImage,
+    buildStatus,
+    buildError,
+    hostName,
+    hasVoiceReference: hasVoiceReference(),
+    enrollStatus,
+    enrollError,
+  };
 
   try {
     const info = await docker.getContainer(CAPTIONS_CONTAINER).inspect();
     const envSourceUrl = (info.Config.Env || []).find((e) => e.startsWith('ASR_OBS_SOURCE_URL='));
     const m = envSourceUrl && envSourceUrl.match(/streamid=live\/([^&]+)/);
-    res.json({
-      connected: info.State.Running,
-      streamName: m ? m[1] : null,
-      overlayUrl,
-      imageExists: hasImage,
-      buildStatus,
-      buildError,
-    });
+    res.json({ ...common, connected: info.State.Running, streamName: m ? m[1] : null });
   } catch (e) {
-    res.json({ connected: false, streamName: null, overlayUrl, imageExists: hasImage, buildStatus, buildError });
+    res.json({ ...common, connected: false, streamName: null });
   }
 });
 
@@ -524,6 +634,7 @@ app.post('/api/captions/connect', async (req, res) => {
       if (e.statusCode !== 404) throw e;
     }
 
+    ensureReferenceFileIsReal();
     await ensureNetwork();
     const container = await docker.createContainer(captionsSpec(name));
     await container.start();
@@ -539,6 +650,73 @@ app.post('/api/captions/disconnect', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     if (e.statusCode === 404) return res.json({ ok: true });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Живая запись голоса ведущего: короткий одноразовый контейнер слушает указанный
+// живой стрим ENROLL_DURATION_SEC секунд, режет речь через VAD и усредняет ECAPA-
+// эмбеддинги (app/live_enroll.py — то же самое, что офлайновый app/enroll.py по
+// wav-файлам, только источник — сам живой SRT-поток). Имя ведущего панель пишет
+// сама на диск (host_name.txt) — Python-скрипту про него знать не нужно.
+app.post('/api/captions/enroll', async (req, res) => {
+  const streamName = String((req.body && req.body.streamName) || '').trim();
+  const hostName = String((req.body && req.body.hostName) || '').trim();
+  if (!STREAM_NAME_RE.test(streamName)) {
+    return res.status(400).json({ error: 'некорректное имя стрима' });
+  }
+  if (!HOST_NAME_RE.test(hostName)) {
+    return res.status(400).json({ error: 'введи имя ведущего (до 40 символов, без переводов строк)' });
+  }
+  if (!PROJECT_ROOT) {
+    return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
+  }
+  if (!(await imageExists())) {
+    return res.status(409).json({ error: 'образ ещё не собран — нажми «Собрать»' });
+  }
+  if (enrollStatus === 'running') {
+    return res.status(409).json({ error: 'запись уже идёт' });
+  }
+
+  enrollStatus = 'running';
+  enrollError = null;
+
+  try {
+    try {
+      await docker.getContainer(ENROLL_CONTAINER).remove({ force: true });
+    } catch (e) {
+      if (e.statusCode !== 404) throw e;
+    }
+
+    ensureReferenceFileIsReal();
+    await ensureNetwork();
+    const container = await docker.createContainer(enrollSpec(streamName, ENROLL_DURATION_SEC));
+    await container.start();
+    res.json({ ok: true, durationSec: ENROLL_DURATION_SEC });
+
+    // Не блокируем ответ ожиданием записи (15+ секунд) — статус и логи клиент
+    // дальше сам опрашивает/стримит (/api/captions/status, .../logs).
+    container
+      .wait()
+      .then(({ StatusCode }) => {
+        if (StatusCode === 0) {
+          fs.writeFileSync(HOST_NAME_PATH, hostName, 'utf8');
+          enrollStatus = 'done';
+        } else {
+          enrollStatus = 'error';
+          enrollError = `запись завершилась с кодом ${StatusCode} — смотри лог`;
+        }
+      })
+      .catch((e) => {
+        enrollStatus = 'error';
+        enrollError = e.message;
+      })
+      .finally(() => {
+        container.remove({ force: true }).catch(() => {});
+      });
+  } catch (e) {
+    enrollStatus = 'error';
+    enrollError = e.message;
     res.status(500).json({ error: e.message });
   }
 });
