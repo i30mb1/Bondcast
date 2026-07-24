@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Bondcast captions</title>
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  #captions {
+    position: absolute; left: 0; right: 0; bottom: 40px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+  .line {
+    max-width: 80vw; padding: 8px 16px; border-radius: 10px;
+    background: rgba(0,0,0,0.6); color: #fff;
+    font-size: 34px; font-weight: 600; line-height: 1.2;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    transition: opacity 0.15s ease;
+  }
+  .host .name { color: #ff3b30; }
+  .guest .name { color: #34c759; }
+  .name { margin-right: 10px; font-weight: 800; }
+  .partial { opacity: 0.65; }
+</style>
+</head>
+<body>
+<div id="captions"></div>
+<script>
+  var match = location.search.match(/[?&]ws=([^&]+)/);
+  var WS_URL = match ? decodeURIComponent(match[1]) : "ws://" + location.hostname + ":8765";
+  var MAX_LINES = 3;
+  var container = document.getElementById("captions");
+  var activeSeq = null;
+  var activeEl = null;
+
+  function label(speaker) {
+    return speaker === "host" ? "Ведущий" : "Гость";
+  }
+
+  function fill(el, evt) {
+    el.className = "line " + evt.speaker + (evt.final ? "" : " partial");
+    el.innerHTML = '<span class="name">' + label(evt.speaker) + ':</span>' + evt.text;
+  }
+
+  function trim() {
+    while (container.children.length > MAX_LINES) {
+      container.removeChild(container.firstChild);
+    }
+  }
+
+  function render(evt) {
+    if (activeEl !== null && activeSeq === evt.seq) {
+      fill(activeEl, evt);
+    } else {
+      var el = document.createElement("div");
+      fill(el, evt);
+      container.appendChild(el);
+      activeEl = el;
+      activeSeq = evt.seq;
+      trim();
+    }
+    if (evt.final) {
+      activeEl = null;
+      activeSeq = null;
+    }
+  }
+
+  function connect() {
+    var ws = new WebSocket(WS_URL);
+    ws.onmessage = function (m) {
+      try { render(JSON.parse(m.data)); } catch (e) {}
+    };
+    ws.onclose = function () { setTimeout(connect, 1500); };
+  }
+  connect();
+</script>
+</body>
+</html>

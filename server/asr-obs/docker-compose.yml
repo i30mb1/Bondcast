@@ -1,0 +1,30 @@
+services:
+  asr-worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      ASR_OBS_CONFIG: /srv/config.yaml
+    volumes:
+      - ./config.yaml:/srv/config.yaml:ro
+      - ./reference.npy:/srv/reference.npy:ro
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "8765:8765"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  overlay:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./overlay:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+
+volumes:
+  hf-cache:
