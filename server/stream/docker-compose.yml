@@ -71,6 +71,7 @@ services:
       - ./asr-obs/config.yaml:/srv/config.yaml:ro
       - ./asr-obs/reference.npy:/srv/reference.npy:ro
       - hf-cache:/root/.cache/huggingface
+      - gigaam-cache:/root/.cache/gigaam
     deploy:
       resources:
         reservations:
@@ -91,3 +92,8 @@ services:
 
 volumes:
   hf-cache:
+  # GigaAM (в отличие от SpeechBrain/HF) кэширует свой чекпоинт (~420МБ) не через
+  # huggingface_hub, а сам, в /root/.cache/gigaam — без отдельного volume эта папка
+  # раньше не переживала пересоздание контейнера (recreate — на каждое подключение),
+  # и модель качалась заново каждый раз. См. server.js's captionsSpec()/enrollSpec().
+  gigaam-cache:

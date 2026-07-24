@@ -304,8 +304,18 @@ openLogStream(currentTab);
 const streamCardsEl = document.getElementById('streamCards');
 let captionsState = {
   connected: false, streamName: null, overlayUrl: null, imageExists: false, buildStatus: 'idle', buildError: null,
-  hostName: null, hasVoiceReference: false, enrollStatus: 'idle', enrollError: null,
+  hostName: null, hasVoiceReference: false, enrollStatus: 'idle', enrollError: null, ready: false,
+  asrModel: null, speakerThreshold: null,
 };
+
+// Есть ли смысл в кнопке «Применить настройки» — сравниваем с тем, с чем контейнер
+// РЕАЛЬНО запущен (пришло от сервера), а не с тем, что было выбрано до клика.
+function recognitionSettingsChanged() {
+  if (captionsState.asrModel !== recognitionInputs.asrModel.value) return true;
+  const running = Number(captionsState.speakerThreshold);
+  const selected = Number(recognitionInputs.speakerThreshold.value);
+  return !Number.isFinite(running) || Math.abs(running - selected) > 0.005;
+}
 let capBusy = false; // защита от повторного клика, пока предыдущее действие ещё в полёте
 
 // Должно совпадать с ENROLL_DURATION_SEC в panel/server.js — тут используется только
@@ -338,10 +348,12 @@ Object.keys(recognitionInputs).forEach((key) => {
 speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
 recognitionInputs.asrModel.addEventListener('input', () => {
   localStorage.setItem('bondcast_asrModel', recognitionInputs.asrModel.value);
+  renderStreamCards(latestStreams); // пересчитать активность «Применить настройки»
 });
 recognitionInputs.speakerThreshold.addEventListener('input', () => {
   localStorage.setItem('bondcast_speakerThreshold', recognitionInputs.speakerThreshold.value);
   speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
+  renderStreamCards(latestStreams);
 });
 
 // --- Оформление оверлея ------------------------------------------------------
@@ -420,13 +432,26 @@ function captionsButtonHtml(streamName) {
   if (captionsState.connected && captionsState.streamName === streamName) {
     // Модель/порог применяются только при пересоздании контейнера — «Применить»
     // делает это одним кликом (тот же /connect, что и подключение с нуля), не
-    // заставляя сперва жать «Отключить».
-    return (
-      `<button class="cap-connect" data-name="${escapeHtml(streamName)}" title="Переподключить с текущими настройками распознавания">Применить настройки</button>` +
-      '<button class="cap-disconnect primary">Субтитры: отключить</button>'
-    );
+    // заставляя сперва жать «Отключить». Задизейблена, если 1) модель ещё
+    // грузится (!ready) — чтобы не наплодить параллельных пересозданий, или
+    // 2) выбранные модель/порог совпадают с уже запущенными — нечего применять.
+    // «Отключить» при этом всегда доступна, чтобы можно было отменить.
+    let applyBtn;
+    if (!captionsState.ready) {
+      applyBtn = '<button disabled title="Дождись загрузки модели">Применить настройки</button>';
+    } else if (!recognitionSettingsChanged()) {
+      applyBtn = '<button disabled title="Настройки не менялись с момента подключения">Применить настройки</button>';
+    } else {
+      applyBtn = `<button class="cap-connect" data-name="${escapeHtml(streamName)}" title="Переподключить с текущими настройками распознавания">Применить настройки</button>`;
+    }
+    return applyBtn + '<button class="cap-disconnect primary">Субтитры: отключить</button>';
   }
   return `<button class="cap-connect" data-name="${escapeHtml(streamName)}">Субтитры: подключить</button>`;
+}
+
+function captionsLoadingHtml(streamName) {
+  if (!(captionsState.connected && captionsState.streamName === streamName && !captionsState.ready)) return '';
+  return `<div class="row"><span class="row-label"><span class="row-meta">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~ГБ и может занять минуту-две. Прогресс — во «Диагностика → логи asr-worker».</span></span></div>`;
 }
 
 function enrollButtonHtml(streamName) {
@@ -443,7 +468,15 @@ function enrollButtonHtml(streamName) {
 
 function hostStatusHtml() {
   if (captionsState.enrollStatus === 'running') {
-    return `<div class="row"><span class="row-label"><span class="row-meta">🎙 Запись голоса — говори ${ENROLL_DURATION_SEC}с без пауз, лог ниже</span></span></div>`;
+    const elapsed = enrollStartedAt ? (Date.now() - enrollStartedAt) / 1000 : 0;
+    const capturing = elapsed < ENROLL_DURATION_SEC;
+    const label = capturing
+      ? `🎙 Говори без пауз — ещё ${Math.max(0, Math.ceil(ENROLL_DURATION_SEC - elapsed))}с`
+      : '⏳ Считаю эмбеддинг голоса…';
+    return `<div class="row"><span class="row-label">
+      <span class="row-meta">${label}</span>
+      <progress value="${Math.min(elapsed, ENROLL_DURATION_SEC).toFixed(1)}" max="${ENROLL_DURATION_SEC}" style="width:100%; margin-top:6px"></progress>
+    </span></div>`;
   }
   if (captionsState.enrollStatus === 'error') {
     return `<div class="row"><span class="row-label"><span class="row-meta">Запись не удалась: ${escapeHtml(captionsState.enrollError || '')}</span></span></div>`;
@@ -473,6 +506,7 @@ function renderStreamCards(streams) {
         ${captionsButtonHtml(s.name)}
       </div>
     </div>
+    ${captionsLoadingHtml(s.name)}
     ${
       captionsState.connected && captionsState.streamName === s.name
         ? addrRow('Оверлей для OBS', buildOverlayUrl(captionsState.overlayUrl), 'Добавь как Browser Source в OBS — субтитры поверх видео. Оформление ниже.')
@@ -606,6 +640,19 @@ function openBuildLogStream() {
   };
 }
 
+// Длительность известна заранее (ENROLL_DURATION_SEC) — прогресс-бар считаем на
+// клиенте по времени с клика, не дожидаясь строк лога с сервера. enrollTicker
+// перерисовывает карточки почаще, чем общий 5-секундный пуллинг, пока идёт запись.
+let enrollStartedAt = null;
+let enrollTicker = null;
+
+function stopEnrollTicker() {
+  if (enrollTicker) {
+    clearInterval(enrollTicker);
+    enrollTicker = null;
+  }
+}
+
 async function enrollHost(streamName) {
   const hostName = hostNameInputEl.value.trim();
   if (!hostName) {
@@ -623,6 +670,12 @@ async function enrollHost(streamName) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');
+    enrollStartedAt = Date.now();
+    stopEnrollTicker();
+    enrollTicker = setInterval(() => {
+      renderStreamCards(latestStreams);
+      if (captionsState.enrollStatus !== 'running') stopEnrollTicker();
+    }, 250);
     openEnrollLogStream();
   } catch (e) {
     alert(`Запись голоса: ${e.message}`);

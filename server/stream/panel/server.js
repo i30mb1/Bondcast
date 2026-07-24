@@ -459,6 +459,35 @@ const MAX_BUILD_LOG_LINES = 1000;
 let enrollStatus = 'idle'; // idle | running | done | error
 let enrollError = null;
 
+// Готовность asr-worker после (пере)подключения — контейнер "Running" сразу, но
+// внутри ещё загружается модель GigaAM (~420МБ, минута+ без кэша — см. gigaam-cache
+// volume выше) и только потом реально начинает слушать WS/распознавать. Раньше это
+// было видно только через docker logs; теперь панель сама следит за логом контейнера
+// и переключает индикатор, когда пайплайн реально стартовал.
+let captionsReady = false;
+
+async function watchCaptionsReadiness(container) {
+  try {
+    const logStream = await container.logs({ follow: true, stdout: true, stderr: true });
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    docker.modem.demuxStream(logStream, stdout, stderr);
+    const onData = (chunk) => {
+      // "websockets.server ... listening" — pipeline() в main.py поднимает WS-сервер
+      // одним из первых шагов ПОСЛЕ того, как все тяжёлые модели уже сконструированы
+      // (GigaAmAsr.__init__ грузит/качает GigaAM синхронно) — надёжный маркер готовности.
+      if (/websockets\.server[\s\S]*listening/.test(chunk.toString('utf8'))) {
+        captionsReady = true;
+        logStream.destroy();
+      }
+    };
+    stdout.on('data', onData);
+    stderr.on('data', onData);
+  } catch (e) {
+    // контейнер мог уже исчезнуть (быстрый disconnect сразу после connect) — не критично
+  }
+}
+
 function pushBuildLine(line) {
   buildLog.push(line);
   if (buildLog.length > MAX_BUILD_LOG_LINES) buildLog.shift();
@@ -501,6 +530,10 @@ function captionsSpec(streamName, asrModel, speakerThreshold) {
         `${hostPath('asr-obs\\config.yaml')}:/srv/config.yaml:ro`,
         `${hostPath('asr-obs\\reference.npy')}:/srv/reference.npy:ro`,
         'hf-cache:/root/.cache/huggingface',
+        // GigaAM кэширует свой чекпоинт сам (не через huggingface_hub) — без этого
+        // тома ~420МБ модели качались заново на каждое подключение (см. progress
+        // "N%|...MiB/s" в логах, о котором сообщил пользователь).
+        'gigaam-cache:/root/.cache/gigaam',
       ],
       // dockerode говорит с Engine API напрямую, минуя docker-compose —
       // compose-синтаксис deploy.resources.reservations.devices тут не работает,
@@ -613,11 +646,42 @@ app.get('/api/captions/status', async (req, res) => {
 
   try {
     const info = await docker.getContainer(CAPTIONS_CONTAINER).inspect();
-    const envSourceUrl = (info.Config.Env || []).find((e) => e.startsWith('ASR_OBS_SOURCE_URL='));
+    // watchCaptionsReadiness() следит только за контейнером, который панель САМА
+    // только что создала — если панель перезапустили, пока asr-worker уже вовсю
+    // работал, слушателя больше нет и captionsReady так и остался бы false навсегда.
+    // Подстраховка: раз уж не ready, смотрим хвост лога напрямую (дёшево и
+    // самовосстанавливается — как только маркер найден, дальше не спрашиваем).
+    if (!captionsReady && info.State.Running) {
+      try {
+        // Большой tail не случайно: маркер печатается один раз сразу после
+        // загрузки модели, а дальше на каждую распознанную реплику пишется
+        // новая строка — за долгую сессию их может накопиться тысячи, и
+        // скромный tail просто не дотянется обратно до старта.
+        const tail = await docker.getContainer(CAPTIONS_CONTAINER).logs({ stdout: true, stderr: true, tail: 5000 });
+        if (/websockets\.server[\s\S]*listening/.test(tail.toString('utf8'))) captionsReady = true;
+      } catch (e) {
+        // не критично — просто останется false до следующего опроса
+      }
+    }
+    const env = info.Config.Env || [];
+    const findEnv = (key) => {
+      const line = env.find((e) => e.startsWith(`${key}=`));
+      return line ? line.slice(key.length + 1) : null;
+    };
+    const envSourceUrl = findEnv('ASR_OBS_SOURCE_URL');
     const m = envSourceUrl && envSourceUrl.match(/streamid=live\/([^&]+)/);
-    res.json({ ...common, connected: info.State.Running, streamName: m ? m[1] : null });
+    // Модель/порог, с которыми РЕАЛЬНО запущен текущий контейнер — фронту нужно
+    // сравнить с тем, что сейчас выбрано в UI, чтобы понять, есть ли что применять.
+    res.json({
+      ...common,
+      connected: info.State.Running,
+      streamName: m ? m[1] : null,
+      ready: captionsReady,
+      asrModel: findEnv('ASR_OBS_ASR_MODEL'),
+      speakerThreshold: findEnv('ASR_OBS_SPEAKER_THRESHOLD'),
+    });
   } catch (e) {
-    res.json({ ...common, connected: false, streamName: null });
+    res.json({ ...common, connected: false, streamName: null, ready: false, asrModel: null, speakerThreshold: null });
   }
 });
 
@@ -645,8 +709,10 @@ app.post('/api/captions/connect', async (req, res) => {
 
     ensureReferenceFileIsReal();
     await ensureNetwork();
+    captionsReady = false;
     const container = await docker.createContainer(captionsSpec(name, asrModel, speakerThreshold));
     await container.start();
+    watchCaptionsReadiness(container); // не await — следит в фоне, ответ не блокирует
     res.json({ ok: true, streamName: name });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -656,6 +722,7 @@ app.post('/api/captions/connect', async (req, res) => {
 app.post('/api/captions/disconnect', async (req, res) => {
   try {
     await docker.getContainer(CAPTIONS_CONTAINER).remove({ force: true });
+    captionsReady = false;
     res.json({ ok: true });
   } catch (e) {
     if (e.statusCode === 404) return res.json({ ok: true });

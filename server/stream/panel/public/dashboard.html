@@ -86,6 +86,12 @@
   input[type=range] {
     accent-color: var(--accent); height: 4px; cursor: pointer;
   }
+  progress {
+    accent-color: var(--accent); height: 6px; border-radius: 4px; overflow: hidden;
+    background: var(--input-bg); border: none;
+  }
+  progress::-webkit-progress-bar { background: var(--input-bg); border-radius: 4px; }
+  progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
   input[type=color] {
     -webkit-appearance: none; appearance: none;
     width: 36px; height: 36px; padding: 0; flex-shrink: 0;
@@ -133,15 +139,16 @@
     margin: 4px 0 0; padding: 10px 16px 2px; font-size: 12px; font-weight: 600;
     color: var(--text);
   }
-  .addr-row { display: flex; align-items: center; gap: 8px; padding: 6px 16px; }
+  .addr-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px; }
   .addr-row span.addr-label {
     width: 150px; flex-shrink: 0; font-size: 12px; color: var(--text-muted);
-    display: flex; align-items: center; gap: 5px;
+    display: flex; align-items: center; gap: 5px; padding-top: 6px;
   }
+  .addr-row button { margin-top: 0; }
   .addr-row code {
     flex: 1; min-width: 0; background: var(--input-bg); border-radius: 6px;
     padding: 6px 10px; font-family: "SF Mono", Consolas, monospace; font-size: 12px;
-    overflow-x: auto; white-space: nowrap;
+    white-space: normal; word-break: break-all;
   }
   .addr-row button { padding: 6px 12px; flex-shrink: 0; }
 
@@ -299,6 +306,7 @@
       <div class="tabs">
         <button data-name="srs" class="active">srs</button>
         <button data-name="srtla-rec">srtla-rec</button>
+        <button data-name="asr-worker">субтитры</button>
       </div>
       <pre id="log"></pre>
     </div>
