@@ -64,7 +64,10 @@ function readHostName() {
 
 function hasVoiceReference() {
   try {
-    return fs.statSync(REFERENCE_PATH).isFile();
+    const st = fs.statSync(REFERENCE_PATH);
+    // size > 0 — иначе пустышка от ensureReferenceFileIsReal() (до первого
+    // энроллмента) читается как "эталон есть", и speaker-gate падает на np.load().
+    return st.isFile() && st.size > 0;
   } catch (e) {
     return false;
   }

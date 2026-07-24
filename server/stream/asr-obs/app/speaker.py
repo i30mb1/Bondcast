@@ -54,7 +54,8 @@ class EcapaSpeakerGate:
 
 
 def speaker_gate(enabled: bool, reference_path: str, sample_rate: int, threshold: float) -> SpeakerGate:
-    if not enabled or not Path(reference_path).is_file():
+    ref = Path(reference_path)
+    if not enabled or not ref.is_file() or ref.stat().st_size == 0:
         log.info("speaker gate: выключен (enabled=%s, эталон %s) — все реплики будут host", enabled, reference_path)
         return AlwaysHostGate()
     log.info("speaker gate: ECAPA включён, эталон %s, порог %.3f", reference_path, threshold)

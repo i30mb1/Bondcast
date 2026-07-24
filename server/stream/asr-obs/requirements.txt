@@ -1,8 +1,15 @@
-torch>=2.2
-numpy>=1.26
-soundfile>=0.12
-pyyaml>=6.0
-websockets>=12.0
-silero-vad>=5.1
-speechbrain>=1.0
-gigaam @ git+https://github.com/salute-developers/GigaAM.git
+# Версии закреплены точно (не >=) намеренно: раньше "плавающие" минимумы
+# на каждой пересборке образа молча подтягивали новейшее на тот момент —
+# ровно так апстрим GigaAM один раз уже сломал сборку (PEP639 license="MIT"
+# в pyproject.toml, несовместимый со старым pip3 в базовом образе). Ниже —
+# версии, которые реально прогнаны end-to-end (docker exec ... pip3 freeze
+# на рабочем контейнере). Поднимать — осознанно и с повторным прогоном,
+# не само по себе при каждой сборке.
+torch==2.13.0
+numpy==2.2.6
+soundfile==0.14.0
+pyyaml==6.0.3
+websockets==16.1.1
+silero-vad==6.2.1
+speechbrain==1.1.0
+gigaam @ git+https://github.com/salute-developers/GigaAM.git@559d88d6b72541412743929f633a6ae7c9950b85

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import threading
 import time
 
 import numpy as np
@@ -35,6 +36,12 @@ def enroll_live(source_url: str, sample_rate: int, duration_sec: float, out_path
     src = audio_source(source_url, sample_rate, reconnect_delay=1.0)
     chunks: list[np.ndarray] = []
     start = time.time()
+    # frames() ретраит ffmpeg бесконечно и не даёт собственного дедлайна — если
+    # источник вообще не отдаёт ни одного кадра (мёртвый/неверный стрим), цикл
+    # ниже никогда не доходит до проверки времени. Сторож рвёт источник снаружи
+    # по истечении лимита независимо от того, пришёл ли хоть один кадр.
+    watchdog = threading.Timer(duration_sec + 5.0, src.close)
+    watchdog.start()
     try:
         for pcm in src.frames():
             chunks.append(pcm)
@@ -42,6 +49,7 @@ def enroll_live(source_url: str, sample_rate: int, duration_sec: float, out_path
                 break
     finally:
         src.close()
+        watchdog.cancel()
 
     if not chunks:
         print("не удалось получить аудио с потока — эталон не сохранён", flush=True)
