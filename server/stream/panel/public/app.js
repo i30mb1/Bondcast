@@ -83,19 +83,43 @@ setInterval(refreshStatus, 5000);
 
 // --- Видео (HTTP-FLV) ---
 let flvPlayer = null;
-function loadVideo() {
-  const name = document.getElementById('streamName').value.trim() || 'livestream';
-  const url = `${window.location.protocol}//${window.location.hostname}:8080/live/${name}.flv`;
-  const videoEl = document.getElementById('videoEl');
+const videoHintEl = document.getElementById('videoHint');
+
+function stopVideo(hint) {
   if (flvPlayer) {
     flvPlayer.destroy();
     flvPlayer = null;
   }
-  if (!window.flvjs || !window.flvjs.isSupported()) {
-    alert('flv.js не поддерживается в этом браузере');
+  videoHintEl.textContent = hint || '';
+}
+
+function loadVideo() {
+  const name = document.getElementById('streamName').value.trim() || 'livestream';
+  const videoEl = document.getElementById('videoEl');
+  stopVideo();
+
+  // flv.js в браузере умеет декодировать только H.264 — на HEVC (частый выбор для
+  // энергоэффективной записи с телефона) он не падает с ошибкой, а на каждый новый
+  // фрагмент живого потока молча долбит demux заново, роняя сотни console.error —
+  // событие flvjs.Events.ERROR при этом не всплывает, поймать и остановить снаружи
+  // нечем. Единственный надёжный фикс — вообще не пытаться, зная кодек заранее
+  // (latestStreams — из /api/streams, куда SRS его уже отдаёт).
+  const known = latestStreams.find((s) => s.name === name);
+  if (known && known.video && /hevc/i.test(known.video.codec)) {
+    videoHintEl.textContent = 'Поток в HEVC — браузерный плеер такое не умеет. Смотри по ссылке для VLC ниже.';
     return;
   }
+
+  if (!window.flvjs || !window.flvjs.isSupported()) {
+    videoHintEl.textContent = 'flv.js не поддерживается в этом браузере.';
+    return;
+  }
+  const url = `${window.location.protocol}//${window.location.hostname}:8080/live/${name}.flv`;
   flvPlayer = flvjs.createPlayer({ type: 'flv', url });
+  // Защита от прочих (не-кодековых) ошибок — сеть оборвалась, поток закончился и т.п.
+  flvPlayer.on(flvjs.Events.ERROR, (type, detail) => {
+    stopVideo(`Превью прервано: ${type}/${detail}.`);
+  });
   flvPlayer.attachMediaElement(videoEl);
   flvPlayer.load();
   flvPlayer.play().catch(() => {});
@@ -345,11 +369,14 @@ function renderStreamCards(streams) {
   });
 }
 
+let latestStreams = []; // нужен loadVideo(), чтобы заранее знать кодек и не пытаться играть HEVC
+
 async function refreshStreams() {
   try {
     const res = await fetch('/api/streams');
     const data = await res.json();
-    renderStreamCards(data.streams || []);
+    latestStreams = data.streams || [];
+    renderStreamCards(latestStreams);
   } catch (e) {
     streamCardsEl.innerHTML = `<div class="row"><span class="row-label"><span class="row-meta">не удалось получить список стримов: ${escapeHtml(e.message)}</span></span></div>`;
   }
