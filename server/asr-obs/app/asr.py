@@ -30,7 +30,7 @@ class GigaAmAsr:
             return ""
         with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
             sf.write(tmp.name, pcm, self._sample_rate)
-            return self._model.transcribe(tmp.name)
+            return self._model.transcribe(tmp.name).text
 
 
 class AsrWithLogging:
