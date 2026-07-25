@@ -1,28 +1,30 @@
-const cardsEl = document.getElementById('cards');
-
-// Discord-style случайное имя стрима вместо унылого "livestream" — adjective-noun-1234.
-const NAME_ADJECTIVES = ['turbo', 'sneaky', 'feral', 'spicy', 'soggy', 'glorious', 'unhinged', 'majestic', 'chaotic', 'crispy', 'salty', 'fancy', 'goblin', 'based', 'cursed', 'radiant', 'grumpy', 'sleepy', 'unstable', 'legendary'];
-const NAME_NOUNS = ['hamster', 'otter', 'walrus', 'goose', 'capybara', 'raccoon', 'penguin', 'narwhal', 'possum', 'ferret', 'wombat', 'axolotl', 'llama', 'platypus', 'yeti', 'gremlin', 'potato', 'pigeon', 'moth', 'shrimp'];
-
-function randomStreamName() {
-  const adj = NAME_ADJECTIVES[Math.floor(Math.random() * NAME_ADJECTIVES.length)];
-  const noun = NAME_NOUNS[Math.floor(Math.random() * NAME_NOUNS.length)];
-  const num = Math.floor(Math.random() * 900 + 100);
-  return `${adj}-${noun}-${num}`;
+// --- Утилиты ------------------------------------------------------------
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Одно и то же имя на index.html/dashboard.html, и оно переживает перезапуск start.bat —
-// тот открывает страницу в новой вкладке, а у новой вкладки уже нет sessionStorage старой.
-const STREAM_NAME_KEY = 'bondcast_stream_name';
-
-function getOrCreateStreamName() {
-  return localStorage.getItem(STREAM_NAME_KEY) || regenerateStreamName();
+function tooltip(text) {
+  return `<span class="info" tabindex="0">?<span class="bubble">${escapeHtml(text)}</span></span>`;
 }
 
-function regenerateStreamName() {
-  const name = randomStreamName();
-  localStorage.setItem(STREAM_NAME_KEY, name);
-  return name;
+function addrRow(label, value, hint) {
+  return `
+    <div class="addr-row">
+      <span class="addr-label">${escapeHtml(label)}${hint ? tooltip(hint) : ''}</span>
+      <code>${escapeHtml(value)}</code>
+      <button class="copy-addr" data-value="${escapeHtml(value)}">Копировать</button>
+    </div>`;
+}
+
+function bindCopyButtons(root) {
+  root.querySelectorAll('.copy-addr').forEach((btn) => {
+    btn.onclick = () => {
+      navigator.clipboard.writeText(btn.dataset.value);
+      const original = btn.textContent;
+      btn.textContent = 'Скопировано';
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    };
+  });
 }
 
 function formatUptime(startedAt) {
@@ -35,6 +37,101 @@ function formatUptime(startedAt) {
   return `${h}ч ${m}м ${s}с`;
 }
 
+// Discord-style случайное имя стрима вместо унылого "livestream" — adjective-noun-1234.
+const NAME_ADJECTIVES = ['turbo', 'sneaky', 'feral', 'spicy', 'soggy', 'glorious', 'unhinged', 'majestic', 'chaotic', 'crispy', 'salty', 'fancy', 'goblin', 'based', 'cursed', 'radiant', 'grumpy', 'sleepy', 'unstable', 'legendary'];
+const NAME_NOUNS = ['hamster', 'otter', 'walrus', 'goose', 'capybara', 'raccoon', 'penguin', 'narwhal', 'possum', 'ferret', 'wombat', 'axolotl', 'llama', 'platypus', 'yeti', 'gremlin', 'potato', 'pigeon', 'moth', 'shrimp'];
+
+function randomStreamName() {
+  const adj = NAME_ADJECTIVES[Math.floor(Math.random() * NAME_ADJECTIVES.length)];
+  const noun = NAME_NOUNS[Math.floor(Math.random() * NAME_NOUNS.length)];
+  const num = Math.floor(Math.random() * 900 + 100);
+  return `${adj}-${noun}-${num}`;
+}
+
+const STREAM_NAME_KEY = 'bondcast_stream_name';
+
+function getOrCreateStreamName() {
+  return localStorage.getItem(STREAM_NAME_KEY) || regenerateStreamName();
+}
+
+function regenerateStreamName() {
+  const name = randomStreamName();
+  localStorage.setItem(STREAM_NAME_KEY, name);
+  return name;
+}
+
+// --- Режим (Просто/Продвинуто) + вкладки ---------------------------------
+// Раньше это были две отдельные страницы (index.html — быстрый старт,
+// dashboard.html — расширенная панель); теперь одна страница с вкладками,
+// состояние которых переживает перезагрузку так же, как остальные
+// настройки панели (localStorage), а не сбрасывается на дефолт.
+const TAB_KEY = 'bondcast_tab';
+const ADVANCED_KEY = 'bondcast_advanced';
+const TABS = ['quickstart', 'services', 'stream', 'diag'];
+
+const uiState = {
+  tab: TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'quickstart',
+  // По умолчанию — «Продвинуто» (как в мокапе): панель исторически была
+  // расширенной, «Просто» — осознанный шаг назад для менее технического стримера.
+  advanced: localStorage.getItem(ADVANCED_KEY) !== null ? localStorage.getItem(ADVANCED_KEY) === '1' : true,
+};
+
+function setTab(tab) {
+  if (!TABS.includes(tab)) return;
+  if (tab === 'services' && !uiState.advanced) tab = 'quickstart';
+  uiState.tab = tab;
+  localStorage.setItem(TAB_KEY, tab);
+  applyUiState();
+}
+
+function setAdvanced(advanced) {
+  uiState.advanced = advanced;
+  localStorage.setItem(ADVANCED_KEY, advanced ? '1' : '0');
+  // Продвинутая вкладка «Сервисы» пропадает в «Просто» — если она была
+  // открыта, уводим на «Старт и подключение», а не оставляем пустой экран.
+  if (!advanced && uiState.tab === 'services') uiState.tab = 'quickstart';
+  localStorage.setItem(TAB_KEY, uiState.tab);
+  applyUiState();
+}
+
+function applyUiState() {
+  document.body.classList.toggle('advanced', uiState.advanced);
+  document.getElementById('modeSimpleBtn').classList.toggle('active', !uiState.advanced);
+  document.getElementById('modeAdvancedBtn').classList.toggle('active', uiState.advanced);
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === uiState.tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.tabPanel === uiState.tab);
+  });
+}
+
+document.getElementById('modeSimpleBtn').onclick = () => setAdvanced(false);
+document.getElementById('modeAdvancedBtn').onclick = () => setAdvanced(true);
+document.querySelectorAll('.tab-btn').forEach((btn) => { btn.onclick = () => setTab(btn.dataset.tab); });
+applyUiState();
+
+// --- Статус сервисов (srs/srtla-rec) -------------------------------------
+const svcStatusCardEl = document.getElementById('svcStatusCard');
+const cardsEl = document.getElementById('cards');
+let latestStatus = [];
+
+function renderSvcStatusCard(statuses) {
+  const allRunning = statuses.length > 0 && statuses.every((c) => c.running);
+  svcStatusCardEl.classList.toggle('status-bad', !allRunning);
+  if (allRunning) {
+    const srs = statuses.find((c) => c.name === 'srs');
+    svcStatusCardEl.innerHTML = `
+      <div class="status-badge ok">✓</div>
+      <div><b>Сервисы запущены</b><span class="meta">Всё в порядке — работают уже ${formatUptime(srs && srs.startedAt)}</span></div>`;
+  } else {
+    const down = statuses.filter((c) => !c.running).map((c) => c.name).join(', ') || 'сервисы';
+    svcStatusCardEl.innerHTML = `
+      <div class="status-badge bad">!</div>
+      <div><b>Не все сервисы запущены</b><span class="meta">${escapeHtml(down)} — открой вкладку «Сервисы» и нажми Start</span></div>`;
+  }
+}
+
 function renderCards(statuses) {
   cardsEl.innerHTML = '';
   statuses.forEach((c) => {
@@ -43,7 +140,7 @@ function renderCards(statuses) {
     div.innerHTML = `
       <span class="dot ${c.running ? 'running' : 'stopped'}"></span>
       <div class="row-label">
-        <b>${c.name}</b>
+        <b>${escapeHtml(c.name)}</b>
         <span class="row-meta">${c.found ? c.state : 'не найден'}${c.running ? ` · ${formatUptime(c.startedAt)}` : ''}</span>
       </div>
       <div class="row-actions">
@@ -72,16 +169,71 @@ async function refreshStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
+    latestStatus = data;
+    renderSvcStatusCard(data);
     renderCards(data);
   } catch (e) {
-    cardsEl.innerHTML = `<div class="card">Не удалось получить статус: ${e.message}</div>`;
+    svcStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Не удалось получить статус</b><span class="meta">${escapeHtml(e.message)}</span></div>`;
+    cardsEl.innerHTML = `<div class="row"><span class="row-label"><span class="row-meta">не удалось получить статус: ${escapeHtml(e.message)}</span></span></div>`;
   }
 }
 
 refreshStatus();
 setInterval(refreshStatus, 5000);
 
-// --- Видео (HTTP-FLV) ---
+// --- Достижимость порта снаружи (баннер + карточка) -----------------------
+const portBannerEl = document.getElementById('portBanner');
+const portBannerTextEl = document.getElementById('portBannerText');
+const portStatusCardEl = document.getElementById('portStatusCard');
+
+function renderPortChecking() {
+  portStatusCardEl.classList.remove('status-bad');
+  portStatusCardEl.innerHTML = `<div class="status-badge">…</div><div><b>Проверяю порт снаружи</b><span class="meta">Стучусь через check-host.net…</span></div>`;
+}
+
+function renderPortResult(data) {
+  if (data.error) {
+    portStatusCardEl.classList.add('status-bad');
+    portStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Проверка не удалась</b><span class="meta">${escapeHtml(data.error)}</span></div>`;
+    portBannerEl.hidden = true;
+    return;
+  }
+
+  if (data.reachable) {
+    portStatusCardEl.classList.remove('status-bad');
+    portStatusCardEl.innerHTML = `<div class="status-badge ok">✓</div><div><b>Порт виден снаружи</b><span class="meta">5000/UDP открыт (${escapeHtml(data.targetIp)})</span></div>`;
+    portBannerEl.hidden = true;
+    return;
+  }
+
+  const hint = data.vpnLikely
+    ? 'Похоже, включён VPN — он часто блокирует трафик наружу. Выключи его и запусти start.bat ещё раз, мы всё перепроверим.'
+    : data.natLikely
+      ? `Порт 5000/UDP закрыт (${data.targetIp}) — настрой проброс порта 5000 UDP на роутере.`
+      : `Порт 5000/UDP снаружи не виден (${data.targetIp}) — выключи антивирус/файрвол и попробуй снова.`;
+
+  portStatusCardEl.classList.add('status-bad');
+  portStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Порт не виден снаружи</b><span class="meta">${escapeHtml(hint)}</span></div>`;
+
+  portBannerTextEl.textContent = hint;
+  portBannerEl.hidden = false;
+}
+
+async function checkPort() {
+  renderPortChecking();
+  try {
+    const res = await fetch('/api/reachability?port=5000&proto=udp');
+    const data = await res.json();
+    renderPortResult(data);
+  } catch (e) {
+    renderPortResult({ error: e.message });
+  }
+}
+
+document.getElementById('portBannerRetry').onclick = checkPort;
+checkPort();
+
+// --- Видео (HTTP-FLV) ------------------------------------------------------
 let flvPlayer = null;
 const videoHintEl = document.getElementById('videoHint');
 
@@ -94,19 +246,18 @@ function stopVideo(hint) {
 }
 
 function loadVideo() {
-  const name = document.getElementById('streamName').value.trim() || 'livestream';
+  const name = streamNameEl.value.trim() || 'livestream';
   const videoEl = document.getElementById('videoEl');
   stopVideo();
 
   // flv.js в браузере умеет декодировать только H.264 — на HEVC (частый выбор для
   // энергоэффективной записи с телефона) он не падает с ошибкой, а на каждый новый
-  // фрагмент живого потока молча долбит demux заново, роняя сотни console.error —
-  // событие flvjs.Events.ERROR при этом не всплывает, поймать и остановить снаружи
-  // нечем. Единственный надёжный фикс — вообще не пытаться, зная кодек заранее
+  // фрагмент живого потока молча долбит demux заново, роняя сотни console.error.
+  // Единственный надёжный фикс — вообще не пытаться, зная кодек заранее
   // (latestStreams — из /api/streams, куда SRS его уже отдаёт).
   const known = latestStreams.find((s) => s.name === name);
   if (known && known.video && /hevc/i.test(known.video.codec)) {
-    videoHintEl.textContent = 'Поток в HEVC — браузерный плеер такое не умеет. Смотри по ссылке для VLC ниже.';
+    videoHintEl.textContent = 'Поток в HEVC — браузерный плеер такое не умеет. Смотри по ссылке для VLC во «Старт и подключение → Другие адреса».';
     return;
   }
 
@@ -116,7 +267,6 @@ function loadVideo() {
   }
   const url = `${window.location.protocol}//${window.location.hostname}:8080/live/${name}.flv`;
   flvPlayer = flvjs.createPlayer({ type: 'flv', url });
-  // Защита от прочих (не-кодековых) ошибок — сеть оборвалась, поток закончился и т.п.
   flvPlayer.on(flvjs.Events.ERROR, (type, detail) => {
     stopVideo(`Превью прервано: ${type}/${detail}.`);
   });
@@ -126,25 +276,51 @@ function loadVideo() {
 }
 document.getElementById('loadVideo').onclick = loadVideo;
 
-// --- Подключение (адреса для OBS / мобильного приложения) ---
-const connectionsEl = document.getElementById('connections');
+// --- Подключение (адреса для OBS / мобильного приложения) -----------------
 const streamNameEl = document.getElementById('streamName');
+const obsOneLinerEl = document.getElementById('obsOneLiner');
+const obsOneLinerCopyBtn = document.getElementById('obsOneLinerCopy');
+const quickHostEl = document.getElementById('quickHost');
+const quickPortEl = document.getElementById('quickPort');
+const otherConnectionsEl = document.getElementById('otherConnections');
+const qrImgEl = document.getElementById('qr');
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+function renderOtherConnections(hosts, name) {
+  otherConnectionsEl.innerHTML = hosts
+    .map(
+      (h) => `
+    <div class="host-block">
+      <h4>${escapeHtml(h.label)}</h4>
 
-function tooltip(text) {
-  return `<span class="info" tabindex="0">?<span class="bubble">${escapeHtml(text)}</span></span>`;
-}
+      <div class="subgroup-title">Стримить с телефона (Bondcast)</div>
+      ${addrRow('Хост', h.mobileSrtlaHost, 'В приложении Bondcast: Настройки подключения → вставь сюда вручную (или отсканируй QR на главном экране панели).')}
+      ${addrRow('Порт', String(h.mobileSrtlaPort), 'В приложении Bondcast: то же окно, поле "Порт".')}
 
-function addrRow(label, value, hint) {
-  return `
-    <div class="addr-row">
-      <span class="addr-label">${escapeHtml(label)}${hint ? tooltip(hint) : ''}</span>
-      <code>${escapeHtml(value)}</code>
-      <button class="copy-addr" data-value="${escapeHtml(value)}">Копировать</button>
-    </div>`;
+      <div class="subgroup-title">Смотреть трансляцию</div>
+      ${addrRow('Ссылка для OBS', h.playSrt, 'В OBS: Файл → Мультимедиа (Media Source) → сними галочку "Локальный файл" → вставь эту ссылку в поле "Вход".')}
+      <details class="nested">
+        <summary>Другие способы посмотреть</summary>
+        <div class="body">
+          ${addrRow('HTTP-FLV', h.playFlv, 'Открой ссылку в VLC. В браузере не откроется напрямую — нужна страница с flv.js.')}
+          ${addrRow('HLS', h.playHls, 'Открой ссылку в VLC/Safari или любом HLS-плеере. Задержка больше, чем у SRT — обычно 5-10 секунд.')}
+        </div>
+      </details>
+
+      <details class="nested">
+        <summary>Стримить с компа через OBS (вместо телефона)</summary>
+        <div class="body">
+          <div class="subgroup-title">RTMP</div>
+          ${addrRow('Сервер', h.obsRtmpServer, 'В OBS: Настройки → Трансляция → Сервис "Особый" → вставь сюда, в поле "Сервер".')}
+          ${addrRow('Ключ трансляции', name, 'В том же окне OBS: поле "Ключ трансляции".')}
+          <div class="subgroup-title">SRT (задержка ниже)</div>
+          ${addrRow('Сервер', h.obsSrtUrl, 'В OBS: Настройки → Трансляция → Сервис "Особый" → вставь сюда, в поле "Сервер".')}
+          ${addrRow('Stream ID', h.obsSrtStreamId, 'В том же окне OBS: поле "Ключ трансляции". Можно оставить пустым — тогда сервер сам назовёт поток "livestream".')}
+        </div>
+      </details>
+    </div>`,
+    )
+    .join('');
+  bindCopyButtons(otherConnectionsEl);
 }
 
 async function refreshConnections() {
@@ -153,51 +329,34 @@ async function refreshConnections() {
     const res = await fetch(`/api/connections?name=${encodeURIComponent(name)}`);
     const data = await res.json();
     if (!data.hosts || !data.hosts.length) {
-      connectionsEl.innerHTML = '<div class="meta">IP этой машины неизвестен панели — запусти ярлык «Запустить трансляцию» (он определяет адрес и передаёт панели).</div>';
+      const msg = 'IP этой машины неизвестен панели — запусти ярлык «Запустить трансляцию» (он определяет адрес и передаёт панели).';
+      obsOneLinerEl.textContent = '—';
+      quickHostEl.textContent = '—';
+      quickPortEl.textContent = '—';
+      otherConnectionsEl.innerHTML = `<div class="row-meta">${escapeHtml(msg)}</div>`;
+      qrImgEl.removeAttribute('src');
       return;
     }
-    connectionsEl.innerHTML = data.hosts
-      .map(
-        (h) => `
-      <div class="host-block">
-        <h4>${escapeHtml(h.label)}</h4>
-
-        <div class="subgroup-title">Стримить с телефона (Bondcast)</div>
-        ${addrRow('Хост', h.mobileSrtlaHost, 'В приложении Bondcast: Настройки подключения → вставь сюда вручную (или отсканируй QR на главном экране панели).')}
-        ${addrRow('Порт', String(h.mobileSrtlaPort), 'В приложении Bondcast: то же окно, поле "Порт".')}
-
-        <div class="subgroup-title">Смотреть трансляцию</div>
-        ${addrRow('Ссылка для OBS', h.playSrt, 'В OBS: Файл → Мультимедиа (Media Source) → сними галочку "Локальный файл" → вставь эту ссылку в поле "Вход".')}
-        <details class="nested">
-          <summary>Другие способы посмотреть</summary>
-          ${addrRow('HTTP-FLV', h.playFlv, 'Открой ссылку в VLC. В браузере не откроется напрямую — нужна страница с flv.js.')}
-          ${addrRow('HLS', h.playHls, 'Открой ссылку в VLC/Safari или любом HLS-плеере. Задержка больше, чем у SRT — обычно 5-10 секунд.')}
-        </details>
-
-        <details class="nested">
-          <summary>Стримить с компа через OBS (вместо телефона)</summary>
-          <div class="subgroup-title">RTMP</div>
-          ${addrRow('Сервер', h.obsRtmpServer, 'В OBS: Настройки → Трансляция → Сервис "Особый" → вставь сюда, в поле "Сервер".')}
-          ${addrRow('Ключ трансляции', name, 'В том же окне OBS: поле "Ключ трансляции".')}
-          <div class="subgroup-title">SRT (задержка ниже)</div>
-          ${addrRow('Сервер', h.obsSrtUrl, 'В OBS: Настройки → Трансляция → Сервис "Особый" → вставь сюда, в поле "Сервер".')}
-          ${addrRow('Stream ID', h.obsSrtStreamId, 'В том же окне OBS: поле "Ключ трансляции". Можно оставить пустым — тогда сервер сам назовёт поток "livestream".')}
-        </details>
-      </div>`
-      )
-      .join('');
-    connectionsEl.querySelectorAll('.copy-addr').forEach((btn) => {
-      btn.onclick = () => {
-        navigator.clipboard.writeText(btn.dataset.value);
-        const original = btn.textContent;
-        btn.textContent = 'Скопировано';
-        setTimeout(() => { btn.textContent = original; }, 1200);
-      };
-    });
+    const primary = data.hosts[0];
+    obsOneLinerEl.textContent = primary.playSrt;
+    obsOneLinerCopyBtn.dataset.value = primary.playSrt;
+    quickHostEl.textContent = primary.mobileSrtlaHost;
+    quickPortEl.textContent = String(primary.mobileSrtlaPort);
+    qrImgEl.src = primary.qrDataUrl;
+    renderOtherConnections(data.hosts, data.name);
   } catch (e) {
-    connectionsEl.innerHTML = `<div class="meta">Не удалось получить адреса: ${escapeHtml(e.message)}</div>`;
+    otherConnectionsEl.innerHTML = `<div class="row-meta">Не удалось получить адреса: ${escapeHtml(e.message)}</div>`;
   }
 }
+
+obsOneLinerCopyBtn.onclick = () => {
+  const value = obsOneLinerCopyBtn.dataset.value;
+  if (!value) return;
+  navigator.clipboard.writeText(value);
+  const original = obsOneLinerCopyBtn.textContent;
+  obsOneLinerCopyBtn.textContent = 'Скопировано';
+  setTimeout(() => { obsOneLinerCopyBtn.textContent = original; }, 1200);
+};
 
 streamNameEl.value = getOrCreateStreamName();
 streamNameEl.addEventListener('input', () => {
@@ -210,9 +369,9 @@ document.getElementById('regenName').addEventListener('click', () => {
 });
 refreshConnections();
 
-// --- Логи + битрейт ---
+// --- Логи + битрейт ---------------------------------------------------------
 const logEl = document.getElementById('log');
-const tabButtons = document.querySelectorAll('.tabs button');
+const tabButtons = document.querySelectorAll('.seg button[data-name]');
 let currentSource = null;
 let currentTab = 'srs';
 
@@ -250,15 +409,9 @@ function pushBitratePoint(avg5) {
   bitrateChart.update('none');
 }
 
-// Держим последнее известное значение и тикаем графиком раз в секунду,
-// чтобы он "ехал" даже когда SRS не пишет новую строку (раз в ~10с).
 let lastAvg5 = 0;
 setInterval(() => pushBitratePoint(lastAvg5), 1000);
 
-// Панель может простоять открытой часами во время стрима - без потолка textContent
-// растёт бесконечно (уже видели 9000+ строк за пару минут), и каждая новая строка
-// переписывает весь узел целиком, так что вкладка ощутимо подвисает. Храним только
-// последние MAX_LOG_LINES.
 const MAX_LOG_LINES = 500;
 let logLines = [];
 
@@ -297,10 +450,15 @@ tabButtons.forEach((btn) => {
 
 openLogStream(currentTab);
 
+// Диагностика — логи/битрейт доступны только в «Продвинуто»; переход туда по
+// клику из других вкладок (смотреть стрим, сборка образа, запись голоса)
+// должен и открыть саму вкладку, и включить «Продвинуто», если оно выключено.
+function openDiagnostics() {
+  setAdvanced(true);
+  setTab('diag');
+}
+
 // --- Активные стримы + субтитры (asr-obs) ----------------------------------
-// Имя стрима генерируется на телефоне заново каждую сессию — в отличие от
-// текстового поля выше (для ручного OBS/QR), здесь опрашиваем сам SRS через
-// панель (/api/streams), чтобы показать, что реально сейчас идёт в эфир.
 const streamCardsEl = document.getElementById('streamCards');
 let captionsState = {
   connected: false, streamName: null, overlayUrl: null, imageExists: false, buildStatus: 'idle', buildError: null,
@@ -308,18 +466,14 @@ let captionsState = {
   asrModel: null, speakerThreshold: null,
 };
 
-// Есть ли смысл в кнопке «Применить настройки» — сравниваем с тем, с чем контейнер
-// РЕАЛЬНО запущен (пришло от сервера), а не с тем, что было выбрано до клика.
 function recognitionSettingsChanged() {
-  if (captionsState.asrModel !== recognitionInputs.asrModel.value) return true;
+  if (captionsState.asrModel !== recognitionInputs.asrModel()) return true;
   const running = Number(captionsState.speakerThreshold);
   const selected = Number(recognitionInputs.speakerThreshold.value);
   return !Number.isFinite(running) || Math.abs(running - selected) > 0.005;
 }
-let capBusy = false; // защита от повторного клика, пока предыдущее действие ещё в полёте
+let capBusy = false;
 
-// Должно совпадать с ENROLL_DURATION_SEC в panel/server.js — тут используется только
-// для текста кнопки, реальную длительность записи задаёт сервер.
 const ENROLL_DURATION_SEC = 15;
 const HOST_NAME_KEY = 'bondcast_host_name';
 const hostNameInputEl = document.getElementById('hostNameInput');
@@ -329,27 +483,30 @@ hostNameInputEl.addEventListener('input', () => {
 });
 
 // --- Настройки распознавания (asr_model, speaker_threshold) -----------------
-// В отличие от оформления оверлея эти два реально влияют на то, как считает
-// GPU-контейнер — но состояние тоже держим только в браузере (localStorage) и
-// просто подмешиваем в тело POST /api/captions/connect при подключении, не
-// заводя отдельный эндпоинт «сохранить настройки». Правило то же — меняются
-// только при следующем подключении, не на лету у уже работающего контейнера.
 const RECOGNITION_DEFAULTS = { asrModel: 'v3_e2e_rnnt', speakerThreshold: 0.25 };
+const qualityFastBtn = document.getElementById('qualityFastBtn');
+const qualityPreciseBtn = document.getElementById('qualityPreciseBtn');
 const recognitionInputs = {
-  asrModel: document.getElementById('asrModelSelect'),
+  asrModel: () => (qualityPreciseBtn.classList.contains('active') ? qualityPreciseBtn.dataset.model : qualityFastBtn.dataset.model),
   speakerThreshold: document.getElementById('speakerThreshold'),
 };
 const speakerThresholdOutEl = document.getElementById('speakerThresholdOut');
-Object.keys(recognitionInputs).forEach((key) => {
-  const el = recognitionInputs[key];
-  const stored = localStorage.getItem(`bondcast_${key}`);
-  el.value = stored !== null ? stored : RECOGNITION_DEFAULTS[key];
-});
+
+function setAsrModel(model) {
+  const isPrecise = model === qualityPreciseBtn.dataset.model;
+  qualityPreciseBtn.classList.toggle('active', isPrecise);
+  qualityFastBtn.classList.toggle('active', !isPrecise);
+  localStorage.setItem('bondcast_asrModel', isPrecise ? qualityPreciseBtn.dataset.model : qualityFastBtn.dataset.model);
+}
+setAsrModel(localStorage.getItem('bondcast_asrModel') || RECOGNITION_DEFAULTS.asrModel);
+qualityFastBtn.addEventListener('click', () => { setAsrModel(qualityFastBtn.dataset.model); renderStreamCards(latestStreams); });
+qualityPreciseBtn.addEventListener('click', () => { setAsrModel(qualityPreciseBtn.dataset.model); renderStreamCards(latestStreams); });
+
+{
+  const stored = localStorage.getItem('bondcast_speakerThreshold');
+  recognitionInputs.speakerThreshold.value = stored !== null ? stored : RECOGNITION_DEFAULTS.speakerThreshold;
+}
 speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
-recognitionInputs.asrModel.addEventListener('input', () => {
-  localStorage.setItem('bondcast_asrModel', recognitionInputs.asrModel.value);
-  renderStreamCards(latestStreams); // пересчитать активность «Применить настройки»
-});
 recognitionInputs.speakerThreshold.addEventListener('input', () => {
   localStorage.setItem('bondcast_speakerThreshold', recognitionInputs.speakerThreshold.value);
   speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
@@ -357,9 +514,6 @@ recognitionInputs.speakerThreshold.addEventListener('input', () => {
 });
 
 // --- Оформление оверлея ------------------------------------------------------
-// Чисто клиентская настройка (overlay/index.html читает те же имена параметров
-// из URL) — панели/докеру про них знать не нужно, поэтому без похода на сервер:
-// значения хранятся в localStorage и подмешиваются в overlayUrl прямо в браузере.
 const OVERLAY_DEFAULTS = { size: 34, lines: 3, hostColor: '#ff3b30', guestColor: '#34c759', bgColor: '#000000', bgOpacity: 60 };
 const overlayInputs = {
   size: document.getElementById('overlaySize'),
@@ -400,7 +554,7 @@ Object.keys(overlayInputs).forEach((key) => {
   el.addEventListener('input', () => {
     localStorage.setItem(`bondcast_overlay_${key}`, el.value);
     updateOverlayPreview();
-    renderStreamCards(latestStreams); // перерисовать ссылку на оверлей с новыми параметрами
+    renderStreamCards(latestStreams);
   });
 });
 updateOverlayPreview();
@@ -415,7 +569,7 @@ function buildOverlayUrl(baseUrl) {
     u.searchParams.set('bg', hexToRgba(overlayInputs.bgColor.value, (Number(overlayInputs.bgOpacity.value) || OVERLAY_DEFAULTS.bgOpacity) / 100));
     return u.toString();
   } catch (e) {
-    return baseUrl; // overlayUrl ещё не пришёл с сервера (null) — просто ничего не подмешиваем
+    return baseUrl;
   }
 }
 
@@ -430,12 +584,6 @@ function captionsButtonHtml(streamName) {
   if (captionsState.buildStatus === 'building') return '<button disabled>Собираю образ…</button>';
   if (!captionsState.imageExists) return '<button class="cap-build">Собрать образ для субтитров</button>';
   if (captionsState.connected && captionsState.streamName === streamName) {
-    // Модель/порог применяются только при пересоздании контейнера — «Применить»
-    // делает это одним кликом (тот же /connect, что и подключение с нуля), не
-    // заставляя сперва жать «Отключить». Задизейблена, если 1) модель ещё
-    // грузится (!ready) — чтобы не наплодить параллельных пересозданий, или
-    // 2) выбранные модель/порог совпадают с уже запущенными — нечего применять.
-    // «Отключить» при этом всегда доступна, чтобы можно было отменить.
     let applyBtn;
     if (!captionsState.ready) {
       applyBtn = '<button disabled title="Дождись загрузки модели">Применить настройки</button>';
@@ -446,18 +594,15 @@ function captionsButtonHtml(streamName) {
     }
     return applyBtn + '<button class="cap-disconnect primary">Субтитры: отключить</button>';
   }
-  return `<button class="cap-connect" data-name="${escapeHtml(streamName)}">Субтитры: подключить</button>`;
+  return `<button class="cap-connect primary" data-name="${escapeHtml(streamName)}">Субтитры: подключить</button>`;
 }
 
 function captionsLoadingHtml(streamName) {
   if (!(captionsState.connected && captionsState.streamName === streamName && !captionsState.ready)) return '';
-  return `<div class="row"><span class="row-label"><span class="row-meta">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~ГБ и может занять минуту-две. Прогресс — во «Диагностика → логи asr-worker».</span></span></div>`;
+  return `<div class="row"><span class="row-label"><span class="row-meta">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~1ГБ и может занять минуту-две. Прогресс — во «Диагностика → логи субтитров».</span></span></div>`;
 }
 
 function enrollButtonHtml(streamName) {
-  // Кнопка всегда видна (раньше пропадала совсем, пока не собран образ — выглядело
-  // как «не работает»); без образа — просто задизейблена с понятной причиной,
-  // а не молча исчезает.
   if (!captionsState.imageExists) {
     return '<button disabled title="Сначала собери образ — кнопка «Собрать образ для субтитров» справа">🎙 Записать голос ведущего</button>';
   }
@@ -520,7 +665,7 @@ function renderStreamCards(streams) {
       streamNameEl.value = btn.dataset.name;
       localStorage.setItem(STREAM_NAME_KEY, btn.dataset.name);
       refreshConnections();
-      document.querySelector('details.advanced').open = true;
+      openDiagnostics();
       loadVideo();
     };
   });
@@ -528,17 +673,10 @@ function renderStreamCards(streams) {
   streamCardsEl.querySelectorAll('.cap-connect').forEach((btn) => { btn.onclick = () => connectCaptions(btn.dataset.name); });
   streamCardsEl.querySelectorAll('.cap-disconnect').forEach((btn) => { btn.onclick = disconnectCaptions; });
   streamCardsEl.querySelectorAll('.cap-enroll').forEach((btn) => { btn.onclick = () => enrollHost(btn.dataset.name); });
-  streamCardsEl.querySelectorAll('.copy-addr').forEach((btn) => {
-    btn.onclick = () => {
-      navigator.clipboard.writeText(btn.dataset.value);
-      const original = btn.textContent;
-      btn.textContent = 'Скопировано';
-      setTimeout(() => { btn.textContent = original; }, 1200);
-    };
-  });
+  bindCopyButtons(streamCardsEl);
 }
 
-let latestStreams = []; // нужен loadVideo(), чтобы заранее знать кодек и не пытаться играть HEVC
+let latestStreams = [];
 
 async function refreshStreams() {
   try {
@@ -590,7 +728,7 @@ async function connectCaptions(name) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name,
-        asrModel: recognitionInputs.asrModel.value,
+        asrModel: recognitionInputs.asrModel(),
         speakerThreshold: recognitionInputs.speakerThreshold.value,
       }),
     });
@@ -620,29 +758,22 @@ async function disconnectCaptions() {
 }
 
 function openBuildLogStream() {
-  // Переиспользуем тот же <pre id="log"> и вкладки, что и логи контейнеров —
-  // на время сборки образа источник просто временно переключается на неё.
   if (currentSource) currentSource.close();
   logLines = [];
   logEl.textContent = '';
-  document.querySelector('details.advanced').open = true;
+  openDiagnostics();
   currentSource = new EventSource('/api/captions/build/logs');
   currentSource.onmessage = (e) => appendLog(e.data);
   currentSource.addEventListener('done', () => {
-    currentSource.close(); // сборка кончилась — дальше эндпоинту стримить нечего, не держим соединение
+    currentSource.close();
     pollStreamsAndCaptions();
   });
-  // EventSource по умолчанию переподключается на любое закрытие соединения — тут это
-  // не нужно (сборка не повторяется сама), close() останавливает автопереподключение.
   currentSource.onerror = () => {
     appendLog('[поток логов сборки прерван]');
     currentSource.close();
   };
 }
 
-// Длительность известна заранее (ENROLL_DURATION_SEC) — прогресс-бар считаем на
-// клиенте по времени с клика, не дожидаясь строк лога с сервера. enrollTicker
-// перерисовывает карточки почаще, чем общий 5-секундный пуллинг, пока идёт запись.
 let enrollStartedAt = null;
 let enrollTicker = null;
 
@@ -686,17 +817,12 @@ async function enrollHost(streamName) {
 }
 
 function openEnrollLogStream() {
-  // Тот же приём, что и у сборки образа (openBuildLogStream) — тот же <pre id="log">,
-  // временно переключённый на другой источник.
   if (currentSource) currentSource.close();
   logLines = [];
   logEl.textContent = '';
-  document.querySelector('details.advanced').open = true;
+  openDiagnostics();
   currentSource = new EventSource('/api/containers/asr-enroll/logs');
   currentSource.onmessage = (e) => appendLog(e.data);
-  // Контейнер asr-enroll удаляется сразу после записи (см. server.js) — без close()
-  // EventSource по умолчанию переподключался бы к уже несуществующему контейнеру
-  // раз в ~3с бесконечно, спамя одну и ту же строку в лог (поймано вживую при тесте).
   currentSource.onerror = () => {
     appendLog('[поток логов записи прерван]');
     currentSource.close();

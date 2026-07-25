@@ -3,105 +3,393 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bondcast — быстрый старт</title>
+<title>Bondcast — панель</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   /* Палитра и типографика — 1:1 с core/ui/Theme.kt и street/StreetType.kt мобильного приложения */
   :root {
-    --bg: #0e0e0e; --elevated: #232323; --input-bg: #161616; --divider: #2a2a2a;
-    --text: #eeeeee; --muted: #666666;
-    --green: #2fbf5b; --accent: #ff3c3c; --accent-pressed: #d42f2f;
+    --bg: #0e0e0e;
+    --elevated: #232323;
+    --card: #181818;
+    --input-bg: #161616;
+    --text: #eeeeee;
+    --text-secondary: #aaaaaa;
+    --text-muted: #666666;
+    --divider: #2a2a2a;
+    --accent: #ff3c3c;
+    --accent-dim: rgba(255, 60, 60, 0.12);
+    --accent-pressed: #d42f2f;
+    --green: #2fbf5b;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, Segoe UI, Roboto, sans-serif;
-    padding: 24px; max-width: 480px; margin: 0 auto;
   }
-  h1 {
-    font-size: 22px; margin: 24px 0 4px;
-    font-style: italic; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase;
-  }
-  p.lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+  .page { max-width: 900px; margin: 0 auto; padding: 28px 20px 60px; }
 
-  .step { display: flex; gap: 14px; margin-bottom: 16px; }
-  .step-num {
-    flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
-    background: var(--elevated); color: var(--accent);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 800; font-style: italic;
+  /* --- Шапка --- */
+  .top-bar { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+  .top-bar h1 {
+    font-size: 22px; margin: 0; font-style: italic; font-weight: 900;
+    letter-spacing: 0.03em; text-transform: uppercase;
   }
-  .step-body {
-    flex: 1; background: var(--bg); border: 1px solid var(--divider);
-    border-radius: 8px; padding: 14px 16px;
+  .top-bar .lead { font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
+  .mode-toggle {
+    display: flex; align-items: center; gap: 2px; background: var(--elevated);
+    border: 1px solid var(--divider); border-radius: 999px; padding: 4px; flex-shrink: 0;
   }
-  .step-body h2 {
-    font-size: 13px; margin: 0 0 10px; color: var(--accent);
-    font-style: italic; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  .mode-toggle button {
+    padding: 6px 13px; border-radius: 999px; background: transparent; border: none;
+    color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer;
   }
+  .mode-toggle button.active { background: var(--accent); color: #fff; }
 
-  .status { font-size: 13px; display: flex; align-items: center; gap: 8px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  .dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .dot.bad { background: var(--accent); }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  /* --- Баннер недостижимого порта --- */
+  .banner-warn {
+    margin: 0 0 20px; padding: 16px 18px; border-radius: 12px;
+    background: var(--accent-dim); border: 1px solid rgba(255, 60, 60, 0.3);
+    display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap;
+  }
+  .banner-warn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
+  .banner-warn .body { flex: 1; min-width: 220px; }
+  .banner-warn .body b { display: block; font-size: 14px; color: #fff; }
+  .banner-warn .body p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+  .banner-warn button { flex-shrink: 0; }
 
-  .name-row { display: flex; gap: 8px; margin-bottom: 12px; }
-  input[type=text] {
+  /* --- Вкладки --- */
+  .tabs-nav { display: flex; gap: 4px; margin-bottom: 18px; overflow-x: auto; padding-bottom: 2px; }
+  .tab-btn {
+    padding: 9px 15px; border-radius: 8px; background: transparent; color: var(--text-secondary);
+    border: 1px solid var(--divider); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tab-panel { display: none; flex-direction: column; gap: 14px; }
+  .tab-panel.active { display: flex; }
+
+  /* --- Общие карточки --- */
+  .card { background: var(--card); border: 1px solid var(--divider); border-radius: 12px; padding: 16px 18px; }
+  .card-row { display: flex; align-items: center; gap: 12px; }
+  .status-card { display: flex; gap: 14px; align-items: flex-start; }
+  .status-badge {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; text-align: center;
+    font: 800 13px/22px -apple-system, sans-serif;
+  }
+  .status-badge.ok { background: var(--green); color: #08130a; }
+  .status-badge.bad { background: var(--accent); color: #fff; }
+  .card.status-bad { border-color: rgba(255, 60, 60, 0.3); }
+  .status-card b { font-size: 13.5px; color: #fff; display: block; }
+  .status-card .meta { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; display: block; }
+
+  button {
+    background: var(--elevated); color: var(--text-secondary);
+    border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; white-space: nowrap;
+  }
+  button.primary { background: var(--accent); color: #fff; }
+  button:hover:not(:disabled):not(.primary) { background: #2c2c2c; }
+  button.primary:hover:not(:disabled) { background: var(--accent-pressed); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  label.field-label {
+    display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700;
+  }
+  input[type=text], input[type=number], select {
     background: var(--input-bg); border: 1px solid transparent; color: var(--text);
-    padding: 10px 12px; border-radius: 8px; font-size: 13px; width: 100%;
+    padding: 10px 12px; border-radius: 8px; font-size: 13.5px; width: 100%;
+    font-family: inherit;
   }
-  .name-row input[type=text] { margin-bottom: 0; }
-  input[type=text]:focus { outline: none; border-color: var(--accent); }
-  button.dice-btn {
-    flex-shrink: 0; background: var(--elevated); border: none; border-radius: 8px;
-    font-size: 16px; padding: 0 14px; cursor: pointer; line-height: 1;
-  }
-  button.dice-btn:hover { background: #2c2c2c; }
-  img#qr { display: block; margin: 4px auto; border-radius: 8px; width: 220px; height: 220px; background: #fff; }
+  input[type=text]:focus, input[type=number]:focus, select:focus { outline: none; border-color: var(--accent); }
+  .name-row { display: flex; gap: 8px; }
+  button.dice-btn { flex-shrink: 0; font-size: 16px; padding: 0 14px; line-height: 1; }
 
-  a.advanced-link {
-    display: block; text-align: center; color: var(--muted); font-size: 13px;
-    text-decoration: none; margin-top: 20px; padding-bottom: 20px;
+  input[type=range] { accent-color: var(--accent); height: 4px; cursor: pointer; width: 100%; }
+  progress { accent-color: var(--accent); height: 6px; border-radius: 4px; overflow: hidden; background: var(--input-bg); border: none; }
+  progress::-webkit-progress-bar { background: var(--input-bg); border-radius: 4px; }
+  progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
+  input[type=color] {
+    -webkit-appearance: none; appearance: none;
+    width: 36px; height: 36px; padding: 0; flex-shrink: 0;
+    border: 2px solid var(--divider); border-radius: 8px; background: none; cursor: pointer;
   }
-  a.advanced-link:hover { color: var(--text); }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: none; border-radius: 5px; }
+  input[type=color]:focus, input[type=range]:focus { outline: none; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .swatch-row { display: flex; gap: 22px; flex-wrap: wrap; }
+  .swatch-item { display: flex; align-items: center; gap: 10px; }
+  .swatch-item span { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .range-field .range-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700; margin-bottom: 8px; }
+  .range-field output { font-family: "SF Mono", Consolas, monospace; color: #fff; }
+
+  /* Сегмент-переключатель (Быстрое/Точное, вкладки диагностики) */
+  .seg { display: flex; background: var(--input-bg); border: 1px solid var(--divider); border-radius: 8px; padding: 3px; gap: 2px; }
+  .seg button { background: transparent; padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
+  .seg button.active { background: var(--accent); color: #fff; }
+
+  .divider { height: 1px; background: var(--divider); margin: 2px 0; }
+  .section-title { font: 700 11.5px -apple-system, sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
+
+  .addr-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; }
+  .addr-row span.addr-label {
+    width: 130px; flex-shrink: 0; font-size: 12px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 5px; padding-top: 8px;
+  }
+  .addr-row code {
+    flex: 1; min-width: 0; background: var(--input-bg); border-radius: 6px;
+    padding: 8px 10px; font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+    white-space: normal; word-break: break-all; align-self: center;
+  }
+  .addr-row button { flex-shrink: 0; }
+
+  .info {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 50%; background: var(--elevated);
+    color: var(--text-muted); font-size: 10px; font-weight: 700; cursor: help;
+    flex-shrink: 0; position: relative;
+  }
+  .info:hover, .info:focus { color: #fff; background: var(--accent); outline: none; }
+  .info .bubble {
+    display: none; position: absolute; bottom: 130%; left: 0; margin-bottom: 4px;
+    background: #1a1a1a; color: var(--text); border: 1px solid var(--divider);
+    border-radius: 8px; padding: 10px 12px; font-size: 12px; font-weight: normal;
+    line-height: 1.5; width: 240px; z-index: 20; white-space: normal; text-align: left;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  .info:hover .bubble, .info:focus .bubble { display: block; }
+
+  details.nested { margin: 2px 0; }
+  details.nested summary { cursor: pointer; font-size: 12.5px; color: var(--text-muted); list-style: none; padding: 6px 0; }
+  details.nested summary:hover { color: var(--text); }
+  details.nested summary::-webkit-details-marker { display: none; }
+  details.nested summary::before { content: "▸ "; }
+  details.nested[open] summary::before { content: "▾ "; }
+  details.nested .body { display: flex; flex-direction: column; gap: 8px; padding: 6px 0 4px; }
+  .subgroup-title { font-size: 12px; font-weight: 700; color: var(--text); margin: 4px 0 0; }
+
+  .overlay-preview {
+    padding: 24px; border-radius: 8px; background-color: #262626;
+    background-image:
+      linear-gradient(45deg, #3a3a3a 25%, transparent 25%), linear-gradient(-45deg, #3a3a3a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #3a3a3a 75%), linear-gradient(-45deg, transparent 75%, #3a3a3a 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  }
+  .overlay-preview .line {
+    max-width: 100%; padding: 8px 16px; border-radius: 10px;
+    background: var(--prev-bg, rgba(0,0,0,0.6)); color: #fff;
+    font-size: var(--prev-size, 34px); font-weight: 600; line-height: 1.2;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  }
+  .overlay-preview .name { margin-right: 10px; font-weight: 800; }
+  .overlay-preview .host .name { color: var(--prev-host, #ff3b30); }
+  .overlay-preview .guest .name { color: var(--prev-guest, #34c759); }
+
+  video { width: 100%; background: #000; border-radius: 8px; display: block; margin-top: 10px; }
+  .stats { display: flex; gap: 20px; font-size: 13px; color: var(--text-muted); }
+  .stats b { color: var(--text); font-size: 16px; font-family: "SF Mono", Consolas, monospace; }
+  canvas#bitrateChart { max-height: 140px; }
+  pre#log {
+    background: var(--input-bg); border-radius: 8px; padding: 10px;
+    height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-all; margin: 0;
+  }
+
+  .row-meta { font-size: 12.5px; color: var(--text-muted); }
+
+  /* Списки (сервисы / активные стримы) — используются внутри .card */
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 2px; flex-wrap: wrap; }
+  .row + .row { border-top: 1px solid var(--divider); margin-top: 2px; padding-top: 12px; }
+  .row-label { flex: 1; min-width: 160px; }
+  .row-label b { font-size: 14px; font-weight: 600; }
+  .row-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.stopped { background: var(--accent); }
+  .host-block h4 {
+    margin: 10px 0 2px; font-size: 11px; font-weight: normal;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .host-block:first-child h4 { margin-top: 0; }
+
+  [data-advanced-only] { }
+  body:not(.advanced) [data-advanced-only] { display: none !important; }
 </style>
 </head>
 <body>
-  <h1>Bondcast</h1>
-  <p class="lead">3 шага — и телефон готов стримить на этот комп.</p>
+<div class="page">
 
-  <div class="step">
-    <div class="step-num">1</div>
-    <div class="step-body">
-      <h2>Сервисы запущены</h2>
-      <div class="status" id="dockerStatus"><span class="dot"></span>проверяю…</div>
+  <div class="top-bar">
+    <div>
+      <h1>Bondcast</h1>
+      <p class="lead">Помощник для стрима с телефона</p>
+    </div>
+    <div class="mode-toggle">
+      <button id="modeSimpleBtn" type="button">Просто</button>
+      <button id="modeAdvancedBtn" type="button">Продвинуто</button>
     </div>
   </div>
 
-  <div class="step">
-    <div class="step-num">2</div>
-    <div class="step-body">
-      <h2>Порт виден снаружи</h2>
-      <div class="status" id="portStatus"><span class="dot"></span>проверяю…</div>
-      <div class="hint" id="portHint"></div>
+  <div class="banner-warn" id="portBanner" hidden>
+    <div class="dot"></div>
+    <div class="body">
+      <b id="portBannerTitle">Остался один шаг: порт не виден снаружи</b>
+      <p id="portBannerText"></p>
     </div>
+    <button id="portBannerRetry" class="primary">Проверить снова</button>
   </div>
 
-  <div class="step">
-    <div class="step-num">3</div>
-    <div class="step-body">
-      <h2>Отсканируй в приложении</h2>
-      <div class="name-row">
+  <div class="tabs-nav">
+    <button class="tab-btn" data-tab="quickstart">Старт и подключение</button>
+    <button class="tab-btn" data-tab="services" data-advanced-only>Сервисы</button>
+    <button class="tab-btn" data-tab="stream">Стрим и оверлей</button>
+    <button class="tab-btn" data-tab="diag">Диагностика</button>
+  </div>
+
+  <!-- ======================= Старт и подключение ======================= -->
+  <div class="tab-panel" data-tab-panel="quickstart">
+    <div class="card status-card" id="svcStatusCard"></div>
+    <div class="card status-card" id="portStatusCard"></div>
+
+    <div class="card">
+      <div class="section-title">Отсканируй в приложении</div>
+      <div class="name-row" style="margin-bottom:12px">
         <input type="text" id="streamName" placeholder="имя стрима" />
         <button type="button" class="dice-btn" id="regenName" title="Сгенерировать другое имя">🎲</button>
       </div>
-      <img id="qr" alt="QR для подключения" />
-      <div class="hint">Приложение → экран первого запуска → «📷 Сканировать QR».</div>
+      <img id="qr" alt="QR для подключения" style="display:block;margin:4px auto;border-radius:8px;width:200px;height:200px;background:#fff" />
+      <div class="row-meta" style="text-align:center;margin-top:8px">Приложение → «Сканировать QR» на первом экране</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Для OBS — вставь одну строку</div>
+      <div class="row-meta" style="margin-bottom:12px">Медиаисточник → Свойства → URL</div>
+      <div class="addr-row">
+        <code id="obsOneLiner">—</code>
+        <button id="obsOneLinerCopy" class="primary">Копировать</button>
+      </div>
+    </div>
+
+    <div class="card" data-advanced-only>
+      <div class="grid-2">
+        <div>
+          <label class="field-label">Хост</label>
+          <div style="padding:11px 14px;background:var(--input-bg);border-radius:8px;font:600 13px 'SF Mono',Consolas,monospace" id="quickHost">—</div>
+        </div>
+        <div>
+          <label class="field-label">Порт</label>
+          <div style="padding:11px 14px;background:var(--input-bg);border-radius:8px;font:600 13px 'SF Mono',Consolas,monospace" id="quickPort">—</div>
+        </div>
+      </div>
+      <details class="nested" style="margin-top:14px">
+        <summary>Другие адреса и способы подключения</summary>
+        <div class="body" id="otherConnections"></div>
+      </details>
     </div>
   </div>
 
-  <a class="advanced-link" href="dashboard.html">Расширенная панель (логи, статистика) →</a>
+  <!-- ================================ Сервисы ================================ -->
+  <div class="tab-panel" data-tab-panel="services">
+    <div class="card">
+      <div id="cards"></div>
+    </div>
+  </div>
 
-  <script src="setup.js"></script>
+  <!-- =========================== Стрим и оверлей =========================== -->
+  <div class="tab-panel" data-tab-panel="stream">
+    <div class="card">
+      <div class="section-title">Распознавание голоса</div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;min-width:180px">
+            <label class="field-label" for="hostNameInput">Имя ведущего</label>
+            <input type="text" id="hostNameInput" placeholder="напр. Женя" />
+          </div>
+          <div>
+            <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
+            <div class="seg">
+              <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрое</button>
+              <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точное</button>
+            </div>
+          </div>
+        </div>
+        <div class="range-field" data-advanced-only>
+          <div class="range-head"><span>Строгость «ведущий/кто-то» <span class="info" tabindex="0">?<span class="bubble">Порог схожести голоса с эталоном. Выше — строже (чаще помечает как «кто-то»), ниже — мягче (чаще принимает за ведущего). Меняется при следующем «Подключить субтитры».</span></span></span><output id="speakerThresholdOut">0.25</output></div>
+          <input type="range" id="speakerThreshold" min="0" max="1" step="0.01" />
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-title" style="margin-bottom:12px">Оверлей субтитров</div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card" id="streamCards"></div>
+
+        <div class="grid-2">
+          <div class="range-field">
+            <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
+            <input type="range" id="overlaySize" min="16" max="72" />
+          </div>
+          <div class="range-field">
+            <div class="range-head"><span>Строк на экране</span><output id="overlayLinesOut">3</output></div>
+            <input type="range" id="overlayLines" min="1" max="8" />
+          </div>
+        </div>
+
+        <div class="swatch-row" data-advanced-only>
+          <div class="swatch-item"><input type="color" id="overlayHostColor" /><span>Цвет ведущего</span></div>
+          <div class="swatch-item"><input type="color" id="overlayGuestColor" /><span>Цвет «Кто-то»</span></div>
+          <div class="swatch-item">
+            <input type="color" id="overlayBgColor" />
+            <span>Фон</span>
+            <input type="range" id="overlayBgOpacity" min="0" max="100" style="width:90px" />
+            <output id="overlayBgOpacityOut" style="font-family:'SF Mono',Consolas,monospace;font-size:12px;color:var(--text-secondary)">60%</output>
+          </div>
+        </div>
+
+        <div class="overlay-preview" id="overlayPreview">
+          <div class="line host"><span class="name">Ведущий:</span>Пример реплики ведущего</div>
+          <div class="line guest"><span class="name">Кто-то:</span>Пример реплики гостя</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================== Диагностика =============================== -->
+  <div class="tab-panel" data-tab-panel="diag">
+    <div class="card">
+      <div class="card-row" style="justify-content:space-between;margin-bottom:4px">
+        <div class="section-title" style="margin:0">Превью потока (HTTP-FLV)</div>
+        <button id="loadVideo">Загрузить</button>
+      </div>
+      <video id="videoEl" controls muted></video>
+      <div class="row-meta" id="videoHint" style="margin-top:6px"></div>
+    </div>
+
+    <div class="card" data-advanced-only>
+      <div class="stats" style="margin-bottom:10px">
+        <div>avg 30s: <b id="ikAvg30">—</b> kbps</div>
+        <div>avg 5s: <b id="ikAvg5">—</b> kbps</div>
+      </div>
+      <canvas id="bitrateChart" height="60"></canvas>
+
+      <div class="seg" style="margin:14px 0 10px;width:fit-content">
+        <button type="button" data-name="srs" class="active">srs</button>
+        <button type="button" data-name="srtla-rec">srtla-rec</button>
+        <button type="button" data-name="asr-worker">субтитры</button>
+      </div>
+      <pre id="log"></pre>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/flv.js@1/dist/flv.min.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

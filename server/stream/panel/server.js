@@ -27,7 +27,7 @@ const hostPath = (relWindowsPath) => `${PROJECT_ROOT}\\${relWindowsPath}`;
 const NETWORK = 'bondcast-net';
 
 // Имя стрима идёт в SRT streamid / URL-адреса — то же ограничение символов, что уже
-// негласно подразумевает генератор имён в app.js/setup.js (adjective-noun-число).
+// негласно подразумевает генератор имён в app.js (adjective-noun-число).
 const STREAM_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 // Имя ведущего идёт в URL оверлея (?host=...) и в innerHTML — не URL-путь и не файловое
 // имя, поэтому ограничение мягче: просто разумная длина, без переводов строк.
