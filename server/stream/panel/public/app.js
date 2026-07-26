@@ -430,6 +430,35 @@ function appendLog(line) {
   }
 }
 
+// --- Лог субтитров (сборка образа / запись голоса) --------------------------
+// Отдельный от диагностического #log поток: сборка/запись — часть настройки
+// субтитров, поэтому их лог живёт прямо на вкладке «Стрим и оверлей», а не
+// перекидывает пользователя на «Диагностику». Общий #log при этом не трогаем —
+// выбор вкладки логов (srs/srtla-rec/субтитры) там продолжает работать сам по себе.
+const capLogCardEl = document.getElementById('capLogCard');
+const capLogEl = document.getElementById('capLog');
+const MAX_CAP_LOG_LINES = 500;
+let capLogLines = [];
+let capSource = null;
+
+function appendCapLog(line) {
+  const atBottom = capLogEl.scrollHeight - capLogEl.scrollTop - capLogEl.clientHeight < 30;
+  capLogLines.push(line);
+  if (capLogLines.length > MAX_CAP_LOG_LINES) capLogLines.splice(0, capLogLines.length - MAX_CAP_LOG_LINES);
+  capLogEl.textContent = capLogLines.join('\n') + '\n';
+  if (atBottom) capLogEl.scrollTop = capLogEl.scrollHeight;
+}
+
+function openCapLogStream(url) {
+  if (capSource) capSource.close();
+  capLogLines = [];
+  capLogEl.textContent = '';
+  capLogCardEl.hidden = false;
+  capSource = new EventSource(url);
+  capSource.onmessage = (e) => appendCapLog(e.data);
+  return capSource;
+}
+
 function openLogStream(name) {
   if (currentSource) currentSource.close();
   logLines = [];
@@ -451,8 +480,8 @@ tabButtons.forEach((btn) => {
 openLogStream(currentTab);
 
 // Диагностика — логи/битрейт доступны только в «Продвинуто»; переход туда по
-// клику из других вкладок (смотреть стрим, сборка образа, запись голоса)
-// должен и открыть саму вкладку, и включить «Продвинуто», если оно выключено.
+// клику «Смотреть» должен и открыть саму вкладку, и включить «Продвинуто»,
+// если оно выключено — иначе видео грузится за невидимой вкладкой.
 function openDiagnostics() {
   setAdvanced(true);
   setTab('diag');
@@ -758,19 +787,14 @@ async function disconnectCaptions() {
 }
 
 function openBuildLogStream() {
-  if (currentSource) currentSource.close();
-  logLines = [];
-  logEl.textContent = '';
-  openDiagnostics();
-  currentSource = new EventSource('/api/captions/build/logs');
-  currentSource.onmessage = (e) => appendLog(e.data);
-  currentSource.addEventListener('done', () => {
-    currentSource.close();
+  const source = openCapLogStream('/api/captions/build/logs');
+  source.addEventListener('done', () => {
+    source.close();
     pollStreamsAndCaptions();
   });
-  currentSource.onerror = () => {
-    appendLog('[поток логов сборки прерван]');
-    currentSource.close();
+  source.onerror = () => {
+    appendCapLog('[поток логов сборки прерван]');
+    source.close();
   };
 }
 
@@ -817,15 +841,10 @@ async function enrollHost(streamName) {
 }
 
 function openEnrollLogStream() {
-  if (currentSource) currentSource.close();
-  logLines = [];
-  logEl.textContent = '';
-  openDiagnostics();
-  currentSource = new EventSource('/api/containers/asr-enroll/logs');
-  currentSource.onmessage = (e) => appendLog(e.data);
-  currentSource.onerror = () => {
-    appendLog('[поток логов записи прерван]');
-    currentSource.close();
+  const source = openCapLogStream('/api/containers/asr-enroll/logs');
+  source.onerror = () => {
+    appendCapLog('[поток логов записи прерван]');
+    source.close();
   };
 }
 

@@ -37,7 +37,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import n7.bondcast.chat.twitch.TwitchAuthState
 import n7.bondcast.settings.StreamSettings
-import n7.bondcast.ui.OnboardingScreen
 import n7.bondcast.ui.SettingsScreen
 import n7.bondcast.ui.StreamScreen
 
@@ -135,16 +134,14 @@ private fun App(graph: AppGraph, autostart: Boolean) {
 
     val settings by graph.settingsRepository.settings.collectAsState(initial = null)
     var showSettings by remember { mutableStateOf(false) }
-    var showWizard by remember { mutableStateOf(false) }
     val onboarding = settings?.let { !it.onboardingCompleted } == true
     val scope = rememberCoroutineScope()
 
-    // настройки и визард удобнее крутить в портрете, стрим живёт в ландшафте (манифест: sensorLandscape).
-    // Единственное место, которое просит поворот — экраны сами его больше не лочат, иначе при переходе
-    // Settings → Wizard (оба портретные) один экран на выходе успевал вернуть ландшафт до того,
-    // как другой запросит портрет обратно, и был виден рывок туда-сюда.
-    LaunchedEffect(showSettings, showWizard, onboarding) {
-        (context as? Activity)?.requestedOrientation = if (showSettings || showWizard || onboarding) {
+    // настройки удобнее крутить в портрете, стрим живёт в ландшафте (манифест: sensorLandscape).
+    // Единственное место, которое просит поворот — экран сам его больше не лочит, иначе при переходе
+    // между режимами был виден рывок туда-сюда.
+    LaunchedEffect(showSettings, onboarding) {
+        (context as? Activity)?.requestedOrientation = if (showSettings || onboarding) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -185,18 +182,15 @@ private fun App(graph: AppGraph, autostart: Boolean) {
 
     val currentSettings = settings
     if (currentSettings != null && !currentSettings.onboardingCompleted) {
-        OnboardingScreen(
-            initial = currentSettings,
-            onFinish = { new -> scope.launch { graph.settingsRepository.save(new) } },
-        )
-    } else if (currentSettings != null && showWizard) {
-        OnboardingScreen(
-            initial = currentSettings,
-            onFinish = { new ->
-                scope.launch { graph.settingsRepository.save(new) }
-                showWizard = false
-            },
-            onCancel = { showWizard = false },
+        // первый запуск — сразу настройки в режиме новичка, отдельный визард не нужен
+        SettingsScreen(
+            initial = currentSettings.copy(expertMode = false),
+            onSave = { new -> scope.launch { graph.settingsRepository.save(new.copy(onboardingCompleted = true)) } },
+            onBack = {},
+            twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
+            onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
+            onTwitchLogout = { graph.twitchChat.session.logout() },
+            onFetchTwitchStreamKey = { graph.twitchChat.session.streamKey() },
         )
     } else if (showSettings && currentSettings != null) {
         SettingsScreen(
@@ -206,7 +200,6 @@ private fun App(graph: AppGraph, autostart: Boolean) {
                 showSettings = false
             },
             onBack = { showSettings = false },
-            onOpenWizard = { showWizard = true },
             twitchLoggedIn = twitchAuth is TwitchAuthState.LoggedIn,
             onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
             onTwitchLogout = { graph.twitchChat.session.logout() },

@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +54,6 @@ import n7.bondcast.qr.QrPayload
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.settings.VideoCodec
 import n7.bondcast.ui.components.DiscordField
-import n7.bondcast.ui.components.DiscordHint
 import n7.bondcast.ui.components.DiscordSegmentedRow
 import n7.bondcast.ui.components.DiscordStepperField
 import n7.bondcast.ui.components.DiscordSwitchRow
@@ -70,7 +68,6 @@ public fun SettingsScreen(
     initial: StreamSettings,
     onSave: (StreamSettings) -> Unit,
     onBack: () -> Unit,
-    onOpenWizard: () -> Unit,
     twitchLoggedIn: Boolean = false,
     onTwitchLogin: (() -> Unit)? = null,
     onTwitchLogout: (() -> Unit)? = null,
@@ -97,13 +94,7 @@ public fun SettingsScreen(
     var twitchFetchError by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     var showScanner by remember { mutableStateOf(false) }
-    var expertMode by remember {
-        mutableStateOf(
-            initial.bondingEnabled || initial.obsEnabled || initial.passphrase.isNotBlank() ||
-                initial.latencyMs != 2000 || initial.fps >= 60 ||
-                initial.twitchIngestUrl != StreamSettings().twitchIngestUrl,
-        )
-    }
+    var expertMode by remember { mutableStateOf(initial.expertMode) }
     val context = LocalContext.current
     val fetchErrorRelogin = stringResource(R.string.settings_twitch_fetch_error_relogin)
     val fetchErrorLoginFirst = stringResource(R.string.settings_twitch_fetch_error_login_first)
@@ -186,6 +177,7 @@ public fun SettingsScreen(
         twitchDirectEnabled = twitchDirect,
         twitchStreamKey = twitchStreamKey.trim(),
         twitchIngestUrl = twitchIngestUrl.trim().ifBlank { initial.twitchIngestUrl },
+        expertMode = expertMode,
     )
 
     // сохраняем только при валидных полях — иначе просто выходим, не портя сохранённые настройки
@@ -272,21 +264,6 @@ public fun SettingsScreen(
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }
-                        Box(
-                            modifier = Modifier
-                                .padding(start = 4.dp)
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(50))
-                                .clickable(onClick = onOpenWizard),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.wizard),
-                                contentDescription = null,
-                                tint = DiscordColors.textSecondary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
                     }
                 },
             )
@@ -368,19 +345,33 @@ public fun SettingsScreen(
                                 isError = twitchStreamKey.isBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 info = stringResource(R.string.settings_twitch_stream_key_info),
+                                trailingIcon = if (onFetchTwitchStreamKey != null) {
+                                    {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(ButtonShape)
+                                                .clickable(enabled = !twitchFetching, onClick = { fetchTwitchKey() }),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.refresh),
+                                                contentDescription = stringResource(
+                                                    if (twitchFetching) {
+                                                        R.string.settings_twitch_fetch_key_button_loading
+                                                    } else {
+                                                        R.string.settings_twitch_fetch_key_button
+                                                    },
+                                                ),
+                                                tint = if (twitchFetching) DiscordColors.textMuted else DiscordColors.blurple,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                             )
-                            if (onFetchTwitchStreamKey != null) {
-                                DiscordHint(
-                                    text = stringResource(
-                                        if (twitchFetching) {
-                                            R.string.settings_twitch_fetch_key_button_loading
-                                        } else {
-                                            R.string.settings_twitch_fetch_key_button
-                                        },
-                                    ),
-                                    onClick = { fetchTwitchKey() },
-                                )
-                            }
                             twitchFetchError?.let {
                                 Text(
                                     text = it,

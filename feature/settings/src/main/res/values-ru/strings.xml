@@ -60,12 +60,5 @@
     <string name="settings_obs_password_label">"Пароль WebSocket"</string>
     <string name="settings_obs_password_info">"Тот же пароль, что в OBS.\n\nГде взять:\n• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n• или кнопка «Показать сведения о подключении»\n\nГалочка «Включить аутентификацию» снята — оставь пустым."</string>
 
-    <!-- Onboarding screen -->
-    <string name="onboarding_hint">"Укажи, куда отправлять эфир — свой сервер, облако или отсканируй QR. Остальное уже настроено, поправишь потом в настройках."</string>
     <string name="onboarding_section_destination">"Куда стримить"</string>
-    <string name="onboarding_bonding_label">"Объединить сети (SIM + Wi-Fi)"</string>
-    <string name="onboarding_bonding_info">"Шлём эфир по всем сетям сразу — если одна прилегла, тащат остальные. Надёжнее в движении. Видео уходит на srtla_rec, порт справа поменяется."</string>
-    <string name="onboarding_host_info">"IP компа в локалке (ipconfig → IPv4) или адрес облака (belabox, IRLToolkit)."</string>
-    <string name="onboarding_stream_name_info">"Поток приедет на сервер как live/&lt;имя&gt;. Латиницей, без пробелов."</string>
-    <string name="onboarding_done_button">"Готово"</string>
 </resources>

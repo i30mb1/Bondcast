@@ -15,25 +15,35 @@ public class SettingsRepository(private val context: Context) {
 
     val settings: Flow<StreamSettings> = context.dataStore.data.map { preferences ->
         val default = StreamSettings()
+        val passphrase = preferences[PASSPHRASE] ?: default.passphrase
+        val fps = preferences[FPS] ?: default.fps
+        val latencyMs = preferences[LATENCY_MS] ?: default.latencyMs
+        val bondingEnabled = preferences[BONDING_ENABLED] ?: default.bondingEnabled
+        val obsEnabled = preferences[OBS_ENABLED] ?: default.obsEnabled
+        val twitchIngestUrl = preferences[TWITCH_INGEST_URL] ?: default.twitchIngestUrl
+        // до появления явного переключателя режим угадывали по «продвинутости» настроек —
+        // оставляем эту эвристику как фолбэк для тех, кто ещё ни разу не тронул переключатель
+        val legacyExpertGuess = bondingEnabled || obsEnabled || passphrase.isNotBlank() ||
+            latencyMs != default.latencyMs || fps >= 60 || twitchIngestUrl != default.twitchIngestUrl
         StreamSettings(
             host = preferences[HOST] ?: default.host,
             port = preferences[PORT] ?: default.port,
             streamName = preferences[STREAM_NAME] ?: default.streamName,
-            passphrase = preferences[PASSPHRASE] ?: default.passphrase,
+            passphrase = passphrase,
             width = preferences[WIDTH] ?: default.width,
             height = preferences[HEIGHT] ?: default.height,
-            fps = preferences[FPS] ?: default.fps,
+            fps = fps,
             videoCodec = preferences[VIDEO_CODEC]
                 ?.let { name -> VideoCodec.entries.firstOrNull { it.name == name } }
                 ?: default.videoCodec,
             videoBitrateKbps = preferences[VIDEO_BITRATE_KBPS] ?: default.videoBitrateKbps,
             abrEnabled = preferences[ABR_ENABLED] ?: default.abrEnabled,
             minVideoBitrateKbps = preferences[MIN_VIDEO_BITRATE_KBPS] ?: default.minVideoBitrateKbps,
-            latencyMs = preferences[LATENCY_MS] ?: default.latencyMs,
-            bondingEnabled = preferences[BONDING_ENABLED] ?: default.bondingEnabled,
+            latencyMs = latencyMs,
+            bondingEnabled = bondingEnabled,
             srtlaHost = preferences[SRTLA_HOST] ?: default.srtlaHost,
             srtlaPort = preferences[SRTLA_PORT] ?: default.srtlaPort,
-            obsEnabled = preferences[OBS_ENABLED] ?: default.obsEnabled,
+            obsEnabled = obsEnabled,
             obsHost = preferences[OBS_HOST] ?: default.obsHost,
             obsPort = preferences[OBS_PORT] ?: default.obsPort,
             obsPassword = preferences[OBS_PASSWORD] ?: default.obsPassword,
@@ -50,7 +60,8 @@ public class SettingsRepository(private val context: Context) {
             onboardingCompleted = preferences[ONBOARDING_COMPLETED] ?: default.onboardingCompleted,
             twitchDirectEnabled = preferences[TWITCH_DIRECT_ENABLED] ?: default.twitchDirectEnabled,
             twitchStreamKey = preferences[TWITCH_STREAM_KEY] ?: default.twitchStreamKey,
-            twitchIngestUrl = preferences[TWITCH_INGEST_URL] ?: default.twitchIngestUrl,
+            twitchIngestUrl = twitchIngestUrl,
+            expertMode = preferences[EXPERT_MODE] ?: legacyExpertGuess,
         )
     }
 
@@ -89,6 +100,7 @@ public class SettingsRepository(private val context: Context) {
             preferences[TWITCH_DIRECT_ENABLED] = settings.twitchDirectEnabled
             preferences[TWITCH_STREAM_KEY] = settings.twitchStreamKey
             preferences[TWITCH_INGEST_URL] = settings.twitchIngestUrl
+            preferences[EXPERT_MODE] = settings.expertMode
         }
     }
 
@@ -126,5 +138,6 @@ public class SettingsRepository(private val context: Context) {
         val TWITCH_DIRECT_ENABLED = booleanPreferencesKey("twitch_direct_enabled")
         val TWITCH_STREAM_KEY = stringPreferencesKey("twitch_stream_key")
         val TWITCH_INGEST_URL = stringPreferencesKey("twitch_ingest_url")
+        val EXPERT_MODE = booleanPreferencesKey("expert_mode")
     }
 }

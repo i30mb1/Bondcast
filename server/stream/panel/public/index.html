@@ -192,11 +192,13 @@
   .stats { display: flex; gap: 20px; font-size: 13px; color: var(--text-muted); }
   .stats b { color: var(--text); font-size: 16px; font-family: "SF Mono", Consolas, monospace; }
   canvas#bitrateChart { max-height: 140px; }
-  pre#log {
+  .log-box {
     background: var(--input-bg); border-radius: 8px; padding: 10px;
-    height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.5;
+    overflow-y: auto; font-size: 12px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-all; margin: 0;
   }
+  #log { height: 200px; }
+  #capLog { height: 140px; }
 
   .row-meta { font-size: 12.5px; color: var(--text-muted); }
 
@@ -330,6 +332,11 @@
       <div style="display:flex;flex-direction:column;gap:16px">
         <div class="card" id="streamCards"></div>
 
+        <div class="card" id="capLogCard" hidden>
+          <div class="section-title" style="margin-bottom:8px">Лог субтитров — сборка / запись голоса</div>
+          <pre id="capLog" class="log-box"></pre>
+        </div>
+
         <div class="grid-2">
           <div class="range-field">
             <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
@@ -383,7 +390,7 @@
         <button type="button" data-name="srtla-rec">srtla-rec</button>
         <button type="button" data-name="asr-worker">субтитры</button>
       </div>
-      <pre id="log"></pre>
+      <pre id="log" class="log-box"></pre>
     </div>
   </div>
 

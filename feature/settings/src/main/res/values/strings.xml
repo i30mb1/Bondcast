@@ -60,12 +60,5 @@
     <string name="settings_obs_password_label">"WebSocket password"</string>
     <string name="settings_obs_password_info">"The same password OBS is using.\n\nWhere to find it:\n• Tools → WebSocket Server Settings → \"Server Password\"\n• or the \"Show Connect Info\" button\n\n\"Enable Authentication\" unchecked in OBS? Leave this blank."</string>
 
-    <!-- Onboarding screen -->
-    <string name="onboarding_hint">"Tell us where to send the stream — your own server, the cloud, or just scan a QR code. Everything else is already set up; tweak it later in settings."</string>
     <string name="onboarding_section_destination">"Where to stream"</string>
-    <string name="onboarding_bonding_label">"Combine networks (SIM + Wi-Fi)"</string>
-    <string name="onboarding_bonding_info">"Sends the stream down every network at once — if one naps, the others carry it. Sturdier on the move. Video goes to srtla_rec, and the port on the right will change."</string>
-    <string name="onboarding_host_info">"Your computer\'s LAN IP (ipconfig → IPv4) or a cloud address (belabox, IRLToolkit)."</string>
-    <string name="onboarding_stream_name_info">"Your stream lands on the server as live/&lt;name&gt;. Latin letters, no spaces."</string>
-    <string name="onboarding_done_button">"Done"</string>
 </resources>
