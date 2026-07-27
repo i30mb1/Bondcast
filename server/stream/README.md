@@ -16,7 +16,7 @@ OBS ──RTMP:1935 или SRT:10080──────────────�
 ```
 
 > Если тебе просто нужно поднять сервер и не хочется разбираться с Docker и
-> терминалом — скачай установщик: [BondcastStream-Setup.exe](https://github.com/i30mb1/bondcast-stream/releases/latest/download/BondcastStream-Setup.exe)
+> терминалом — скачай установщик: [BondcastStream-Setup.exe](https://github.com/i30mb1/Bondcast/releases/latest/download/BondcastStream-Setup.exe)
 > (кнопка на [лендинге](index.html)), он делает всё из шагов ниже сам. Этот
 > README — для тех, кто хочет запустить вручную, собрать установщик заново
 > или посмотреть исходники.
@@ -69,7 +69,7 @@ OBS ──RTMP:1935 или SRT:10080──────────────�
 ```
 
 Результат — `installer/dist/BondcastStream-Setup.exe` (не в git, см. `.gitignore`). Файл нужно
-вручную залить в [GitHub Releases](https://github.com/i30mb1/bondcast-stream/releases) под этим
+вручную залить в [GitHub Releases](https://github.com/i30mb1/Bondcast/releases) под этим
 именем — на него ссылаются и `index.html`, и сам установщик (проверка обновлений отсутствует).
 
 ## Панель без Docker-контекста

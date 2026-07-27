@@ -28,6 +28,10 @@ if not "%HOST_IP_OVERRIDE%"=="" (
 ) else (
   set "HOST_IPS="
   for /f "delims=" %%a in ('curl -s --max-time 5 https://api.ipify.org') do set "HOST_IPS=%%a"
+  :: Отмечаем, что это именно публичный IP, а не LAN-фолбэк ниже - проверка
+  :: статичности имеет смысл только для него.
+  set "PUBLIC_IP_OK=0"
+  if not "!HOST_IPS!"=="" set "PUBLIC_IP_OK=1"
   if "!HOST_IPS!"=="" (
     for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get-host-ips.ps1"') do set "HOST_IPS=%%a"
   )
@@ -49,6 +53,28 @@ if not "%HOST_IP_OVERRIDE%"=="" (
       echo machine over the internet.
       echo Disable the VPN, then run the desktop shortcut again to pick up your real public IP.
       echo.
+    ) else if "!PUBLIC_IP_OK!"=="1" (
+      :: Провайдер не сообщает "статичный/динамический" никаким API - смотрим
+      :: PTR-запись публичного IP, многие ISP сами кодируют это в hostname
+      :: (см. check-static-ip.ps1). Нет надёжного маркера - не значит "точно
+      :: динамический", поэтому статус unknown ничего не печатает.
+      set "IP_TYPE="
+      for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0check-static-ip.ps1" -Ip "!HOST_IPS!"') do set "IP_TYPE=%%a"
+      for /f "tokens=1,2 delims=|" %%a in ("!IP_TYPE!") do (
+        set "IP_TYPE_KIND=%%a"
+        set "IP_TYPE_PTR=%%b"
+      )
+      if /i "!IP_TYPE_KIND!"=="dynamic" (
+        echo.
+        echo Your public IP !HOST_IPS! looks dynamic ^(reverse DNS: !IP_TYPE_PTR!^).
+        echo It can change without warning, and if it does, the phone won't be
+        echo able to reach this machine until the address is updated in the app.
+        echo Ask your ISP for a static IP, or set up DDNS, to avoid this.
+        echo.
+      )
+      if /i "!IP_TYPE_KIND!"=="static" (
+        echo Public IP !HOST_IPS! looks static ^(reverse DNS: !IP_TYPE_PTR!^).
+      )
     )
   )
 )

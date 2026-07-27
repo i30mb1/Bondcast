@@ -10,7 +10,7 @@
 #define MyAppName "Bondcast Stream"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Bondcast"
-#define MyAppURL "https://github.com/i30mb1/bondcast-stream"
+#define MyAppURL "https://github.com/i30mb1/Bondcast"
 
 [Setup]
 AppId={{7B1D9E5E-7C2A-4B7B-9B1E-BC1B0A2B9C10}
@@ -46,6 +46,7 @@ russian.WelcomeLabel2=Установим сервер для трансляци�
 Source: "..\docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\get-host-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\check-static-ip.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-missing.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-not-running.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
