@@ -1,10 +1,12 @@
 const express = require('express');
+const http = require('http');
 const Docker = require('dockerode');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
 const { EventEmitter } = require('events');
 const QRCode = require('qrcode');
+const { WebSocketServer } = require('ws');
 
 // Внутри Linux-контейнера (Dockerfile) сокет всегда /var/run/docker.sock.
 // При локальном запуске на Windows (без контейнера) dockerode сам находит named pipe Docker Desktop.
@@ -425,22 +427,59 @@ app.get('/api/containers/:name/logs', checkLoggable, async (req, res) => {
 // не может его знать заранее, поэтому спрашивает сам SRS, что сейчас реально
 // публикуется. Панель в той же bondcast-net сети, что и srs — резолвит по
 // имени контейнера, порт 1985 (SRS HTTP API) наружу пробрасывать не нужно.
+async function getActiveSrsStreams() {
+  const srsRes = await fetch('http://srs:1985/api/v1/streams/');
+  const data = await srsRes.json();
+  return (data.streams || [])
+    .filter((s) => s.publish && s.publish.active)
+    .map((s) => ({
+      name: s.name,
+      video: s.video || null,
+      audio: s.audio || null,
+      kbpsRecv30s: (s.kbps && s.kbps.recv_30s) ?? null,
+    }));
+}
+
 app.get('/api/streams', async (req, res) => {
   try {
-    const srsRes = await fetch('http://srs:1985/api/v1/streams/');
-    const data = await srsRes.json();
-    const streams = (data.streams || [])
-      .filter((s) => s.publish && s.publish.active)
-      .map((s) => ({
-        name: s.name,
-        video: s.video || null,
-        audio: s.audio || null,
-        kbpsRecv30s: (s.kbps && s.kbps.recv_30s) ?? null,
-      }));
-    res.json({ streams });
+    res.json({ streams: await getActiveSrsStreams() });
   } catch (e) {
     res.status(502).json({ error: `не удалось спросить SRS: ${e.message}` });
   }
+});
+
+// --- WS-статистика для NOALBS ----------------------------------------------
+// NOALBS не умеет в SRS напрямую (нет такого типа stream server), зато у него
+// есть generic-тип "WebSocket" для релеев — просто отдаём ему битрейт активного
+// стрима в ожидаемом формате поверх уже существующего опроса SRS API.
+// RTT SRS не отдаёт (нет такого поля в его HTTP API), поэтому шлём только bitrate —
+// в NOALBS-конфиге switcher должен переключать сцены по битрейту, не по RTT.
+const wss = new WebSocketServer({ noServer: true, path: '/ws-stats' });
+
+wss.on('connection', (ws, req) => {
+  const feed = new URL(req.url, 'http://localhost').searchParams.get('feed') || 'feed1';
+
+  const interval = setInterval(async () => {
+    try {
+      const [stream] = await getActiveSrsStreams();
+      ws.send(
+        JSON.stringify({
+          type: 'stats',
+          timestamp: Date.now(),
+          streamId: stream ? stream.name : null,
+          feed,
+          bitrate: stream ? stream.kbpsRecv30s ?? 0 : 0,
+          packetLoss: 0,
+          rtt: 0,
+          connected: Boolean(stream),
+        }),
+      );
+    } catch {
+      // тихо пропускаем тик — NOALBS сам уйдёт в offline по staleTimeoutMs
+    }
+  }, 1000);
+
+  ws.on('close', () => clearInterval(interval));
 });
 
 // --- Субтитры (asr-obs) ----------------------------------------------------
@@ -801,4 +840,14 @@ app.post('/api/captions/enroll', async (req, res) => {
 });
 
 const port = process.env.PORT || 8081;
-app.listen(port, () => console.log(`stream-panel listening on :${port}`));
+const server = http.createServer(app);
+
+server.on('upgrade', (req, socket, head) => {
+  if (new URL(req.url, 'http://localhost').pathname !== '/ws-stats') {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
+
+server.listen(port, () => console.log(`stream-panel listening on :${port}`));

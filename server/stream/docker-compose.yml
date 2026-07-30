@@ -47,6 +47,9 @@ services:
       - HOST_IPS=${HOST_IPS}
       - PANEL_USER=
       - PANEL_PASS=
+      # Токен для друзей, которым нужен только read-only доступ к статистике битрейта
+      # (NOALBS ?token=...) — отдельно от PANEL_PASS, чтобы не давать им пароль от всей панели.
+      - NOALBS_STATS_TOKEN=
     volumes:
       # Доступ к Docker Engine — стартовать/стопать/пересоздавать остальные сервисы.
       - /var/run/docker.sock:/var/run/docker.sock
