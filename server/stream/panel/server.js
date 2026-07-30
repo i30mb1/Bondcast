@@ -289,29 +289,29 @@ app.get('/api/reachability', async (req, res) => {
   const proto = req.query.proto === 'tcp' ? 'tcp' : 'udp';
 
   const localIps = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  // Проверяем именно тот адрес, который уходит телефону в QR/подключении, а не какой-то
-  // другой — это и есть то, что реально должно быть доступно снаружи через проброс порта.
-  const targetIp = localIps[0];
-  if (!targetIp) {
+  const localIp = localIps[0];
+  if (!localIp) {
     return res.status(502).json({ error: 'HOST_IPS не задан — запусти ярлык «Запустить трансляцию»' });
   }
 
-  const natLikely = isPrivateIp(targetIp);
-
-  if (natLikely) {
-    // Приватный адрес снаружи в принципе не достучаться — незачем спрашивать check-host.net.
-    // Его UDP-проверка трактует "нет ответа" как "нет ошибки", а для немаршрутизируемого
-    // в интернете адреса ответа не будет никогда — раньше это давало ложный reachable: true.
-    return res.json({ targetIp, localIps, natLikely, vpnLikely: false, port, proto, reachable: false });
+  // Проверяем внешний (публичный) IP, а не localIp из HOST_IPS — это и есть тот адрес,
+  // на который телефон стучится снаружи через проброс порта на роутере. Раньше здесь
+  // проверялся сам localIp: будучи приватным (почти всегда, у любого домашнего роутера),
+  // это ВСЕГДА уходило в короткое замыкание на reachable:false — даже если проброс порта
+  // уже настроен и реально работает. Проверка молча не могла ничего подтвердить.
+  const publicIp = await fetchPublicIp();
+  if (!publicIp) {
+    return res.status(502).json({ localIp, localIps, error: 'Не удалось узнать внешний IP — проверь интернет' });
   }
 
-  const vpnLikely = await isKnownVpnExit(targetIp);
+  const natLikely = isPrivateIp(localIp);
+  const vpnLikely = await isKnownVpnExit(publicIp);
 
   try {
-    const reachable = await checkPortReachable(targetIp, port, proto);
-    res.json({ targetIp, localIps, natLikely, vpnLikely, port, proto, reachable });
+    const reachable = await checkPortReachable(publicIp, port, proto);
+    res.json({ targetIp: publicIp, localIp, localIps, natLikely, vpnLikely, port, proto, reachable });
   } catch (e) {
-    res.status(502).json({ targetIp, localIps, natLikely, vpnLikely, port, proto, error: e.message });
+    res.status(502).json({ targetIp: publicIp, localIp, localIps, natLikely, vpnLikely, port, proto, error: e.message });
   }
 });
 

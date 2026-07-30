@@ -209,13 +209,31 @@ function renderPortResult(data) {
   const hint = data.vpnLikely
     ? 'Похоже, включён VPN — он часто блокирует трафик наружу. Выключи его и запусти start.bat ещё раз, мы всё перепроверим.'
     : data.natLikely
-      ? `Порт 5000/UDP закрыт (${data.targetIp}) — настрой проброс порта 5000 UDP на роутере.`
+      ? `Порт 5000/UDP закрыт снаружи (внешний IP: ${data.targetIp}) — нужно прокинуть его на роутере.`
       : `Порт 5000/UDP снаружи не виден (${data.targetIp}) — выключи антивирус/файрвол и попробуй снова.`;
 
   portStatusCardEl.classList.add('status-bad');
   portStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Порт не виден снаружи</b><span class="meta">${escapeHtml(hint)}</span></div>`;
 
-  portBannerTextEl.textContent = hint;
+  portBannerTextEl.innerHTML = escapeHtml(hint);
+
+  // Пошаговая инструкция по проросу порта — только когда причина именно в NAT (это
+  // самый частый случай для домашнего роутера), а не VPN/антивирус, где шаги другие.
+  if (data.natLikely && !data.vpnLikely && data.localIp) {
+    portBannerTextEl.innerHTML += `
+      <details class="nested port-howto" open>
+        <summary>Как открыть порт на роутере</summary>
+        <div class="body">
+          <ol>
+            <li>Зайди в настройки роутера (обычно <code>192.168.1.1</code> или <code>192.168.0.1</code> в браузере).</li>
+            <li>Найди раздел <b>Firewall → Port Forwarding</b> (может называться NAT, Virtual Server, проброс портов).</li>
+            <li>Добавь правило: Local IP — <code>${escapeHtml(data.localIp)}</code>, порт — <code>5000</code>, протокол — <b>UDP</b> (если нет отдельного UDP, выбери «Both»).</li>
+            <li>Сохрани и нажми «Проверить снова».</li>
+          </ol>
+        </div>
+      </details>`;
+  }
+
   portBannerEl.hidden = false;
 }
 

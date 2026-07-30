@@ -51,6 +51,11 @@
     background: var(--accent-dim); border: 1px solid rgba(255, 60, 60, 0.3);
     display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap;
   }
+  /* .banner-warn { display: flex } перебивает дефолтный [hidden]{display:none} браузера
+     (авторский CSS всегда сильнее UA-стилей той же специфичности) — без этого правила
+     portBannerEl.hidden = true из app.js визуально ничего не менял, баннер оставался
+     на экране с текстом последней неудачной проверки даже после успешной. */
+  .banner-warn[hidden] { display: none; }
   .banner-warn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
   .banner-warn .body { flex: 1; min-width: 220px; }
   .banner-warn .body b { display: block; font-size: 14px; color: #fff; }
