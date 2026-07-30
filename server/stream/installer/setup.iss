@@ -8,7 +8,7 @@
 ; до кнопки скачивания, см. ../index.html).
 
 #define MyAppName "Bondcast Stream"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Bondcast"
 #define MyAppURL "https://github.com/i30mb1/Bondcast"
 
@@ -187,6 +187,43 @@ begin
     'на рабочем столе ещё раз.', mbInformation, MB_OK);
 end;
 
+// ---------------------------------------------------------------------------
+// Проброс порта на роутере (см. README) открывает путь снаружи только до
+// самого компьютера - Windows Firewall по умолчанию всё равно режет входящие
+// подключения к неизвестным программам на уровне ОС. Без отдельного правила
+// телефон не достучится до srtla-rec, даже если на роутере всё настроено верно
+// - это отдельный, не всегда очевидный шаг (см. историю: пользователь донёс
+// вручную найденную инструкцию для wf.msc).
+// ---------------------------------------------------------------------------
+procedure EnsureFirewallRule();
+var
+  ResultCode: Integer;
+  RuleExists: Boolean;
+begin
+  RuleExists := Exec(ExpandConstant('{cmd}'),
+    '/c netsh advfirewall firewall show rule name="Bondcast Stream (SRTLA 5000/UDP)" >nul 2>&1',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  if RuleExists then
+    Exit;
+
+  WizardForm.StatusLabel.Caption := 'Открываю порт 5000/UDP в брандмауэре Windows (для приёма стрима с телефона)...';
+  WizardForm.Update;
+
+  // Сам установщик ставится без прав администратора (PrivilegesRequired=lowest) -
+  // добавление правила в firewall требует их, поэтому UAC запрашивается точечно
+  // именно на эту команду через verb "runas", не элевейтя остальной инсталлятор.
+  if not ShellExec('runas', ExpandConstant('{cmd}'),
+       '/c netsh advfirewall firewall add rule name="Bondcast Stream (SRTLA 5000/UDP)" dir=in action=allow protocol=UDP localport=5000',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    MsgBox('Не удалось автоматически открыть порт 5000/UDP в брандмауэре Windows (отменено или не хватило прав).' + #13#10#13#10 +
+      'Если телефон не будет подключаться - открой его вручную: Win+R -> wf.msc -> Enter -> ' +
+      '"Правила для входящих подключений" -> "Создать правило..." -> "Для порта" -> UDP, порт 5000 -> ' +
+      '"Разрешить подключение" -> отметить все профили -> задать имя -> Готово.',
+      mbInformation, MB_OK);
+  end;
+end;
+
 procedure InitializeWizard();
 begin
   DockerInfoPage := CreateOutputMsgPage(wpWelcome,
@@ -219,6 +256,10 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   // ssPostInstall наступает уже ПОСЛЕ того, как Inno Setup скопировал файлы и
   // создал ярлыки ([Files]/[Icons]) - см. комментарий у DownloadAndInstallDocker.
-  if (CurStep = ssPostInstall) and DockerMissing then
-    DownloadAndInstallDocker();
+  if CurStep = ssPostInstall then
+  begin
+    if DockerMissing then
+      DownloadAndInstallDocker();
+    EnsureFirewallRule();
+  end;
 end;

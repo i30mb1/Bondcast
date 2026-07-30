@@ -65,6 +65,23 @@ public fun srtlaClient(context: Context): SrtlaClient =
 ```
 Так же устроены `abrController()`, `thermalMonitor()`, `usbCameraMonitor()`, `NetworkProvider`. Добавляя поведение (логирование, синхронизацию, метрики), **создавай новый файл-декоратор**, не раздувай `*Impl`.
 
+## server/stream — цикл разработки
+
+Серверный стек (SRS + `srtla-rec` + `panel` + опционально `asr-obs`) поднимается через
+`server/stream/docker-compose.yml`. Панель — Node.js (`panel/server.js` + `panel/public/`),
+но файлы вшиты в образ на этапе сборки (`Dockerfile`), volume их не пробрасывает.
+
+- Правка `panel/server.js` или `panel/public/*` → чтобы проверить, пересобери только образ
+  панели: `docker compose up -d --build panel` (из `server/stream`), затем обнови страницу
+  в браузере. **Пересобирать `.exe` для этого не нужно.**
+- `.exe`-установщик (`installer/setup.iss`, компилируется ISCC.exe из Inno Setup 6) пересобирай
+  только когда нужно **раздать** изменения другим людям — он просто копирует те же исходники
+  `server/stream/*` (кроме `node_modules`, они ставятся внутри Docker-образа при первом запуске).
+- Чтобы новый `.exe` стал доступен по ссылке на лендинге (`releases/latest/download/...`) —
+  нужно опубликовать новый GitHub Release (`gh release create vX.Y.Z ...` в `i30mb1/Bondcast`)
+  с этим файлом как asset; сам лендинг (`index.html`) ничего не хранит, просто ссылается на
+  «latest» релиз.
+
 ## Соглашения кода
 
 - Комментарии в коде и доменные термины — на русском, как и коммиты (коротко, 2–10 слов).
