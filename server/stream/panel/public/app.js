@@ -195,7 +195,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
     return `
       <div class="flow-step">
         <div class="flow-step-dot dot-live"></div>
-        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${recheckingHint}${obsExtras}</div>
+        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${recheckingHint}</div>
       </div>`;
   }
   // Раньше подсказка-и-ссылка "Проверить снова" показывались только для
@@ -712,6 +712,7 @@ function setThirdPartyApp(app) {
 function otherAppFlowBody() {
   const host = latestHosts[0];
   if (!host) return noHostWarningItems();
+  const isLarix = selectedThirdPartyApp === 'larix';
   const finalStep = `
     <div class="flow-step flow-step-final">
       <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Выбери приложение</b></div>
@@ -720,7 +721,11 @@ function otherAppFlowBody() {
         <button type="button" class="${selectedThirdPartyApp === 'larix' ? 'active' : ''}" data-app="larix">Larix</button>
       </div>
       ${addrRow('URL', host.obsSrtUrl, 'Без бондинга — сразу в SRS, не в srtla-rec.')}
-      ${addrRow('Идентификатор стрима', host.obsSrtStreamId, 'В Moblin — поле "Идентификатор стрима"; в других приложениях может называться Stream ID/Stream Key.')}
+      ${addrRow(
+        isLarix ? 'streamid' : 'Идентификатор стрима',
+        host.obsSrtStreamId,
+        isLarix ? 'Поле "streamid" в настройках SRT-подключения — без него Larix уйдёт в режим просмотра, а не публикации.' : 'В Moblin — поле "Идентификатор стрима"; в других приложениях может называться Stream ID/Stream Key.',
+      )}
       ${liveOrWaitingHtml(currentStreamName, host.playSrt)}
     </div>`;
   return gateSteps([
@@ -731,7 +736,7 @@ function otherAppFlowBody() {
 }
 
 function inviteFlowBody() {
-  const host = inviteHosts.find((h) => h.label.includes('внешн'));
+  const host = inviteHosts.find((h) => h.isPublic);
   if (!host) {
     return [{ key: 'warn', html: '<div class="flow-warn">Не нашли внешний IP — без него друг снаружи не достучится. Проверь интернет и нажми «Проверить снова» вверху страницы.</div>' }];
   }
@@ -942,9 +947,10 @@ subsSwitchEl.onclick = () => {
 applySubsSwitch();
 
 // --- "Умный переключатель сцен OBS" — реальный бэкенд (server.js: OBS
-// websocket-клиент + монитор сигнала SRS), не просто UI-заглушка. Следит за
-// тем же стримом, что и сценарий "Через Bondcast" (currentStreamName) —
-// отдельного выбора стрима в этой карточке нет, как и в макете.
+// websocket-клиент + монитор сигнала SRS), не просто UI-заглушка. По умолчанию
+// без единого клика следит за currentStreamName (стрим этого телефона/сессии —
+// он существует всегда, даже если ещё не в эфире) — выбор в селекте нужен, только
+// если параллельно стримит кто-то ещё и приглядывать нужно не за своим именем.
 let sceneSwitcherState = { enabled: false, watchStreamName: null, fallbackScene: null, delaySec: 3, state: 'idle', lastError: null };
 let availableObsScenes = [];
 let obsScenesError = null;
@@ -1003,13 +1009,13 @@ sceneSwitchEl.onclick = () => {
     postSceneSwitcher({ enabled: false });
     return;
   }
-  if (!currentStreamName) return;
+  const watchStreamName = sceneSwitcherState.watchStreamName || currentStreamName;
   const fallbackScene = sceneSwitcherState.fallbackScene || availableObsScenes[0];
   if (!fallbackScene) {
     alert('Нет доступных сцен — проверь, что OBS запущен и порт 4455 открыт (см. подсказку в сценарии «Через Bondcast»).');
     return;
   }
-  postSceneSwitcher({ enabled: true, watchStreamName: currentStreamName, fallbackScene, delaySec: sceneSwitcherState.delaySec });
+  postSceneSwitcher({ enabled: true, watchStreamName, fallbackScene, delaySec: sceneSwitcherState.delaySec });
 };
 
 function renderSceneSwitcherBody() {
@@ -1021,31 +1027,49 @@ function renderSceneSwitcherBody() {
     if (retryBtn) retryBtn.onclick = refreshObsScenes;
     return;
   }
+  // Стрим, который сейчас отслеживается, может уже не быть в latestStreams
+  // (пропал сигнал — ради этого момента вся фича и существует) — не теряем его
+  // из списка, иначе выпадающий список молча "забудет" текущий выбор.
+  const streamNames = latestStreams.map((s) => s.name);
+  if (!streamNames.includes(currentStreamName)) streamNames.unshift(currentStreamName); // свой стрим — всегда доступен, даже офлайн
+  if (sceneSwitcherState.watchStreamName && !streamNames.includes(sceneSwitcherState.watchStreamName)) {
+    streamNames.unshift(sceneSwitcherState.watchStreamName);
+  }
+  const selectStyle = 'flex:1;min-width:0;box-sizing:border-box;padding:9px 32px 9px 12px;background:var(--input-bg);border:1px solid var(--divider);border-radius:8px;color:var(--text);font-size:13px';
   const stateNote = { watching: ' · слежу за сигналом', switched: ' · сейчас показываю резервную сцену' }[sceneSwitcherState.state] || '';
   sceneSwitcherBodyEl.innerHTML = `
-    <div class="row-meta">Требуется порт 4455 (WebSocket OBS) — включён в сценарии «Через Bondcast»${escapeHtml(stateNote)}</div>
-    <div>
-      <label class="field-label">Резервная сцена при обрыве</label>
-      <select id="fallbackSceneSelect" style="width:100%;box-sizing:border-box;padding:11px 14px;background:var(--input-bg);border:1px solid var(--divider);border-radius:8px;color:var(--text);font-size:13px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <label class="field-label" style="margin:0;white-space:nowrap">Стрим</label>
+      <select id="watchStreamSelect" style="${selectStyle}">
+        ${streamNames.map((name) => `<option value="${escapeHtml(name)}" ${name === sceneSwitcherState.watchStreamName ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <label class="field-label" style="margin:0;white-space:nowrap">Сцена при потере сигнала</label>
+      <select id="fallbackSceneSelect" style="${selectStyle}">
         ${availableObsScenes.map((name) => `<option value="${escapeHtml(name)}" ${name === sceneSwitcherState.fallbackScene ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
       </select>
     </div>
-    <div class="range-field">
-      <div class="range-head"><span>Переключать через</span><output id="switchDelayOut">${sceneSwitcherState.delaySec} сек</output></div>
+    <div class="range-field" style="margin-top:8px">
+      <div class="range-head"><span>Переключать через${escapeHtml(stateNote)}</span><output id="switchDelayOut">${sceneSwitcherState.delaySec} сек</output></div>
       <input type="range" id="switchDelay" min="0" max="30" value="${sceneSwitcherState.delaySec}" />
       <div class="row-meta" style="margin-top:6px">После потери сигнала. Как только эфир вернётся — вернём рабочую сцену автоматически</div>
     </div>
     ${sceneSwitcherState.lastError ? `<div class="flow-warn">${escapeHtml(sceneSwitcherState.lastError)}</div>` : ''}
   `;
+  const streamSelect = document.getElementById('watchStreamSelect');
+  if (streamSelect) {
+    streamSelect.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: streamSelect.value, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: sceneSwitcherState.delaySec });
+  }
   const select = document.getElementById('fallbackSceneSelect');
   if (select) {
-    select.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: currentStreamName, fallbackScene: select.value, delaySec: sceneSwitcherState.delaySec });
+    select.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: select.value, delaySec: sceneSwitcherState.delaySec });
   }
   const delayInput = document.getElementById('switchDelay');
   const delayOut = document.getElementById('switchDelayOut');
   if (delayInput) {
     delayInput.oninput = () => { delayOut.textContent = `${delayInput.value} сек`; };
-    delayInput.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: currentStreamName, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: Number(delayInput.value) });
+    delayInput.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: Number(delayInput.value) });
   }
 }
 

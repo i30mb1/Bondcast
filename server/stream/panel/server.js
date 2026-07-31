@@ -188,16 +188,16 @@ app.get('/api/connections', async (req, res) => {
   // портов на этот комп — панель это не проверяет, только показывает адрес.
   const publicIp = await fetchPublicIp();
 
-  const entries = localAddresses.map((address) => ({ address, label: address }));
+  const entries = localAddresses.map((address) => ({ address, label: address, isPublic: !isPrivateIp(address) }));
   if (publicIp && !localAddresses.includes(publicIp)) {
-    entries.push({ address: publicIp, label: `${publicIp} (внешний, нужен проброс портов)` });
+    entries.push({ address: publicIp, label: `${publicIp} (внешний, нужен проброс портов)`, isPublic: true });
   }
 
   const rawName = String(req.query.name || 'livestream').trim() || 'livestream';
   const name = STREAM_NAME_RE.test(rawName) ? rawName : 'livestream';
 
   const hosts = await Promise.all(
-    entries.map(async ({ address, label }) => {
+    entries.map(async ({ address, label, isPublic }) => {
       // Формат зашит в мобильном парсере (QrPayloadParserImpl.parseBondcast).
       const bondcastUri =
         `bondcast://config?host=${encodeURIComponent(address)}` +
@@ -208,6 +208,7 @@ app.get('/api/connections', async (req, res) => {
 
       return {
         label,
+        isPublic,
         // Разбито на Сервер/Ключ так же, как это два отдельных поля в OBS (Custom → Server/Stream Key) -
         // без имени в конце, чтобы не заставлять пользователя вручную резать готовую RTMP-ссылку.
         obsRtmpServer: `rtmp://${address}:1935/live`,
@@ -487,22 +488,42 @@ app.get('/api/streams', async (req, res) => {
 // через liveSinceMs выше; тот же тик кормит и переключатель сцен ниже.
 const streamFirstSeenAt = new Map();
 
-// Панель сидит в Docker-сети, OBS — нативно на хосте (не в контейнере), поэтому
-// подключаемся по тому же HOST_IPS[0]:4455, что уже показываем стримеру в
-// инструкции (см. OBS_WEBSOCKET_HOWTO во фронте) — без пароля. Тот же принцип,
-// что и везде в панели: авторизация нужна только когда управляешь OBS не из
-// локальной сети, а это соединение всегда локальное (панель и OBS на одном хосте).
+// Панель сидит в Docker-сети, OBS — нативно на хосте (не в контейнере). Раньше
+// подключались через HOST_IPS[0]:4455 — тот же адрес, что показываем для
+// подключения телефона — но это обычно публичный WAN IP (start.bat спрашивает
+// его первым через api.ipify.org). Соединение из контейнера на собственный
+// публичный IP требует NAT hairpin/loopback на роутере — на практике роутер
+// его не поддерживает и молча рубит соединение (ECONNREFUSED), даже когда OBS
+// реально слушает локально и порт 4455 подтверждённо проброшен снаружи. Без
+// пароля — тот же принцип, что и везде в панели: авторизация нужна только
+// когда управляешь OBS не из локальной сети, а это соединение всегда локальное.
 const obs = new OBSWebSocket();
 let obsConnected = false;
 obs.on('ConnectionOpened', () => { obsConnected = true; });
 obs.on('ConnectionClosed', () => { obsConnected = false; });
 
+// host.docker.internal — спецхост Docker Desktop для связи контейнер → хост,
+// не зависит от роутера/порт-форвардинга/HOST_IPS. 127.0.0.1 — фолбэк на случай
+// локального запуска `node server.js` прямо на Windows без контейнера (см.
+// CLAUDE.md, цикл разработки панели). obsHost запоминает, какой вариант
+// сработал, чтобы не перебирать оба на каждом реконнекте.
+const OBS_HOST_CANDIDATES = ['host.docker.internal', '127.0.0.1'];
+let obsHost = null;
+
 async function ensureObsConnected() {
   if (obsConnected) return obs;
-  const host = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean)[0];
-  if (!host) throw new Error('HOST_IPS не задан — запусти ярлык «Запустить трансляцию»');
-  await obs.connect(`ws://${host}:4455`);
-  return obs;
+  const candidates = obsHost ? [obsHost, ...OBS_HOST_CANDIDATES.filter((h) => h !== obsHost)] : OBS_HOST_CANDIDATES;
+  let lastErr;
+  for (const host of candidates) {
+    try {
+      await obs.connect(`ws://${host}:4455`);
+      obsHost = host;
+      return obs;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 let sceneSwitcher = {
