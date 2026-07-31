@@ -7,6 +7,7 @@ const { PassThrough } = require('stream');
 const { EventEmitter } = require('events');
 const QRCode = require('qrcode');
 const { WebSocketServer } = require('ws');
+const { OBSWebSocket } = require('obs-websocket-js');
 
 // Внутри Linux-контейнера (Dockerfile) сокет всегда /var/run/docker.sock.
 // При локальном запуске на Windows (без контейнера) dockerode сам находит named pipe Docker Desktop.
@@ -243,7 +244,7 @@ async function fetchPublicIp() {
 // и смотрит, вернулся ли ICMP-unreachable/таймаут — не требует ответа от нашего сервиса.
 async function checkPortReachable(publicIp, port, proto) {
   const submitRes = await fetch(
-    `https://check-host.net/check-${proto}?host=${publicIp}:${port}&max_nodes=2`,
+    `https://check-host.net/check-${proto}?host=${publicIp}:${port}&max_nodes=3`,
     { headers: { Accept: 'application/json' } },
   );
   const submit = await submitRes.json();
@@ -260,8 +261,16 @@ async function checkPortReachable(publicIp, port, proto) {
     if (Object.values(result).every((v) => v !== null)) break;
   }
 
-  const perNode = Object.values(result || {});
-  return perNode.some((entries) => Array.isArray(entries) && entries[0] && !entries[0].error);
+  // UDP без ответа от порта не отличить от "молча уронили пакет" — единственный
+  // надёжный сигнал "закрыто" это ICMP port-unreachable (error не пустой), а "нет
+  // ошибки" от ОДНОГО узла ничего не доказывает (у отдельного узла может быть свой
+  // сетевой затык на пути, ICMP до него просто не долетел). Раньше здесь стояло
+  // .some() — по факту любой один "тихий" узел мог дать ложное "порт открыт", хотя
+  // остальные узлы честно видели "Connection refused". Теперь верим порту открытым,
+  // только если ни один опрошенный узел не сообщил об ошибке.
+  const perNode = Object.values(result || {}).filter((entries) => Array.isArray(entries) && entries[0]);
+  if (perNode.length === 0) throw new Error('check-host.net не ответил ни с одного узла');
+  return perNode.every((entries) => !entries[0].error);
 }
 
 // RFC1918 + loopback/link-local — если адрес из HOST_IPS такой, снаружи его не постучать
@@ -442,10 +451,168 @@ async function getActiveSrsStreams() {
 
 app.get('/api/streams', async (req, res) => {
   try {
-    res.json({ streams: await getActiveSrsStreams() });
+    const streams = await getActiveSrsStreams();
+    res.json({ streams: streams.map((s) => ({ ...s, liveSinceMs: streamFirstSeenAt.get(s.name) || null })) });
   } catch (e) {
     res.status(502).json({ error: `не удалось спросить SRS: ${e.message}` });
   }
+});
+
+// --- OBS: время жизни стримов + «Умный переключатель сцен» ------------------
+// SRS не отдаёт метку начала публикации в своём API — считаем сами: monitorTick()
+// ниже опрашивает раз в 2с и запоминает момент первого появления имени в списке
+// активных, стирает при исчезновении. Сайдбар "Стримы на сервере" читает это
+// через liveSinceMs выше; тот же тик кормит и переключатель сцен ниже.
+const streamFirstSeenAt = new Map();
+
+// Панель сидит в Docker-сети, OBS — нативно на хосте (не в контейнере), поэтому
+// подключаемся по тому же HOST_IPS[0]:4455, что уже показываем стримеру в
+// инструкции (см. OBS_WEBSOCKET_HOWTO во фронте) — без пароля. Тот же принцип,
+// что и везде в панели: авторизация нужна только когда управляешь OBS не из
+// локальной сети, а это соединение всегда локальное (панель и OBS на одном хосте).
+const obs = new OBSWebSocket();
+let obsConnected = false;
+obs.on('ConnectionOpened', () => { obsConnected = true; });
+obs.on('ConnectionClosed', () => { obsConnected = false; });
+
+async function ensureObsConnected() {
+  if (obsConnected) return obs;
+  const host = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean)[0];
+  if (!host) throw new Error('HOST_IPS не задан — запусти ярлык «Запустить трансляцию»');
+  await obs.connect(`ws://${host}:4455`);
+  return obs;
+}
+
+let sceneSwitcher = {
+  enabled: false,
+  watchStreamName: null,
+  fallbackScene: null,
+  delaySec: 3,
+  state: 'idle', // idle (выключен) | watching (включён, ждёт) | switched (сейчас на резервной сцене)
+  lastError: null,
+};
+let rememberedLiveScene = null; // сцена, на которую вернёмся, когда сигнал появится снова
+let pendingSwitchTimer = null;
+let watchedStreamWasLive = null; // null — ещё не знаем (только включили/сменили стрим); дальше true/false для детекта фронта
+
+function clearPendingSwitch() {
+  if (pendingSwitchTimer) {
+    clearTimeout(pendingSwitchTimer);
+    pendingSwitchTimer = null;
+  }
+}
+
+async function switchToFallback() {
+  pendingSwitchTimer = null;
+  try {
+    const client = await ensureObsConnected();
+    const current = await client.call('GetCurrentProgramScene');
+    rememberedLiveScene = current.sceneName;
+    await client.call('SetCurrentProgramScene', { sceneName: sceneSwitcher.fallbackScene });
+    sceneSwitcher.state = 'switched';
+    sceneSwitcher.lastError = null;
+  } catch (e) {
+    sceneSwitcher.lastError = e.message;
+  }
+}
+
+async function switchBackToLive() {
+  try {
+    const client = await ensureObsConnected();
+    if (rememberedLiveScene) {
+      await client.call('SetCurrentProgramScene', { sceneName: rememberedLiveScene });
+    }
+    sceneSwitcher.state = 'watching';
+    sceneSwitcher.lastError = null;
+  } catch (e) {
+    sceneSwitcher.lastError = e.message;
+  }
+}
+
+// Общий поллинг раз в 2с: обновляет streamFirstSeenAt (аптайм для сайдбара) и,
+// если включён переключатель сцен, следит за пропаданием/появлением именно того
+// стрима, который выбран в его настройках — переключает через delaySec после
+// пропажи (короткая просадка сама отменяет ещё не сработавший таймер) и
+// возвращает прежнюю сцену, как только сигнал придёт снова.
+async function monitorTick() {
+  let streams;
+  try {
+    streams = await getActiveSrsStreams();
+  } catch (e) {
+    return; // сеть/SRS моргнули — не считаем это "стрим пропал", просто пропускаем тик
+  }
+
+  const liveNames = new Set(streams.map((s) => s.name));
+  for (const name of liveNames) {
+    if (!streamFirstSeenAt.has(name)) streamFirstSeenAt.set(name, Date.now());
+  }
+  for (const name of [...streamFirstSeenAt.keys()]) {
+    if (!liveNames.has(name)) streamFirstSeenAt.delete(name);
+  }
+
+  if (!sceneSwitcher.enabled || !sceneSwitcher.watchStreamName || !sceneSwitcher.fallbackScene) return;
+  const isLive = liveNames.has(sceneSwitcher.watchStreamName);
+
+  if (isLive && pendingSwitchTimer) {
+    clearPendingSwitch(); // сигнал вернулся раньше, чем истёк delay — переключать не нужно
+  } else if (!isLive && watchedStreamWasLive && !pendingSwitchTimer && sceneSwitcher.state !== 'switched') {
+    pendingSwitchTimer = setTimeout(switchToFallback, sceneSwitcher.delaySec * 1000);
+  } else if (isLive && sceneSwitcher.state === 'switched') {
+    await switchBackToLive();
+  }
+  watchedStreamWasLive = isLive;
+}
+
+setInterval(monitorTick, 2000);
+
+app.get('/api/obs/scenes', async (req, res) => {
+  try {
+    const client = await ensureObsConnected();
+    const { scenes } = await client.call('GetSceneList');
+    // OBS отдаёт сцены снизу вверх относительно списка в самом OBS — разворачиваем,
+    // чтобы порядок в выпадающем списке совпадал с тем, что стример видит в OBS.
+    res.json({ scenes: scenes.map((s) => s.sceneName).reverse() });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.get('/api/obs/scene-switcher', (req, res) => {
+  res.json(sceneSwitcher);
+});
+
+app.post('/api/obs/scene-switcher', async (req, res) => {
+  const body = req.body || {};
+  const enabled = Boolean(body.enabled);
+  const watchStreamName = body.watchStreamName != null ? String(body.watchStreamName).trim() : null;
+  const fallbackScene = body.fallbackScene != null ? String(body.fallbackScene).trim() : null;
+  const rawDelay = Number(body.delaySec);
+  const delaySec = Number.isFinite(rawDelay) ? Math.min(60, Math.max(0, rawDelay)) : sceneSwitcher.delaySec;
+
+  if (enabled && (!watchStreamName || !STREAM_NAME_RE.test(watchStreamName))) {
+    return res.status(400).json({ error: 'не выбран стрим для отслеживания' });
+  }
+  if (enabled && !fallbackScene) {
+    return res.status(400).json({ error: 'не выбрана резервная сцена' });
+  }
+
+  // Смена отслеживаемого стрима или выключение — сбрасываем текущий цикл
+  // переключения, чтобы не словить лишнее переключение сцены на стыке смены настроек.
+  if (watchStreamName !== sceneSwitcher.watchStreamName || !enabled) {
+    clearPendingSwitch();
+    if (sceneSwitcher.state === 'switched') await switchBackToLive();
+    watchedStreamWasLive = null;
+    rememberedLiveScene = null;
+  }
+
+  sceneSwitcher.enabled = enabled;
+  sceneSwitcher.watchStreamName = enabled ? watchStreamName : null;
+  sceneSwitcher.fallbackScene = enabled ? fallbackScene : sceneSwitcher.fallbackScene; // помним выбор даже выключенным
+  sceneSwitcher.delaySec = delaySec;
+  sceneSwitcher.state = enabled ? 'watching' : 'idle';
+  if (enabled) sceneSwitcher.lastError = null;
+
+  res.json(sceneSwitcher);
 });
 
 // --- WS-статистика для NOALBS ----------------------------------------------

@@ -46,6 +46,7 @@ russian.WelcomeLabel2=Установим сервер для трансляци�
 Source: "..\docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\get-host-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\launch-obs.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\check-static-ip.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-missing.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-not-running.html"; DestDir: "{app}"; Flags: ignoreversion
@@ -68,6 +69,16 @@ Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{autodesktop}\Запустить трансляцию"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Comment: "Bondcast Stream — запустить сервер трансляций"
 Name: "{group}\Запустить трансляцию"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+
+[Registry]
+; Кнопка "Запустить OBS" в панели дёргает bondcast-obs://launch — панель сидит в
+; Docker-контейнере и не может напрямую стартовать .exe на хосте, а так Windows
+; сама передаёт запуск launch-obs.ps1. HKCU (не HKCR) — установщик ставится без
+; прав администратора (PrivilegesRequired=lowest), а HKCU\Software\Classes
+; резолвится системой так же, как HKCR, но не требует elevation.
+Root: HKCU; Subkey: "Software\Classes\bondcast-obs"; ValueType: string; ValueName: ""; ValueData: "URL:Bondcast OBS Launcher"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\bondcast-obs"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\bondcast-obs\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """powershell.exe"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\launch-obs.ps1"" ""%1"""
 
 [Run]
 ; Чекбокс на странице Finished, отмечен по умолчанию (postinstall) - запускает

@@ -27,16 +27,6 @@ function bindCopyButtons(root) {
   });
 }
 
-function formatUptime(startedAt) {
-  if (!startedAt) return '—';
-  const started = new Date(startedAt).getTime();
-  const secs = Math.floor((Date.now() - started) / 1000);
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  return `${h}ч ${m}м ${s}с`;
-}
-
 // Discord-style случайное имя стрима вместо унылого "livestream" — adjective-noun-1234.
 const NAME_ADJECTIVES = ['turbo', 'sneaky', 'feral', 'spicy', 'soggy', 'glorious', 'unhinged', 'majestic', 'chaotic', 'crispy', 'salty', 'fancy', 'goblin', 'based', 'cursed', 'radiant', 'grumpy', 'sleepy', 'unstable', 'legendary'];
 const NAME_NOUNS = ['hamster', 'otter', 'walrus', 'goose', 'capybara', 'raccoon', 'penguin', 'narwhal', 'possum', 'ferret', 'wombat', 'axolotl', 'llama', 'platypus', 'yeti', 'gremlin', 'potato', 'pigeon', 'moth', 'shrimp'];
@@ -60,44 +50,26 @@ function regenerateStreamName() {
   return name;
 }
 
-// --- Режим (Просто/Продвинуто) + вкладки ---------------------------------
+// --- Вкладки ---------------------------------------------------------------
 // Раньше это были две отдельные страницы (index.html — быстрый старт,
 // dashboard.html — расширенная панель); теперь одна страница с вкладками,
-// состояние которых переживает перезагрузку так же, как остальные
-// настройки панели (localStorage), а не сбрасывается на дефолт.
+// выбор которых переживает перезагрузку так же, как остальные настройки
+// панели (localStorage), а не сбрасывается на дефолт.
 const TAB_KEY = 'bondcast_tab';
-const ADVANCED_KEY = 'bondcast_advanced';
-const TABS = ['quickstart', 'services', 'stream', 'diag'];
+const TABS = ['quickstart', 'stream'];
 
 const uiState = {
   tab: TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'quickstart',
-  // По умолчанию — «Продвинуто» (как в мокапе): панель исторически была
-  // расширенной, «Просто» — осознанный шаг назад для менее технического стримера.
-  advanced: localStorage.getItem(ADVANCED_KEY) !== null ? localStorage.getItem(ADVANCED_KEY) === '1' : true,
 };
 
 function setTab(tab) {
   if (!TABS.includes(tab)) return;
-  if (tab === 'services' && !uiState.advanced) tab = 'quickstart';
   uiState.tab = tab;
   localStorage.setItem(TAB_KEY, tab);
   applyUiState();
 }
 
-function setAdvanced(advanced) {
-  uiState.advanced = advanced;
-  localStorage.setItem(ADVANCED_KEY, advanced ? '1' : '0');
-  // Продвинутая вкладка «Сервисы» пропадает в «Просто» — если она была
-  // открыта, уводим на «Старт и подключение», а не оставляем пустой экран.
-  if (!advanced && uiState.tab === 'services') uiState.tab = 'quickstart';
-  localStorage.setItem(TAB_KEY, uiState.tab);
-  applyUiState();
-}
-
 function applyUiState() {
-  document.body.classList.toggle('advanced', uiState.advanced);
-  document.getElementById('modeSimpleBtn').classList.toggle('active', !uiState.advanced);
-  document.getElementById('modeAdvancedBtn').classList.toggle('active', uiState.advanced);
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === uiState.tab);
   });
@@ -106,353 +78,828 @@ function applyUiState() {
   });
 }
 
-document.getElementById('modeSimpleBtn').onclick = () => setAdvanced(false);
-document.getElementById('modeAdvancedBtn').onclick = () => setAdvanced(true);
 document.querySelectorAll('.tab-btn').forEach((btn) => { btn.onclick = () => setTab(btn.dataset.tab); });
 applyUiState();
 
-// --- Статус сервисов (srs/srtla-rec) -------------------------------------
-const svcStatusCardEl = document.getElementById('svcStatusCard');
-const cardsEl = document.getElementById('cards');
-let latestStatus = [];
+// --- Достижимость портов снаружи (баннер + карточка) -----------------------
+// Проверяем три порта: 5000/UDP (бондинг, srtla-rec), 10080/UDP (прямой SRT в
+// SRS) и 4455/TCP (управление OBS по WebSocket, если телефон дёргает OBS не
+// из той же локальной сети) — у стримера может быть открыт не весь набор
+// (см. server/stream/README.md, раздел «Стримишь не в своей сети»), и это
+// должно быть видно на панели сразу, а не выясняться потом руками через
+// docker ps/роутер.
+const PORTS_TO_CHECK = [
+  { port: 5000, proto: 'udp', label: 'Бондинг' },
+  { port: 10080, proto: 'udp', label: 'Прямой SRT' },
+  { port: 4455, proto: 'tcp', label: 'Управление OBS', optional: true, note: ' — нужен, только если управляешь OBS не из локальной сети' },
+  { port: 1935, proto: 'tcp', label: 'RTMP (приглашение друга)', optional: true, note: ' — нужен, только если приглашаешь кого-то стримить через OBS' },
+];
 
-function renderSvcStatusCard(statuses) {
-  const allRunning = statuses.length > 0 && statuses.every((c) => c.running);
-  svcStatusCardEl.classList.toggle('status-bad', !allRunning);
-  if (allRunning) {
-    const srs = statuses.find((c) => c.name === 'srs');
-    svcStatusCardEl.innerHTML = `
-      <div class="status-badge ok">✓</div>
-      <div><b>Сервисы запущены</b><span class="meta">Всё в порядке — работают уже ${formatUptime(srs && srs.startedAt)}</span></div>`;
-  } else {
-    const down = statuses.filter((c) => !c.running).map((c) => c.name).join(', ') || 'сервисы';
-    svcStatusCardEl.innerHTML = `
-      <div class="status-badge bad">!</div>
-      <div><b>Не все сервисы запущены</b><span class="meta">${escapeHtml(down)} — открой вкладку «Сервисы» и нажми Start</span></div>`;
-  }
-}
-
-function renderCards(statuses) {
-  cardsEl.innerHTML = '';
-  statuses.forEach((c) => {
-    const div = document.createElement('div');
-    div.className = 'row';
-    div.innerHTML = `
-      <span class="dot ${c.running ? 'running' : 'stopped'}"></span>
-      <div class="row-label">
-        <b>${escapeHtml(c.name)}</b>
-        <span class="row-meta">${c.found ? c.state : 'не найден'}${c.running ? ` · ${formatUptime(c.startedAt)}` : ''}</span>
-      </div>
-      <div class="row-actions">
-        <button class="start ${!c.running ? 'primary' : ''}" ${c.running ? 'disabled' : ''}>${c.found ? 'Start' : 'Создать'}</button>
-        <button class="stop" ${!c.running ? 'disabled' : ''}>Stop</button>
-      </div>
-    `;
-    div.querySelector('.start').onclick = () => callAction(c.name, c.found ? 'start' : 'recreate');
-    div.querySelector('.stop').onclick = () => callAction(c.name, 'stop');
-    cardsEl.appendChild(div);
-  });
-}
-
-async function callAction(name, action) {
-  try {
-    const res = await fetch(`/api/containers/${name}/${action}`, { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'unknown error');
-  } catch (e) {
-    alert(`${name} ${action}: ${e.message}`);
-  }
-  refreshStatus();
-}
-
-async function refreshStatus() {
-  try {
-    const res = await fetch('/api/status');
-    const data = await res.json();
-    latestStatus = data;
-    renderSvcStatusCard(data);
-    renderCards(data);
-  } catch (e) {
-    svcStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Не удалось получить статус</b><span class="meta">${escapeHtml(e.message)}</span></div>`;
-    cardsEl.innerHTML = `<div class="row"><span class="row-label"><span class="row-meta">не удалось получить статус: ${escapeHtml(e.message)}</span></span></div>`;
-  }
-}
-
-refreshStatus();
-setInterval(refreshStatus, 5000);
-
-// --- Достижимость порта снаружи (баннер + карточка) -----------------------
-const portBannerEl = document.getElementById('portBanner');
-const portBannerTextEl = document.getElementById('portBannerText');
-const portStatusCardEl = document.getElementById('portStatusCard');
+// Результаты последней проверки хранятся здесь (не только рендерятся) — чек-лист
+// шагов внутри каждого раскрытого сценария (см. «Три сценария начала стрима» ниже)
+// читает их отсюда вместо отдельной общей карточки со списком портов.
+let latestPortResults = [];
 
 function renderPortChecking() {
-  portStatusCardEl.classList.remove('status-bad');
-  portStatusCardEl.innerHTML = `<div class="status-badge">…</div><div><b>Проверяю порт снаружи</b><span class="meta">Стучусь через check-host.net…</span></div>`;
+  latestPortResults = [];
+  renderFlowList();
 }
 
-function renderPortResult(data) {
+// OBS-порт не виден снаружи почти всегда по одной из двух причин: OBS вообще не
+// запущен, или запущен, но в нём не включён WebSocket-сервер (без него порт 4455
+// никто не слушает, снаружи он ничем не отличается от закрытого). Показываем эту
+// шпаргалку прямо у строки проверки, а не только когда что-то уже не работает —
+// удобнее один раз включить сразу с галкой "автозапуск", чем вспоминать потом.
+const OBS_WEBSOCKET_HOWTO = `
+  <details class="nested">
+    <summary>Как включить WebSocket-сервер в OBS</summary>
+    <div class="body">
+      <ol>
+        <li>Запусти OBS Studio.</li>
+        <li>Меню <b>Tools → WebSocket Server Settings</b>.</li>
+        <li>Поставь галку <b>Enable WebSocket server</b>. Порт по умолчанию — <code>4455</code>, менять не нужно.</li>
+        <li><b>Enable Authentication</b> можно оставить выключенным — если управляешь OBS из той же
+          локальной сети, что и телефон, пароль не нужен, поле пароля в настройках Bondcast оставь пустым.
+          Включай его, только если пробрасываешь этот порт наружу (управляешь не из локальной сети) — иначе
+          к твоему OBS сможет подключиться кто угодно из интернета.</li>
+        <li>OK — настройка запоминается между запусками OBS, включать заново не нужно. Но сам OBS должен
+          быть запущен, чтобы порт был виден снаружи.</li>
+      </ol>
+    </div>
+  </details>`;
+
+// Открывает bondcast-obs:// — протокол регистрирует установщик (installer/setup.iss,
+// HKCU\Software\Classes\bondcast-obs), обработчик — launch-obs.ps1 рядом со start.bat.
+// Панель сидит в Docker-контейнере и не может напрямую запустить .exe на хосте —
+// только так, через собственный URL-протокол, который Windows передаёт нужному
+// обработчику сама. Если OBS ставили не через установщик Bondcast (вручную/старая
+// версия) — протокол не зарегистрирован, кнопка ничего не сделает, тогда запускай
+// OBS вручную.
+const OBS_LAUNCH_BUTTON = `
+  <button type="button" class="primary" data-action="launch-obs" style="margin-top:8px">Запустить OBS</button>`;
+
+// Один шаг чек-листа внутри раскрытого сценария (замена бывшей общей карточки
+// #portStatusCard со списком всех портов сразу) — берёт результат по номеру порта
+// из latestPortResults, а не считает сам.
+// Состояние проверки конкретного порта — используется и для самого рендера шага
+// (portStepHtml), и отдельно для того, чтобы решить, показывать ли СЛЕДУЮЩИЙ шаг
+// чек-листа (см. gateSteps ниже): 'pending' — результат ещё не пришёл, 'reachable' —
+// открыт, 'bad'/'error' — не открыт или проверка не удалась.
+function portCheckState(port) {
+  const found = latestPortResults.find((r) => r.meta.port === port);
+  if (!found) return 'pending';
+  if (found.data.error) return 'error';
+  return found.data.reachable ? 'reachable' : 'bad';
+}
+
+function portStepHtml({ port, proto, label, optional, note }) {
+  const protoLabel = proto.toUpperCase();
+  const noteText = optional ? (note || '') : '';
+  const obsExtras = port === 4455 ? OBS_LAUNCH_BUTTON + OBS_WEBSOCKET_HOWTO : '';
+  const found = latestPortResults.find((r) => r.meta.port === port);
+  if (!found) {
+    return `
+      <div class="flow-step">
+        <span class="spinner"></span>
+        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">Проверяю снаружи — стучусь через check-host.net…</span></div>
+      </div>`;
+  }
+  const { data } = found;
   if (data.error) {
-    portStatusCardEl.classList.add('status-bad');
-    portStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Проверка не удалась</b><span class="meta">${escapeHtml(data.error)}</span></div>`;
-    portBannerEl.hidden = true;
-    return;
+    return `
+      <div class="flow-step">
+        <div class="flow-step-dot bad"></div>
+        <div><b>${escapeHtml(label)}: проверка не удалась</b><span class="flow-step-meta">${escapeHtml(data.error)}</span>${obsExtras}</div>
+      </div>`;
   }
-
   if (data.reachable) {
-    portStatusCardEl.classList.remove('status-bad');
-    portStatusCardEl.innerHTML = `<div class="status-badge ok">✓</div><div><b>Порт виден снаружи</b><span class="meta">5000/UDP открыт (${escapeHtml(data.targetIp)})</span></div>`;
-    portBannerEl.hidden = true;
-    return;
+    return `
+      <div class="flow-step">
+        <div class="flow-step-dot dot-live"></div>
+        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${obsExtras}</div>
+      </div>`;
   }
+  const hint = !optional ? hintFor({ port, proto }, data) : '';
+  const natHowto = !optional && data.natLikely && !data.vpnLikely && data.localIp ? natHowtoHtml(port, data.localIp) : '';
+  return `
+    <div class="flow-step">
+      <div class="flow-step-dot ${optional ? 'warn' : 'bad'}"></div>
+      <div>
+        <b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — закрыт${data.targetIp ? ` (${escapeHtml(data.targetIp)})` : ''}${escapeHtml(noteText)}</span>${obsExtras}
+        ${hint ? `<div class="row-meta" style="margin-top:6px">${escapeHtml(hint)} <a href="#" class="recheck-ports">Проверить снова</a></div>` : ''}
+        ${natHowto}
+      </div>
+    </div>`;
+}
 
-  const hint = data.vpnLikely
-    ? 'Похоже, включён VPN — он часто блокирует трафик наружу. Выключи его и запусти start.bat ещё раз, мы всё перепроверим.'
-    : data.natLikely
-      ? `Порт 5000/UDP закрыт снаружи (внешний IP: ${data.targetIp}) — нужно прокинуть его на роутере.`
-      : `Порт 5000/UDP снаружи не виден (${data.targetIp}) — выключи антивирус/файрвол и попробуй снова.`;
-
-  portStatusCardEl.classList.add('status-bad');
-  portStatusCardEl.innerHTML = `<div class="status-badge bad">!</div><div><b>Порт не виден снаружи</b><span class="meta">${escapeHtml(hint)}</span></div>`;
-
-  portBannerTextEl.innerHTML = escapeHtml(hint);
-
-  // Пошаговая инструкция по проросу порта — только когда причина именно в NAT (это
-  // самый частый случай для домашнего роутера), а не VPN/антивирус, где шаги другие.
-  if (data.natLikely && !data.vpnLikely && data.localIp) {
-    portBannerTextEl.innerHTML += `
-      <details class="nested port-howto" open>
-        <summary>Как открыть порт на роутере</summary>
-        <div class="body">
-          <ol>
-            <li>Зайди в настройки роутера (обычно <code>192.168.1.1</code> или <code>192.168.0.1</code> в браузере).</li>
-            <li>Найди раздел <b>Firewall → Port Forwarding</b> (может называться NAT, Virtual Server, проброс портов).</li>
-            <li>Добавь правило: Local IP — <code>${escapeHtml(data.localIp)}</code>, порт — <code>5000</code>, протокол — <b>UDP</b> (если нет отдельного UDP, выбери «Both»).</li>
-            <li>Сохрани и нажми «Проверить снова».</li>
-          </ol>
-        </div>
-      </details>`;
+// Раньше это был текст общего баннера наверху страницы (виден всегда, для любого
+// порта сразу) — теперь показывается прямо внутри проблемного шага чек-листа
+// нужного сценария, конкретно про тот порт, который сейчас закрыт.
+function hintFor({ port, proto }, data) {
+  const protoLabel = proto.toUpperCase();
+  if (data.vpnLikely) {
+    return 'Похоже, включён VPN — он часто блокирует трафик наружу. Выключи его и запусти start.bat ещё раз, мы всё перепроверим.';
   }
+  if (data.natLikely) {
+    return `Порт ${port}/${protoLabel} закрыт снаружи (внешний IP: ${data.targetIp}) — нужно прокинуть его на роутере.`;
+  }
+  return `Порт ${port}/${protoLabel} снаружи не виден (${data.targetIp}) — выключи антивирус/файрвол и попробуй снова.`;
+}
 
-  portBannerEl.hidden = false;
+// Пошаговая инструкция по пробросу — только когда закрытый порт упирается именно
+// в NAT (самый частый случай для домашнего роутера), а не в VPN/антивирус, где
+// шаги другие (см. hintFor выше).
+function natHowtoHtml(port, localIp) {
+  return `
+    <details class="nested" style="margin-top:8px">
+      <summary>Как открыть порт на роутере</summary>
+      <div class="body">
+        <ol>
+          <li>Зайди в настройки роутера (обычно <code>192.168.1.1</code> или <code>192.168.0.1</code> в браузере).</li>
+          <li>Найди раздел <b>Firewall → Port Forwarding</b> (может называться NAT, Virtual Server, проброс портов).</li>
+          <li>Добавь правило: Local IP — <code>${escapeHtml(localIp)}</code>, порт — <code>${port}</code>, протокол — <b>UDP</b> (если нет отдельного UDP, выбери «Both»).</li>
+          <li>Если правило уже есть, а порт всё равно закрыт — это частые ошибки в самом правиле:
+            <ul>
+              <li><b>Public (WAN) порт ≠ Local порт.</b> Легко скопировать рабочее правило для
+                одного порта и забыть поменять внешний порт у копии — тогда снаружи по-прежнему
+                открыт старый порт, а новый никуда не проброшен.</li>
+              <li><b>Заполнено поле «Remote Host».</b> Если там стоит конкретный IP (например, по
+                ошибке — публичный IP самого роутера), правило примет подключения только с него и
+                отбросит реальный трафик со телефона. Это поле должно быть пустым.</li>
+            </ul>
+          </li>
+          <li>Сохрани и нажми «Проверить снова» ниже.</li>
+        </ol>
+      </div>
+    </details>`;
+}
+
+// Точка-диагностика на закрытой плашке сценария (см. .flow-pill-chip в index.html)
+// — по портам, реально нужным именно этому сценарию. "pending", пока проверка
+// ещё не пришла, ничего не рисуем — не мигать пустым кружком на каждую загрузку.
+const FLOW_REQUIRED_PORTS = { bondcast: [5000], 'other-app': [10080], invite: [1935] };
+
+function flowPortStatus(flowId) {
+  const ports = FLOW_REQUIRED_PORTS[flowId] || [];
+  const found = ports.map((port) => latestPortResults.find((r) => r.meta.port === port));
+  if (found.some((r) => !r)) return 'pending';
+  return found.every((r) => r.data.reachable) ? 'ok' : 'bad';
+}
+
+function renderPortResults(results) {
+  latestPortResults = results;
+  renderFlowList();
 }
 
 async function checkPort() {
   renderPortChecking();
-  try {
-    const res = await fetch('/api/reachability?port=5000&proto=udp');
-    const data = await res.json();
-    renderPortResult(data);
-  } catch (e) {
-    renderPortResult({ error: e.message });
-  }
+  const results = await Promise.all(
+    PORTS_TO_CHECK.map(async (meta) => {
+      try {
+        const res = await fetch(`/api/reachability?port=${meta.port}&proto=${meta.proto}`);
+        return { meta, data: await res.json() };
+      } catch (e) {
+        return { meta, data: { error: e.message } };
+      }
+    }),
+  );
+  renderPortResults(results);
 }
 
-document.getElementById('portBannerRetry').onclick = checkPort;
-checkPort();
+// Первый запуск checkPort() — ниже, после инициализации сценариев: он рендерит
+// чек-лист внутри раскрытой ветки через renderFlowList(), а её состояние/DOM
+// объявлены дальше в файле — вызывать здесь, до них, рано (ReferenceError на TDZ).
 
-// --- Видео (HTTP-FLV) ------------------------------------------------------
-let flvPlayer = null;
-const videoHintEl = document.getElementById('videoHint');
-
-function stopVideo(hint) {
-  if (flvPlayer) {
-    flvPlayer.destroy();
-    flvPlayer = null;
-  }
-  videoHintEl.textContent = hint || '';
-}
-
-function loadVideo() {
-  const name = streamNameEl.value.trim() || 'livestream';
-  const videoEl = document.getElementById('videoEl');
-  stopVideo();
-
-  // flv.js в браузере умеет декодировать только H.264 — на HEVC (частый выбор для
-  // энергоэффективной записи с телефона) он не падает с ошибкой, а на каждый новый
-  // фрагмент живого потока молча долбит demux заново, роняя сотни console.error.
-  // Единственный надёжный фикс — вообще не пытаться, зная кодек заранее
-  // (latestStreams — из /api/streams, куда SRS его уже отдаёт).
-  const known = latestStreams.find((s) => s.name === name);
-  if (known && known.video && /hevc/i.test(known.video.codec)) {
-    videoHintEl.textContent = 'Поток в HEVC — браузерный плеер такое не умеет. Смотри по ссылке для VLC во «Старт и подключение → Другие адреса».';
+// Делегируем клики на document, а не на конкретный контейнер — обе кнопки живут
+// внутри чек-листа сценария, который целиком перерисовывается (innerHTML) на
+// каждой проверке порта и на каждое открытие/закрытие ветки, точечный обработчик
+// слетал бы вместе с ней.
+document.addEventListener('click', (e) => {
+  const recheck = e.target.closest('.recheck-ports');
+  if (recheck) {
+    e.preventDefault();
+    checkPort();
     return;
   }
 
-  if (!window.flvjs || !window.flvjs.isSupported()) {
-    videoHintEl.textContent = 'flv.js не поддерживается в этом браузере.';
+  const watchLink = e.target.closest('[data-action="watch-preview"]');
+  if (watchLink) {
+    e.preventDefault();
+    openPreview(watchLink.dataset.name);
     return;
   }
-  const url = `${window.location.protocol}//${window.location.hostname}:8080/live/${name}.flv`;
-  flvPlayer = flvjs.createPlayer({ type: 'flv', url });
-  flvPlayer.on(flvjs.Events.ERROR, (type, detail) => {
-    stopVideo(`Превью прервано: ${type}/${detail}.`);
-  });
-  flvPlayer.attachMediaElement(videoEl);
-  flvPlayer.load();
-  flvPlayer.play().catch(() => {});
+
+  const btn = e.target.closest('[data-action="launch-obs"]');
+  if (!btn) return;
+  window.location.href = 'bondcast-obs://launch';
+  // Кнопка бесполезна, пока OBS стартует (повторный клик просто откроет второй раз
+  // впустую) — прячем на время запуска и сразу перепроверяем порт, чтобы строка сама
+  // обновилась на "виден", если WebSocket в OBS уже был включён раньше (не нужно
+  // руками жать "Проверить снова").
+  btn.disabled = true;
+  btn.textContent = 'Запускаю OBS…';
+  setTimeout(checkPort, 6000);
+});
+
+// Плеер из самого SRS (bundled, тот же что и в его /console) — надёжнее flv.js
+// (молча ломается на HEVC): корректно показывает и такое. Раньше открывался
+// отдельной вкладкой чужого вида — теперь тот же URL (тот же плеер, то же
+// HEVC-поведение, ничего не переизобретаем) встраивается iframe'ом прямо в
+// панель через openPreview() ниже, в рамке её собственного стиля.
+function srsPlayerUrl(name) {
+  const host = window.location.hostname;
+  const schema = window.location.protocol.replace(':', '');
+  return `${window.location.protocol}//${host}:8080/players/srs_player.html` +
+    `?vhost=__defaultVhost__&app=live&stream=${encodeURIComponent(name)}.flv` +
+    `&server=${host}&port=8080&autostart=true&schema=${schema}`;
 }
-document.getElementById('loadVideo').onclick = loadVideo;
+
+const pageEl = document.querySelector('.page');
+const previewPanelEl = document.getElementById('previewPanel');
+
+function openPreview(name) {
+  previewPanelEl.innerHTML = `
+    <div class="page-preview-head">
+      <b>Предпросмотр: ${escapeHtml(name)}</b>
+      <button type="button" class="page-preview-close">✕</button>
+    </div>
+    <iframe src="${escapeHtml(srsPlayerUrl(name))}" allow="autoplay" title="Предпросмотр «${escapeHtml(name)}»"></iframe>`;
+  previewPanelEl.querySelector('.page-preview-close').onclick = closePreview;
+  previewPanelEl.hidden = false;
+  pageEl.classList.add('has-preview');
+}
+
+function closePreview() {
+  previewPanelEl.hidden = true;
+  previewPanelEl.innerHTML = ''; // выгружаем iframe, а не просто прячем — не гонять видео фоном впустую
+  pageEl.classList.remove('has-preview');
+}
 
 // --- Подключение (адреса для OBS / мобильного приложения) -----------------
-const streamNameEl = document.getElementById('streamName');
-const obsOneLinerEl = document.getElementById('obsOneLiner');
-const obsOneLinerCopyBtn = document.getElementById('obsOneLinerCopy');
-const quickHostEl = document.getElementById('quickHost');
-const quickPortEl = document.getElementById('quickPort');
-const otherConnectionsEl = document.getElementById('otherConnections');
-const qrImgEl = document.getElementById('qr');
+// Карточка со списком всех адресов сразу (локальный/внешний, для каждого способа)
+// раньше жила здесь отдельным блоком — теперь то же самое видно точечно, внутри
+// чек-листа нужного сценария (ipStepHtml/otherAppFlowBody/inviteFlowBody ниже),
+// поэтому refreshConnections() только обновляет latestHosts и просит перерисовать
+// сценарии; предупреждение про неизвестный IP тоже уже встроено в noHostWarningHtml.
+let latestHosts = [];
+let currentStreamName = getOrCreateStreamName();
 
-function renderOtherConnections(hosts, name) {
-  otherConnectionsEl.innerHTML = hosts
+async function refreshConnections() {
+  try {
+    const res = await fetch(`/api/connections?name=${encodeURIComponent(currentStreamName)}`);
+    const data = await res.json();
+    latestHosts = data.hosts || [];
+    renderFlowList();
+  } catch (e) {
+    latestHosts = [];
+    renderFlowList();
+  }
+}
+
+function setStreamName(name) {
+  currentStreamName = name.trim() || 'livestream';
+  localStorage.setItem(STREAM_NAME_KEY, currentStreamName);
+  refreshConnections();
+}
+
+// --- «Пригласить друга»: отдельное имя стрима, чтобы не путать с основным ---
+// (друг стримит параллельно с телефоном/другим приложением — если бы имя было
+// общим, второй источник затирал бы первый в SRS).
+const INVITE_STREAM_NAME_KEY = 'bondcast_invite_stream_name';
+let inviteStreamName = localStorage.getItem(INVITE_STREAM_NAME_KEY) || randomStreamName();
+localStorage.setItem(INVITE_STREAM_NAME_KEY, inviteStreamName);
+let inviteHosts = [];
+
+async function refreshInviteConnections() {
+  try {
+    const res = await fetch(`/api/connections?name=${encodeURIComponent(inviteStreamName)}`);
+    const data = await res.json();
+    inviteHosts = data.hosts || [];
+  } catch (e) {
+    inviteHosts = [];
+  }
+  renderFlowList();
+}
+
+function regenerateInvite() {
+  inviteStreamName = randomStreamName();
+  localStorage.setItem(INVITE_STREAM_NAME_KEY, inviteStreamName);
+  refreshInviteConnections();
+}
+
+// --- Три сценария начала стрима (переключатель + одна панель) ----------------
+// Одна активная ветка за раз — открытие другой сворачивает предыдущую, чтобы
+// страница не превращалась в простыню из всех трёх сразу.
+const FLOWS = [
+  { id: 'bondcast', icon: '📱', title: 'Через Bondcast', hint: 'Приложение всё настроит по QR' },
+  { id: 'other-app', icon: '⇄', title: 'Стороннее приложение', hint: 'Moblin, Larix — адрес вручную' },
+  { id: 'invite', icon: '👥', title: 'Пригласить друга', hint: 'Экран/вебка через его OBS' },
+];
+
+let activeFlowId = null;
+const flowSelectorEl = document.getElementById('flowSelector');
+const flowPanelEl = document.getElementById('flowPanel');
+
+// Плавно "доезжаем" контейнер до новой высоты вместо мгновенного скачка. Открытие
+// сценария, смена результата проверки порта или появление статус-бара резко меняют
+// высоту блока — без этого всё, что ниже на странице, прыгало бы вслед за ним.
+// Пропускаем анимацию, если высота не изменилась (например, опрос раз в 5с ничего
+// нового не принёс) — незачем городить transition ради no-op.
+//
+// animateHeightGen — счётчик "поколений" на элемент: быстрый повторный клик
+// (открыть/закрыть один сценарий подряд, раньше чем первая анимация успела
+// доиграть) запускал вторую animateHeight поверх первой, а её onDone от ПЕРВОГО
+// вызова срабатывал позже и стирал el.style.height/transition, обрывая ВТОРУЮ,
+// ещё не доигравшую анимацию — высота дёргалась. Каждый вызов помечает элемент
+// своим номером; onDone применяет очистку, только если элемент всё ещё "его".
+const animateHeightGen = new WeakMap();
+
+function animateHeight(el, renderFn) {
+  const gen = (animateHeightGen.get(el) || 0) + 1;
+  animateHeightGen.set(el, gen);
+
+  const fromHeight = el.getBoundingClientRect().height;
+  renderFn();
+  const toHeight = el.scrollHeight;
+  if (Math.abs(fromHeight - toHeight) < 1) return;
+  el.style.height = `${fromHeight}px`;
+  el.style.overflow = 'hidden';
+  el.getBoundingClientRect(); // форсируем reflow — иначе браузер схлопнет transition в один кадр
+  el.style.transition = 'height .22s ease';
+  el.style.height = `${toHeight}px`;
+  const onDone = (e) => {
+    if (e.target !== el || e.propertyName !== 'height') return;
+    if (animateHeightGen.get(el) !== gen) return; // элемент уже подхватил более новый вызов — не наш выход
+    el.style.height = '';
+    el.style.overflow = '';
+    el.style.transition = '';
+    el.removeEventListener('transitionend', onDone);
+  };
+  el.addEventListener('transitionend', onDone);
+}
+
+function setActiveFlow(id) {
+  activeFlowId = activeFlowId === id ? null : id;
+  renderFlowList();
+}
+
+function isStreamLive(name) {
+  return latestStreams.some((s) => s.name === name);
+}
+
+// Общий "жду / уже идёт" хвост для всех трёх веток — как только SRS реально
+// увидел этот поток (не раньше — само по себе появление QR/URL ничего не
+// доказывает), показываем готовую ссылку для просмотра в OBS.
+function liveOrWaitingHtml(name, watchOneLinerUrl) {
+  if (!isStreamLive(name)) {
+    return `<div class="flow-waiting"><span class="spinner"></span> Жду начала стрима «${escapeHtml(name)}»…</div>`;
+  }
+  return `
+    <div class="flow-live">✓ Стрим идёт!</div>
+    ${addrRow('Для OBS (просмотр)', watchOneLinerUrl, 'Медиаисточник → Свойства → сними галочку «Локальный файл» → вставь ссылку в поле «Вход» (URL). Не для запуска — только для просмотра.')}
+    <a href="#" data-action="watch-preview" data-name="${escapeHtml(name)}" class="watch-link">Смотреть →</a>`;
+}
+
+function noHostWarningHtml() {
+  return `<div class="flow-warn">IP этой машины неизвестен панели — запусти ярлык «Запустить трансляцию» на рабочем столе.</div>`;
+}
+
+function noHostWarningItems() {
+  return [{ key: 'warn', html: noHostWarningHtml() }];
+}
+
+// Шаг "IP статический" — не результат проверки порта, а просто напоминание какой
+// адрес будет использован ниже в этой же ветке; зелёный, пока адрес вообще известен.
+function ipStepHtml(host) {
+  if (!host) {
+    return `<div class="flow-step"><div class="flow-step-dot bad"></div><div><b>IP не определён</b><span class="flow-step-meta">Запусти ярлык «Запустить трансляцию» на рабочем столе</span></div></div>`;
+  }
+  return `<div class="flow-step"><div class="flow-step-dot dot-live"></div><div><b>IP статический</b><span class="flow-step-meta">${escapeHtml(host.mobileSrtlaHost)}</span></div></div>`;
+}
+
+// Прогрессивное раскрытие: шаг с gate:'required' блокирует показ всего, что идёт
+// ПОСЛЕ него, пока сам не зазеленеет (state === 'reachable') — незачем сразу
+// показывать финальный QR/адрес, если ещё не понятно, дойдёт ли вообще дело до
+// него. gate:'optional' (напр. порт 4455 для управления OBS) никогда не блокирует —
+// он не обязателен, ждать его смысла нет. Шаги без gate (IP, финальный) всегда
+// проходят, сами они ничего не блокируют.
+function gateSteps(items) {
+  const visible = [];
+  for (const item of items) {
+    visible.push(item);
+    if (item.gate === 'required' && item.state !== 'reachable') break;
+  }
+  return visible;
+}
+
+// Точечно обновляет шаги чек-листа по стабильному ключу: перерисовывается
+// (innerHTML) только тот узел, чьё содержимое реально изменилось — раньше вся
+// панель уходила в innerHTML одной строкой на любое изменение (даже опрос раз в
+// 5с без реальных перемен), и уже решённые шаги пересоздавались вместе с новым,
+// заново проигрывая анимацию появления. Соединительная линия (.conn-wrap) между
+// шагами хранится внутри html самого шага (кроме первого) — порядок шагов здесь
+// только растёт (gateSteps сверху добавляет, никогда не переставляет), так что
+// у узла не бывает то есть, то нет коннектора.
+function reconcileSteps(container, items) {
+  const seen = new Set();
+  let prevEl = null;
+  items.forEach((item) => {
+    seen.add(item.key);
+    let unit = container.querySelector(`:scope > [data-step-key="${item.key}"]`);
+    const isNew = !unit;
+    if (isNew) {
+      unit = document.createElement('div');
+      unit.dataset.stepKey = item.key;
+    }
+    const connector = prevEl
+      ? '<div class="conn-wrap"><div class="conn-line"></div><div class="conn-packet"></div></div>'
+      : '';
+    const html = connector + item.html;
+    if (unit.dataset.stepHtml !== html) {
+      unit.innerHTML = html;
+      unit.dataset.stepHtml = html;
+    }
+    if (isNew) unit.classList.add('step-reveal');
+    if (prevEl) prevEl.after(unit); else container.prepend(unit);
+    prevEl = unit;
+  });
+  container.querySelectorAll(':scope > [data-step-key]').forEach((el) => {
+    if (!seen.has(el.dataset.stepKey)) el.remove();
+  });
+}
+
+function bondcastFlowBody() {
+  const host = latestHosts[0];
+  if (!host) return noHostWarningItems();
+  const finalStep = `
+    <div class="flow-step flow-step-final">
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Отсканируй QR в приложении</b></div>
+      <div class="name-row">
+        <input type="text" id="streamName" value="${escapeHtml(currentStreamName)}" placeholder="имя стрима" />
+        <button type="button" class="dice-btn" id="regenName" title="Сгенерировать другое имя">🎲</button>
+      </div>
+      <img src="${host.qrDataUrl}" alt="QR для подключения" style="display:block;margin:4px auto;border-radius:8px;width:160px;height:160px;background:#fff" />
+      <div class="row-meta" style="text-align:center">Настройки → значок камеры (там же QR) → «Стримить»</div>
+      ${liveOrWaitingHtml(currentStreamName, host.playSrt)}
+    </div>`;
+  return gateSteps([
+    { key: 'ip', html: ipStepHtml(host) },
+    { key: 'port-5000', html: portStepHtml(PORTS_TO_CHECK[0]), gate: 'required', state: portCheckState(5000) },
+    { key: 'port-4455', html: portStepHtml(PORTS_TO_CHECK[2]), gate: 'optional', state: portCheckState(4455) },
+    { key: 'final', html: finalStep },
+  ]);
+}
+
+// Тумблер Moblin/Larix — чисто визуальный выбор ярлыка приложения, оба показывают
+// один и тот же реальный SRT-адрес и идентификатор стрима (нет отдельного протокола
+// под каждое приложение — это упростило бы неверно).
+let selectedThirdPartyApp = localStorage.getItem('bondcast_thirdparty_app') === 'larix' ? 'larix' : 'moblin';
+
+function setThirdPartyApp(app) {
+  selectedThirdPartyApp = app;
+  localStorage.setItem('bondcast_thirdparty_app', app);
+  renderFlowList();
+}
+
+function otherAppFlowBody() {
+  const host = latestHosts[0];
+  if (!host) return noHostWarningItems();
+  const finalStep = `
+    <div class="flow-step flow-step-final">
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Выбери приложение</b></div>
+      <div class="app-seg seg">
+        <button type="button" class="${selectedThirdPartyApp === 'moblin' ? 'active' : ''}" data-app="moblin">Moblin</button>
+        <button type="button" class="${selectedThirdPartyApp === 'larix' ? 'active' : ''}" data-app="larix">Larix</button>
+      </div>
+      ${addrRow('URL', host.obsSrtUrl, 'Без бондинга — сразу в SRS, не в srtla-rec.')}
+      ${addrRow('Идентификатор стрима', host.obsSrtStreamId, 'В Moblin — поле "Идентификатор стрима"; в других приложениях может называться Stream ID/Stream Key.')}
+      ${liveOrWaitingHtml(currentStreamName, host.playSrt)}
+    </div>`;
+  return gateSteps([
+    { key: 'ip', html: ipStepHtml(host) },
+    { key: 'port-10080', html: portStepHtml(PORTS_TO_CHECK[1]), gate: 'required', state: portCheckState(10080) },
+    { key: 'final', html: finalStep },
+  ]);
+}
+
+function inviteFlowBody() {
+  const host = inviteHosts.find((h) => h.label.includes('внешн'));
+  if (!host) {
+    return [{ key: 'warn', html: '<div class="flow-warn">Не нашли внешний IP — без него друг снаружи не достучится. Проверь интернет и нажми «Проверить снова» вверху страницы.</div>' }];
+  }
+  const finalStep = `
+    <div class="flow-step flow-step-final">
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Данные для OBS друга</b></div>
+      ${addrRow('Сервер', host.obsRtmpServer, 'В OBS: поле "Сервер".')}
+      <div class="name-row">
+        <input type="text" id="inviteName" value="${escapeHtml(inviteStreamName)}" readonly style="font-family:'SF Mono',Consolas,monospace" />
+        <button type="button" class="dice-btn" id="regenInvite" title="Сгенерировать другое имя">🎲</button>
+      </div>
+      <div class="row-meta">↑ Ключ трансляции (то же поле в OBS)</div>
+      ${liveOrWaitingHtml(inviteStreamName, host.playSrt)}
+    </div>`;
+  return gateSteps([
+    { key: 'ip', html: ipStepHtml(host) },
+    { key: 'port-1935', html: portStepHtml(PORTS_TO_CHECK[3]), gate: 'optional', state: portCheckState(1935) },
+    { key: 'final', html: finalStep },
+  ]);
+}
+
+function renderFlowBody(id) {
+  if (id === 'bondcast') return bondcastFlowBody();
+  if (id === 'other-app') return otherAppFlowBody();
+  if (id === 'invite') return inviteFlowBody();
+  return [];
+}
+
+// Переключатель сам не меняет высоту (все три варианта — фиксированного размера),
+// поэтому рендерится напрямую, без animateHeight — только цвет/рамка активной
+// плашки, что уже плавно меняется через CSS transition на .flow-pill.
+//
+// Тот же кэш-по-строке, что и в renderFlowPanelContent — иначе ringPulse на
+// открытой плашке дёргался бы (перезапуск infinite-анимации на новом узле) на
+// каждый опрос раз в 5с, даже когда чипы портов не изменились.
+let lastFlowSelectorHtml = null;
+
+function renderFlowSelector() {
+  const html = FLOWS.map((f) => {
+    const status = flowPortStatus(f.id);
+    const chip = status === 'pending' ? '' : `<span class="flow-pill-chip ${status}"></span>`;
+    return `
+    <button type="button" class="flow-pill ${activeFlowId === f.id ? 'open' : ''}" data-flow="${f.id}">
+      <span class="flow-pill-badge">${f.icon}${chip}</span>
+      <span class="flow-pill-title"><b>${escapeHtml(f.title)}</b><span class="flow-hint">${escapeHtml(f.hint)}</span></span>
+    </button>`;
+  }).join('');
+  if (html === lastFlowSelectorHtml) return;
+  lastFlowSelectorHtml = html;
+
+  flowSelectorEl.innerHTML = html;
+  flowSelectorEl.querySelectorAll('.flow-pill').forEach((btn) => {
+    btn.onclick = () => setActiveFlow(btn.dataset.flow);
+  });
+}
+
+// Единственная общая панель контента — её высоту анимирует animateHeight() в
+// renderFlowList() ниже. Вызывается и на опрос раз в 5с (refreshStreams/checkPort),
+// и на каждую напечатанную букву в поле имени — но теперь дальше идёт не единая
+// перезапись innerHTML, а reconcileSteps() по ключам (см. выше): трогаем DOM только
+// у тех шагов, что реально изменились. lastRenderedFlowId — когда сценарий
+// сменился (или закрылся) целиком, точечная реконсиляция между РАЗНЫМИ сценариями
+// не имеет смысла, тут по-прежнему просто пересоздаём контейнер с нуля.
+let lastRenderedFlowId;
+
+function renderFlowPanelContent() {
+  if (activeFlowId !== lastRenderedFlowId) {
+    lastRenderedFlowId = activeFlowId;
+    flowPanelEl.innerHTML = activeFlowId ? '<div class="flow-panel-content"></div>' : '';
+  }
+  if (!activeFlowId) return;
+  const contentEl = flowPanelEl.querySelector('.flow-panel-content');
+
+  // Без сохранения фокуса поле #streamName могло бы пересоздаться под курсором
+  // (если содержимое финального шага реально изменилось) и печатать стало бы
+  // невозможно — фокус слетал бы на каждый символ.
+  const active = document.activeElement;
+  const focusedId = active && active.id;
+  const selStart = active && 'selectionStart' in active ? active.selectionStart : null;
+  const selEnd = active && 'selectionEnd' in active ? active.selectionEnd : null;
+
+  reconcileSteps(contentEl, renderFlowBody(activeFlowId));
+
+  contentEl.querySelectorAll('[data-app]').forEach((btn) => {
+    btn.onclick = () => setThirdPartyApp(btn.dataset.app);
+  });
+  bindCopyButtons(contentEl);
+
+  // Поля/кнопки могли пересоздаться (если их шаг реально изменился) — навешиваем
+  // обработчики каждый раз, а не один раз при загрузке.
+  const nameInput = document.getElementById('streamName');
+  if (nameInput) nameInput.oninput = () => setStreamName(nameInput.value);
+  const regenBtn = document.getElementById('regenName');
+  if (regenBtn) regenBtn.onclick = () => setStreamName(regenerateStreamName());
+  const regenInviteBtn = document.getElementById('regenInvite');
+  if (regenInviteBtn) regenInviteBtn.onclick = regenerateInvite;
+
+  if (focusedId && (!active || !active.isConnected)) {
+    const toFocus = document.getElementById(focusedId);
+    if (toFocus) {
+      toFocus.focus();
+      if (selStart !== null && toFocus.setSelectionRange) toFocus.setSelectionRange(selStart, selEnd);
+    }
+  }
+}
+
+function renderFlowList() {
+  renderFlowSelector();
+  animateHeight(flowPanelEl, renderFlowPanelContent);
+}
+
+renderFlowList();
+refreshConnections();
+refreshInviteConnections();
+checkPort();
+
+// --- Сайдбар "Стримы на сервере" (общий для обеих вкладок) ------------------
+// Простой обзор "кто сейчас на канале" — не путать с #streamCards на вкладке
+// "Функции" (там — управление субтитрами конкретного стрима, здесь — просто
+// кто есть и куда стримить, если это OBS друга).
+const serverStreamsEl = document.getElementById('serverStreams');
+
+function srtPlayUrl(name) {
+  const host = latestHosts[0];
+  if (!host) return '';
+  return `srt://${host.mobileSrtlaHost}:10080?streamid=#!::r=live/${name},m=request`;
+}
+
+function formatLiveSince(liveSinceMs) {
+  if (!liveSinceMs) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - liveSinceMs) / 1000));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+}
+
+// Панель знает только два "своих" имени стрима (currentStreamName — общий для
+// сценариев "Через Bondcast"/"Стороннее приложение", inviteStreamName — для
+// "Пригласить друга") — что угодно ещё, реально пришедшее в SRS, подписываем нейтрально.
+function labelForServerStream(name) {
+  if (name === currentStreamName) return 'через Bondcast';
+  if (name === inviteStreamName) return 'друг · через OBS';
+  return 'стрим';
+}
+
+function renderServerStreams(streams) {
+  const slots = streams
     .map(
-      (h) => `
-    <div class="host-block">
-      <h4>${escapeHtml(h.label)}</h4>
-
-      <div class="subgroup-title">Стримить с телефона (Bondcast)</div>
-      ${addrRow('Хост', h.mobileSrtlaHost, 'В приложении Bondcast: Настройки подключения → вставь сюда вручную (или отсканируй QR на главном экране панели).')}
-      ${addrRow('Порт', String(h.mobileSrtlaPort), 'В приложении Bondcast: то же окно, поле "Порт".')}
-
-      <div class="subgroup-title">Смотреть трансляцию</div>
-      ${addrRow('Ссылка для OBS', h.playSrt, 'В OBS: Файл → Мультимедиа (Media Source) → сними галочку "Локальный файл" → вставь эту ссылку в поле "Вход".')}
-      <details class="nested">
-        <summary>Другие способы посмотреть</summary>
-        <div class="body">
-          ${addrRow('HTTP-FLV', h.playFlv, 'Открой ссылку в VLC. В браузере не откроется напрямую — нужна страница с flv.js.')}
-          ${addrRow('HLS', h.playHls, 'Открой ссылку в VLC/Safari или любом HLS-плеере. Задержка больше, чем у SRT — обычно 5-10 секунд.')}
+      (s) => `
+    <div class="server-stream-slot">
+      <div class="server-stream-slot-head">
+        <div class="server-stream-slot-icon">🎙</div>
+        <div class="server-stream-slot-info">
+          <b>${escapeHtml(s.name)}</b>
+          <span class="meta">${escapeHtml(labelForServerStream(s.name))}${s.liveSinceMs ? ' · ' + escapeHtml(formatLiveSince(s.liveSinceMs)) : ''}</span>
         </div>
-      </details>
-
-      <details class="nested">
-        <summary>Стримить с компа через OBS (вместо телефона)</summary>
-        <div class="body">
-          <div class="subgroup-title">RTMP</div>
-          ${addrRow('Сервер', h.obsRtmpServer, 'В OBS: Настройки → Трансляция → Сервис "Особый" → вставь сюда, в поле "Сервер".')}
-          ${addrRow('Ключ трансляции', name, 'В том же окне OBS: поле "Ключ трансляции".')}
-          <div class="subgroup-title">SRT (задержка ниже)</div>
-          ${addrRow('Сервер', h.obsSrtUrl, 'В OBS: Настройки → Трансляция → Сервис "Особый" → вставь сюда, в поле "Сервер".')}
-          ${addrRow('Stream ID', h.obsSrtStreamId, 'В том же окне OBS: поле "Ключ трансляции". Можно оставить пустым — тогда сервер сам назовёт поток "livestream".')}
-        </div>
-      </details>
+        <div class="live-badge"><span class="dot dot-live"></span>Live</div>
+      </div>
+      <div class="server-stream-slot-actions">
+        <button type="button" class="copy-addr" data-value="${escapeHtml(srtPlayUrl(s.name))}">Копировать для OBS</button>
+        <button type="button" class="primary server-watch-stream" data-name="${escapeHtml(s.name)}">Просмотр</button>
+      </div>
     </div>`,
     )
     .join('');
-  bindCopyButtons(otherConnectionsEl);
+
+  // Фиксированный "свободный слот" в конце независимо от длины списка выше —
+  // не второй элемент ровно на 2, а всегда последняя карточка-приглашение.
+  const emptySlot = `
+    <div class="server-stream-empty">
+      <div class="icon">👥</div>
+      <b>Свободный слот</b>
+      <div class="hint">Пригласи друга — он появится здесь, когда подключит OBS</div>
+    </div>`;
+
+  serverStreamsEl.innerHTML = slots + emptySlot;
+  bindCopyButtons(serverStreamsEl);
+  serverStreamsEl.querySelectorAll('.server-watch-stream').forEach((btn) => {
+    btn.onclick = () => openPreview(btn.dataset.name);
+  });
 }
 
-async function refreshConnections() {
-  const name = streamNameEl.value.trim() || 'livestream';
+// --- "Субтитры на стриме" — тумблер сворачивает/разворачивает существующий
+// блок настроек и управления; сама подписка на субтитры остаётся отдельной
+// явной кнопкой внутри (см. captionsButtonHtml ниже) — тумблер только прячет
+// лишнее, не меняет реальное подключённое состояние.
+const SUBS_EXPANDED_KEY = 'bondcast_subs_expanded';
+let subsExpanded = localStorage.getItem(SUBS_EXPANDED_KEY) !== '0';
+const subsSwitchEl = document.getElementById('subsSwitch');
+const subsBodyEl = document.getElementById('subsBody');
+
+function applySubsSwitch() {
+  subsSwitchEl.classList.toggle('on', subsExpanded);
+  subsBodyEl.hidden = !subsExpanded;
+}
+subsSwitchEl.onclick = () => {
+  subsExpanded = !subsExpanded;
+  localStorage.setItem(SUBS_EXPANDED_KEY, subsExpanded ? '1' : '0');
+  applySubsSwitch();
+};
+applySubsSwitch();
+
+// --- "Умный переключатель сцен OBS" — реальный бэкенд (server.js: OBS
+// websocket-клиент + монитор сигнала SRS), не просто UI-заглушка. Следит за
+// тем же стримом, что и сценарий "Через Bondcast" (currentStreamName) —
+// отдельного выбора стрима в этой карточке нет, как и в макете.
+let sceneSwitcherState = { enabled: false, watchStreamName: null, fallbackScene: null, delaySec: 3, state: 'idle', lastError: null };
+let availableObsScenes = [];
+let obsScenesError = null;
+const sceneSwitchEl = document.getElementById('sceneSwitch');
+const sceneSwitcherBodyEl = document.getElementById('sceneSwitcherBody');
+
+function applySceneSwitch() {
+  sceneSwitchEl.classList.toggle('on', sceneSwitcherState.enabled);
+  sceneSwitcherBodyEl.hidden = !sceneSwitcherState.enabled;
+}
+
+async function refreshObsScenes() {
   try {
-    const res = await fetch(`/api/connections?name=${encodeURIComponent(name)}`);
+    const res = await fetch('/api/obs/scenes');
     const data = await res.json();
-    if (!data.hosts || !data.hosts.length) {
-      const msg = 'IP этой машины неизвестен панели — запусти ярлык «Запустить трансляцию» (он определяет адрес и передаёт панели).';
-      obsOneLinerEl.textContent = '—';
-      quickHostEl.textContent = '—';
-      quickPortEl.textContent = '—';
-      otherConnectionsEl.innerHTML = `<div class="row-meta">${escapeHtml(msg)}</div>`;
-      qrImgEl.removeAttribute('src');
-      return;
-    }
-    const primary = data.hosts[0];
-    obsOneLinerEl.textContent = primary.playSrt;
-    obsOneLinerCopyBtn.dataset.value = primary.playSrt;
-    quickHostEl.textContent = primary.mobileSrtlaHost;
-    quickPortEl.textContent = String(primary.mobileSrtlaPort);
-    qrImgEl.src = primary.qrDataUrl;
-    renderOtherConnections(data.hosts, data.name);
+    if (!res.ok) throw new Error(data.error || 'unknown error');
+    availableObsScenes = data.scenes || [];
+    obsScenesError = null;
   } catch (e) {
-    otherConnectionsEl.innerHTML = `<div class="row-meta">Не удалось получить адреса: ${escapeHtml(e.message)}</div>`;
+    availableObsScenes = [];
+    obsScenesError = e.message;
   }
+  renderSceneSwitcherBody();
 }
 
-obsOneLinerCopyBtn.onclick = () => {
-  const value = obsOneLinerCopyBtn.dataset.value;
-  if (!value) return;
-  navigator.clipboard.writeText(value);
-  const original = obsOneLinerCopyBtn.textContent;
-  obsOneLinerCopyBtn.textContent = 'Скопировано';
-  setTimeout(() => { obsOneLinerCopyBtn.textContent = original; }, 1200);
+async function refreshSceneSwitcherStatus() {
+  try {
+    const res = await fetch('/api/obs/scene-switcher');
+    sceneSwitcherState = await res.json();
+  } catch (e) {
+    // тихо — не обновляем состояние до следующего опроса
+  }
+  applySceneSwitch();
+  renderSceneSwitcherBody();
+}
+
+async function postSceneSwitcher(body) {
+  try {
+    const res = await fetch('/api/obs/scene-switcher', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'unknown error');
+    sceneSwitcherState = data;
+  } catch (e) {
+    alert(`Переключатель сцен: ${e.message}`);
+  }
+  applySceneSwitch();
+  renderSceneSwitcherBody();
+}
+
+sceneSwitchEl.onclick = () => {
+  if (sceneSwitcherState.enabled) {
+    postSceneSwitcher({ enabled: false });
+    return;
+  }
+  if (!currentStreamName) return;
+  const fallbackScene = sceneSwitcherState.fallbackScene || availableObsScenes[0];
+  if (!fallbackScene) {
+    alert('Нет доступных сцен — проверь, что OBS запущен и порт 4455 открыт (см. подсказку в сценарии «Через Bondcast»).');
+    return;
+  }
+  postSceneSwitcher({ enabled: true, watchStreamName: currentStreamName, fallbackScene, delaySec: sceneSwitcherState.delaySec });
 };
 
-streamNameEl.value = getOrCreateStreamName();
-streamNameEl.addEventListener('input', () => {
-  localStorage.setItem(STREAM_NAME_KEY, streamNameEl.value.trim());
-  refreshConnections();
-});
-document.getElementById('regenName').addEventListener('click', () => {
-  streamNameEl.value = regenerateStreamName();
-  refreshConnections();
-});
-refreshConnections();
-
-// --- Логи + битрейт ---------------------------------------------------------
-const logEl = document.getElementById('log');
-const tabButtons = document.querySelectorAll('.seg button[data-name]');
-let currentSource = null;
-let currentTab = 'srs';
-
-const bitrateChart = new Chart(document.getElementById('bitrateChart'), {
-  type: 'line',
-  data: {
-    labels: [],
-    datasets: [{
-      label: 'ikbps avg5s',
-      data: [],
-      borderColor: '#5b8def',
-      backgroundColor: 'rgba(91,141,239,0.15)',
-      tension: 0.3,
-      pointRadius: 0,
-    }],
-  },
-  options: {
-    animation: false,
-    scales: {
-      x: { display: false },
-      y: { beginAtZero: true, grid: { color: '#262b36' }, ticks: { color: '#8b92a3' } },
-    },
-    plugins: { legend: { display: false } },
-  },
-});
-
-function pushBitratePoint(avg5) {
-  const d = bitrateChart.data;
-  d.labels.push('');
-  d.datasets[0].data.push(avg5);
-  if (d.labels.length > 60) {
-    d.labels.shift();
-    d.datasets[0].data.shift();
+function renderSceneSwitcherBody() {
+  if (obsScenesError) {
+    sceneSwitcherBodyEl.innerHTML = `
+      <div class="row-meta">Не удалось получить список сцен из OBS: ${escapeHtml(obsScenesError)}. Проверь, что OBS запущен и в нём включён WebSocket-сервер (порт 4455) — подсказка есть в сценарии «Через Bondcast» на первой вкладке.</div>
+      <button type="button" id="retryObsScenes">Проверить снова</button>`;
+    const retryBtn = document.getElementById('retryObsScenes');
+    if (retryBtn) retryBtn.onclick = refreshObsScenes;
+    return;
   }
-  bitrateChart.update('none');
-}
-
-let lastAvg5 = 0;
-setInterval(() => pushBitratePoint(lastAvg5), 1000);
-
-const MAX_LOG_LINES = 500;
-let logLines = [];
-
-function appendLog(line) {
-  const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 30;
-  logLines.push(line);
-  if (logLines.length > MAX_LOG_LINES) logLines.splice(0, logLines.length - MAX_LOG_LINES);
-  logEl.textContent = logLines.join('\n') + '\n';
-  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
-
-  const m = line.match(/ikbps=(\d+),(\d+),(\d+)/);
-  if (m) {
-    document.getElementById('ikAvg30').textContent = m[1];
-    document.getElementById('ikAvg5').textContent = m[2];
-    lastAvg5 = Number(m[2]);
+  const stateNote = { watching: ' · слежу за сигналом', switched: ' · сейчас показываю резервную сцену' }[sceneSwitcherState.state] || '';
+  sceneSwitcherBodyEl.innerHTML = `
+    <div class="row-meta">Требуется порт 4455 (WebSocket OBS) — включён в сценарии «Через Bondcast»${escapeHtml(stateNote)}</div>
+    <div>
+      <label class="field-label">Резервная сцена при обрыве</label>
+      <select id="fallbackSceneSelect" style="width:100%;box-sizing:border-box;padding:11px 14px;background:var(--input-bg);border:1px solid var(--divider);border-radius:8px;color:var(--text);font-size:13px">
+        ${availableObsScenes.map((name) => `<option value="${escapeHtml(name)}" ${name === sceneSwitcherState.fallbackScene ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="range-field">
+      <div class="range-head"><span>Переключать через</span><output id="switchDelayOut">${sceneSwitcherState.delaySec} сек</output></div>
+      <input type="range" id="switchDelay" min="0" max="30" value="${sceneSwitcherState.delaySec}" />
+      <div class="row-meta" style="margin-top:6px">После потери сигнала. Как только эфир вернётся — вернём рабочую сцену автоматически</div>
+    </div>
+    ${sceneSwitcherState.lastError ? `<div class="flow-warn">${escapeHtml(sceneSwitcherState.lastError)}</div>` : ''}
+  `;
+  const select = document.getElementById('fallbackSceneSelect');
+  if (select) {
+    select.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: currentStreamName, fallbackScene: select.value, delaySec: sceneSwitcherState.delaySec });
+  }
+  const delayInput = document.getElementById('switchDelay');
+  const delayOut = document.getElementById('switchDelayOut');
+  if (delayInput) {
+    delayInput.oninput = () => { delayOut.textContent = `${delayInput.value} сек`; };
+    delayInput.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: currentStreamName, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: Number(delayInput.value) });
   }
 }
+
+applySceneSwitch();
+refreshObsScenes();
+refreshSceneSwitcherStatus();
+setInterval(refreshSceneSwitcherStatus, 5000);
 
 // --- Лог субтитров (сборка образа / запись голоса) --------------------------
-// Отдельный от диагностического #log поток: сборка/запись — часть настройки
-// субтитров, поэтому их лог живёт прямо на вкладке «Стрим и оверлей», а не
-// перекидывает пользователя на «Диагностику». Общий #log при этом не трогаем —
-// выбор вкладки логов (srs/srtla-rec/субтитры) там продолжает работать сам по себе.
 const capLogCardEl = document.getElementById('capLogCard');
 const capLogEl = document.getElementById('capLog');
 const MAX_CAP_LOG_LINES = 500;
@@ -475,34 +922,6 @@ function openCapLogStream(url) {
   capSource = new EventSource(url);
   capSource.onmessage = (e) => appendCapLog(e.data);
   return capSource;
-}
-
-function openLogStream(name) {
-  if (currentSource) currentSource.close();
-  logLines = [];
-  logEl.textContent = '';
-  currentSource = new EventSource(`/api/containers/${name}/logs`);
-  currentSource.onmessage = (e) => appendLog(e.data);
-  currentSource.onerror = () => appendLog('[поток логов прерван]');
-}
-
-tabButtons.forEach((btn) => {
-  btn.onclick = () => {
-    tabButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentTab = btn.dataset.name;
-    openLogStream(currentTab);
-  };
-});
-
-openLogStream(currentTab);
-
-// Диагностика — логи/битрейт доступны только в «Продвинуто»; переход туда по
-// клику «Смотреть» должен и открыть саму вкладку, и включить «Продвинуто»,
-// если оно выключено — иначе видео грузится за невидимой вкладкой.
-function openDiagnostics() {
-  setAdvanced(true);
-  setTab('diag');
 }
 
 // --- Активные стримы + субтитры (asr-obs) ----------------------------------
@@ -708,13 +1127,7 @@ function renderStreamCards(streams) {
     .join('');
 
   streamCardsEl.querySelectorAll('.watch-stream').forEach((btn) => {
-    btn.onclick = () => {
-      streamNameEl.value = btn.dataset.name;
-      localStorage.setItem(STREAM_NAME_KEY, btn.dataset.name);
-      refreshConnections();
-      openDiagnostics();
-      loadVideo();
-    };
+    btn.onclick = () => openPreview(btn.dataset.name);
   });
   streamCardsEl.querySelectorAll('.cap-build').forEach((btn) => { btn.onclick = buildCaptions; });
   streamCardsEl.querySelectorAll('.cap-connect').forEach((btn) => { btn.onclick = () => connectCaptions(btn.dataset.name); });
@@ -731,6 +1144,11 @@ async function refreshStreams() {
     const data = await res.json();
     latestStreams = data.streams || [];
     renderStreamCards(latestStreams);
+    renderServerStreams(latestStreams);
+    // Раскрытая ветка сценария (если есть) ждёт именно факта "SRS увидел поток" —
+    // перерисовываем её на каждый опрос, чтобы "жду начала стрима" само сменилось
+    // на "Стрим идёт!" без ручного обновления страницы.
+    if (activeFlowId) renderFlowList();
   } catch (e) {
     streamCardsEl.innerHTML = `<div class="row"><span class="row-label"><span class="row-meta">не удалось получить список стримов: ${escapeHtml(e.message)}</span></span></div>`;
   }

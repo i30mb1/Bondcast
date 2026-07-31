@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Bondcast — панель</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   /* Палитра и типографика — 1:1 с core/ui/Theme.kt и street/StreetType.kt мобильного приложения */
   :root {
@@ -26,7 +25,33 @@
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, Segoe UI, Roboto, sans-serif;
   }
-  .page { max-width: 900px; margin: 0 auto; padding: 28px 20px 60px; }
+  .page { max-width: 1280px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  /* --- Раскладка страницы: основной столбец + постоянный сайдбар "Стримы на
+     сервере" справа (виден на обеих вкладках, не только "Старт и подключение"). --- */
+  .page-row { display: flex; gap: 16px; align-items: flex-start; }
+  .page-main { flex: 1 1 auto; min-width: 0; }
+  .page-sidebar { flex: 0 0 260px; width: 260px; }
+  @media (max-width: 860px) { .page-row { flex-direction: column; } .page-sidebar { width: 100%; flex: 1 1 auto; } }
+
+  /* Предпросмотр стрима — раньше открывался в новой вкладке на весь плеер самого
+     SRS (чужой, по-другому оформленный сайт); теперь тот же плеер (тот же URL —
+     см. srsPlayerUrl в app.js, он специально не переизобретает воспроизведение
+     через flv.js, который на HEVC молча ломается) встраивается iframe'ом прямо
+     в панель, в рамке её собственного стиля. .page.has-preview расширяет всю
+     страницу — превью получает то место, что реально освободилось, а не сжимает
+     существующие карточки. */
+  .page.has-preview { max-width: 1680px; }
+  .page-preview { flex: 1 1 420px; min-width: 320px; display: flex; flex-direction: column; padding: 14px; }
+  .page-preview[hidden] { display: none; }
+  .page-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .page-preview-head b { font-size: 13.5px; color: #fff; }
+  .page-preview-close { flex-shrink: 0; padding: 6px 10px; }
+  .page-preview iframe {
+    flex: 1; width: 100%; min-height: 400px; border: 0; border-radius: 10px;
+    background: #000;
+  }
+  @media (max-width: 1180px) { .page.has-preview { max-width: 1280px; } .page-preview { flex-basis: 100%; } }
 
   /* --- Шапка --- */
   .top-bar { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
@@ -35,32 +60,6 @@
     letter-spacing: 0.03em; text-transform: uppercase;
   }
   .top-bar .lead { font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
-  .mode-toggle {
-    display: flex; align-items: center; gap: 2px; background: var(--elevated);
-    border: 1px solid var(--divider); border-radius: 999px; padding: 4px; flex-shrink: 0;
-  }
-  .mode-toggle button {
-    padding: 6px 13px; border-radius: 999px; background: transparent; border: none;
-    color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer;
-  }
-  .mode-toggle button.active { background: var(--accent); color: #fff; }
-
-  /* --- Баннер недостижимого порта --- */
-  .banner-warn {
-    margin: 0 0 20px; padding: 16px 18px; border-radius: 12px;
-    background: var(--accent-dim); border: 1px solid rgba(255, 60, 60, 0.3);
-    display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap;
-  }
-  /* .banner-warn { display: flex } перебивает дефолтный [hidden]{display:none} браузера
-     (авторский CSS всегда сильнее UA-стилей той же специфичности) — без этого правила
-     portBannerEl.hidden = true из app.js визуально ничего не менял, баннер оставался
-     на экране с текстом последней неудачной проверки даже после успешной. */
-  .banner-warn[hidden] { display: none; }
-  .banner-warn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
-  .banner-warn .body { flex: 1; min-width: 220px; }
-  .banner-warn .body b { display: block; font-size: 14px; color: #fff; }
-  .banner-warn .body p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
-  .banner-warn button { flex-shrink: 0; }
 
   /* --- Вкладки --- */
   .tabs-nav { display: flex; gap: 4px; margin-bottom: 18px; overflow-x: auto; padding-bottom: 2px; }
@@ -75,16 +74,6 @@
   /* --- Общие карточки --- */
   .card { background: var(--card); border: 1px solid var(--divider); border-radius: 12px; padding: 16px 18px; }
   .card-row { display: flex; align-items: center; gap: 12px; }
-  .status-card { display: flex; gap: 14px; align-items: flex-start; }
-  .status-badge {
-    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; text-align: center;
-    font: 800 13px/22px -apple-system, sans-serif;
-  }
-  .status-badge.ok { background: var(--green); color: #08130a; }
-  .status-badge.bad { background: var(--accent); color: #fff; }
-  .card.status-bad { border-color: rgba(255, 60, 60, 0.3); }
-  .status-card b { font-size: 13.5px; color: #fff; display: block; }
-  .status-card .meta { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; display: block; }
 
   button {
     background: var(--elevated); color: var(--text-secondary);
@@ -123,7 +112,14 @@
   input[type=color]:focus, input[type=range]:focus { outline: none; }
 
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .swatch-row { display: flex; gap: 22px; flex-wrap: wrap; }
+  /* Раньше голые input[type=color] висели прямо на фоне карточки без объединяющей
+     рамки — читались как забытый debug-код, а не осознанный элемент интерфейса.
+     Оборачиваем ряд в собственную панель того же языка, что flow-step/code — фон
+     input-bg, скруглённая рамка. */
+  .swatch-row {
+    display: flex; gap: 22px; flex-wrap: wrap; align-items: center;
+    background: var(--input-bg); border: 1px solid var(--divider); border-radius: 12px; padding: 14px 16px;
+  }
   .swatch-item { display: flex; align-items: center; gap: 10px; }
   .swatch-item span { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
   .range-field .range-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700; margin-bottom: 8px; }
@@ -134,7 +130,36 @@
   .seg button { background: transparent; padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
   .seg button.active { background: var(--accent); color: #fff; }
 
-  .divider { height: 1px; background: var(--divider); margin: 2px 0; }
+  /* --- Тумблер вкл/выкл фичи (вкладка "Функции") --- */
+  .feature-switch {
+    width: 40px; height: 24px; border-radius: 999px; background: var(--divider);
+    flex-shrink: 0; cursor: pointer; position: relative; transition: background .15s ease;
+  }
+  .feature-switch.on { background: var(--accent); }
+  .feature-switch .knob {
+    width: 18px; height: 18px; border-radius: 50%; background: #fff; position: absolute;
+    top: 3px; left: 3px; transition: left .15s ease;
+  }
+  .feature-switch.on .knob { left: 19px; }
+
+  /* --- Карточка-фича с тумблером (вкладка "Функции") — тот же градиент, что у
+     закрытой .flow-pill на вкладке "Старт и подключение", для единого языка. --- */
+  .feature-card { background: linear-gradient(180deg, #1a1a1a, #161616); border: 1px solid var(--divider); border-radius: 14px; overflow: hidden; }
+  .feature-card-head { padding: 18px 20px; display: flex; align-items: center; gap: 14px; }
+  .feature-card-icon {
+    width: 36px; height: 36px; border-radius: 10px; background: var(--accent-dim); color: var(--accent);
+    font: 16px/36px sans-serif; text-align: center; flex-shrink: 0;
+  }
+  .feature-card-title { flex: 1; min-width: 0; }
+  .feature-card-title b { font-size: 14px; color: #fff; display: block; }
+  .feature-card-title .row-meta { margin-top: 2px; }
+  .feature-card-body { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+  /* display:flex в авторском CSS сильнее UA-стиля [hidden]{display:none} той же
+     специфичности — без явного переопределения ниже subsBodyEl.hidden/
+     sceneSwitcherBodyEl.hidden из app.js не прятали бы карточку визуально
+     (уже ловили этот же перебой раньше на другом элементе). */
+  .feature-card-body[hidden] { display: none; }
+
   .section-title { font: 700 11.5px -apple-system, sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
 
   .addr-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; }
@@ -172,7 +197,148 @@
   details.nested summary::before { content: "▸ "; }
   details.nested[open] summary::before { content: "▾ "; }
   details.nested .body { display: flex; flex-direction: column; gap: 8px; padding: 6px 0 4px; }
-  .subgroup-title { font-size: 12px; font-weight: 700; color: var(--text); margin: 4px 0 0; }
+
+  /* --- Выбор способа стрима (3 сценария, карточки в ряд) --- */
+  .flow-waiting { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); padding: 6px 0; }
+  .flow-live { font-size: 13.5px; font-weight: 700; color: var(--green); }
+  .watch-link { color: var(--accent); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+  .watch-link:hover { text-decoration: underline; }
+  .flow-warn { font-size: 12.5px; color: var(--accent); padding: 6px 0; }
+  @keyframes bc-spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--divider); border-top-color: var(--accent); animation: bc-spin 0.8s linear infinite;
+  }
+
+  /* --- Три сценария: переключатель фиксированной высоты + одна общая панель
+     контента снизу. Раньше каждый вариант был отдельной колонкой, которая сама
+     распирала себя чек-листом при открытии — открытая колонка становилась
+     высокой, две соседние закрытые повисали короткими рядом с ней (пустое место
+     сбоку), и высота всего ряда скакала при каждом клике. Теперь высота меняется
+     только у одной панели снизу, и именно её плавно анимирует animateHeight() в
+     app.js — сам переключатель всегда одной и той же высоты. */
+  .flow-selector { display: flex; gap: 10px; }
+  @media (max-width: 640px) { .flow-selector { flex-direction: column; } }
+  @keyframes ringPulse {
+    0%, 100% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-dim), 0 14px 32px -8px rgba(255,60,60,0.5); }
+    50% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 7px rgba(255,60,60,0.08), 0 14px 40px -6px rgba(255,60,60,0.65); }
+  }
+  .flow-pill {
+    flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left;
+    border-radius: 13px; padding: 13px; cursor: pointer;
+    background: linear-gradient(180deg, #1a1a1a, #161616); border: 1px solid var(--divider);
+    transition: border-color .18s ease, background .18s ease;
+  }
+  .flow-pill:hover { border-color: rgba(255,255,255,0.2); }
+  .flow-pill.open {
+    border-color: transparent;
+    background: linear-gradient(165deg, #1d1414, #171212);
+    animation: ringPulse 2.2s ease-in-out infinite;
+  }
+  .flow-pill-badge {
+    position: relative;
+    width: 32px; height: 32px; border-radius: 9px; background: var(--accent-dim); color: var(--accent);
+    font-size: 15px; line-height: 32px; text-align: center; flex-shrink: 0; transition: background .18s ease, color .18s ease;
+  }
+  .flow-pill.open .flow-pill-badge {
+    background: linear-gradient(135deg, #ff5b5b, #c81e1e); color: #fff;
+    box-shadow: 0 6px 14px -4px rgba(255,60,60,0.7);
+  }
+  /* Точка-диагностика прямо на плашке сценария — вместо баннера наверху страницы,
+     который был виден всегда и не показывал, какого именно сценария касается.
+     Здесь она конкретна и видна ровно там, где нужна — обёрнута в конкретный
+     сценарий, а не абстрактный "порт не виден снаружи" на весь экран. */
+  .flow-pill-chip {
+    position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid #161616;
+  }
+  .flow-pill-chip.ok { background: var(--green); }
+  .flow-pill-chip.bad { background: var(--accent); }
+  .flow-pill-title { flex: 1; min-width: 0; }
+  .flow-pill-title b { font-size: 13.5px; color: #fff; display: block; }
+  .flow-pill-title .flow-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: block; }
+
+  /* Высоту этого контейнера анимирует animateHeight() — overflow:hidden ставится
+     JS-ом только на время перехода, здесь его нет, чтобы не обрезать тени/фокус-кольца
+     в состоянии покоя. */
+  .flow-panel-content { display: flex; flex-direction: column; align-items: stretch; padding-top: 16px; }
+
+  @keyframes stepReveal { 0% { opacity: 0; transform: translateY(-10px); } 100% { opacity: 1; transform: translateY(0); } }
+  .step-reveal { opacity: 0; animation: stepReveal .4s ease forwards; }
+  .conn-wrap { position: relative; width: 2px; height: 20px; margin: 0 auto; }
+  .conn-line { width: 2px; height: 100%; background: linear-gradient(180deg, rgba(255,60,60,0.7), rgba(255,60,60,0.15)); margin: 0 auto; }
+  @keyframes packetTravel { 0% { top: -6px; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { top: calc(100% - 2px); opacity: 0; } }
+  .conn-packet {
+    position: absolute; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; border-radius: 50%;
+    background: #ff8a80; box-shadow: 0 0 8px 2px rgba(255,60,60,0.9); animation: packetTravel 1.6s ease-in-out infinite;
+  }
+  @keyframes dotPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(47,191,91,0.45); } 50% { box-shadow: 0 0 0 7px rgba(47,191,91,0); } }
+  @keyframes dotPulseRed { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,60,60,0.45); } 50% { box-shadow: 0 0 0 7px rgba(255,60,60,0); } }
+  .dot-live { animation: dotPulse 1.8s ease-out infinite; }
+  .dot-live-red { animation: dotPulseRed 1.8s ease-out infinite; }
+
+  .flow-step {
+    width: 100%; background: linear-gradient(180deg, #1b1b1b, #161616); border: 1px solid var(--divider);
+    border-radius: 12px; padding: 13px 14px; display: flex; align-items: center; gap: 11px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+  }
+  .flow-step .flow-step-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .flow-step .flow-step-dot.bad, .flow-step .flow-step-dot.dot-live-red { background: var(--accent); }
+  .flow-step .flow-step-dot.warn { background: rgba(255,255,255,0.25); }
+  .flow-step b { font-size: 12.5px; color: #fff; display: block; }
+  .flow-step .flow-step-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: block; }
+  .flow-step-final {
+    flex-direction: column; align-items: stretch; gap: 12px; padding: 18px;
+    background: linear-gradient(165deg, #1d1414, #171212); border-color: rgba(255,60,60,0.35);
+    box-shadow: 0 10px 26px -12px rgba(255,60,60,0.35);
+  }
+  .flow-step-final .flow-step-final-head { display: flex; align-items: center; gap: 10px; }
+  .app-seg { display: flex; gap: 6px; margin-bottom: 4px; }
+  /* addrRow() рассчитан на широкую карточку на всю страницу (фикс. 130px под
+     addr-label, код/значение — оставшееся место) — в узкой ~1/3-колонке
+     flow-step-final тот же фикс. label почти не оставляет места коду, и
+     word-break:break-all разбивает его по одному символу на строку. Внутри
+     финального шага сценария выкладываем label/код/кнопку в колонку вместо строки. */
+  .flow-step-final .addr-row { flex-direction: column; align-items: stretch; gap: 4px; padding: 4px 0; }
+  .flow-step-final .addr-row span.addr-label { width: auto; padding-top: 0; }
+
+  /* "Сейчас на этом канале" под чек-листом сценария убрали — то же самое (кто
+     живой, с каким статусом) теперь показывает сайдбар "Стримы на сервере"
+     справа, для любого количества стримов сразу, а не только для открытой
+     сейчас ветки. .live-badge остался — его переиспользует .server-stream-slot. */
+  .live-badge {
+    padding: 7px 14px; border-radius: 999px; background: rgba(47,191,91,0.14); color: var(--green);
+    font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 7px;
+  }
+  .live-badge .dot { width: 7px; height: 7px; background: var(--green); }
+
+  /* --- Сайдбар "Стримы на сервере" --- */
+  .server-stream-slot {
+    background: linear-gradient(180deg, #171b17, #141614); border: 1px solid rgba(47,191,91,0.22);
+    border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .server-stream-slot-head { display: flex; align-items: center; gap: 10px; }
+  .server-stream-slot-icon {
+    width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--green), #15803d);
+    color: #08130a; font: 14px/30px sans-serif; text-align: center; flex-shrink: 0;
+  }
+  .server-stream-slot-info { flex: 1; min-width: 0; }
+  .server-stream-slot-info b { font-size: 13px; color: #fff; display: block; word-break: break-all; }
+  .server-stream-slot-info .meta { font-size: 11px; color: var(--text-muted); display: block; margin-top: 1px; }
+  .server-stream-slot .live-badge { padding: 5px 9px; font-size: 10.5px; flex-shrink: 0; }
+  .server-stream-slot-actions { display: flex; flex-direction: column; gap: 6px; }
+  .server-stream-slot-actions button { width: 100%; box-sizing: border-box; font-size: 11px; padding: 8px 10px; }
+
+  .server-stream-empty {
+    background: var(--card); border: 1px dashed var(--divider); border-radius: 12px; padding: 16px;
+    display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px;
+  }
+  .server-stream-empty .icon {
+    width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.05); color: var(--text-muted);
+    font: 13px/28px sans-serif;
+  }
+  .server-stream-empty b { font-size: 12px; color: var(--text-secondary); }
+  .server-stream-empty .hint { font-size: 11px; line-height: 1.4; color: var(--text-muted); }
 
   .overlay-preview {
     padding: 24px; border-radius: 8px; background-color: #262626;
@@ -193,16 +359,11 @@
   .overlay-preview .host .name { color: var(--prev-host, #ff3b30); }
   .overlay-preview .guest .name { color: var(--prev-guest, #34c759); }
 
-  video { width: 100%; background: #000; border-radius: 8px; display: block; margin-top: 10px; }
-  .stats { display: flex; gap: 20px; font-size: 13px; color: var(--text-muted); }
-  .stats b { color: var(--text); font-size: 16px; font-family: "SF Mono", Consolas, monospace; }
-  canvas#bitrateChart { max-height: 140px; }
   .log-box {
     background: var(--input-bg); border-radius: 8px; padding: 10px;
     overflow-y: auto; font-size: 12px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-all; margin: 0;
   }
-  #log { height: 200px; }
   #capLog { height: 140px; }
 
   .row-meta { font-size: 12.5px; color: var(--text-muted); }
@@ -216,14 +377,6 @@
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
   .dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .dot.stopped { background: var(--accent); }
-  .host-block h4 {
-    margin: 10px 0 2px; font-size: 11px; font-weight: normal;
-    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;
-  }
-  .host-block:first-child h4 { margin-top: 0; }
-
-  [data-advanced-only] { }
-  body:not(.advanced) [data-advanced-only] { display: none !important; }
 </style>
 </head>
 <body>
@@ -234,174 +387,135 @@
       <h1>Bondcast</h1>
       <p class="lead">Помощник для стрима с телефона</p>
     </div>
-    <div class="mode-toggle">
-      <button id="modeSimpleBtn" type="button">Просто</button>
-      <button id="modeAdvancedBtn" type="button">Продвинуто</button>
-    </div>
-  </div>
-
-  <div class="banner-warn" id="portBanner" hidden>
-    <div class="dot"></div>
-    <div class="body">
-      <b id="portBannerTitle">Остался один шаг: порт не виден снаружи</b>
-      <p id="portBannerText"></p>
-    </div>
-    <button id="portBannerRetry" class="primary">Проверить снова</button>
   </div>
 
   <div class="tabs-nav">
     <button class="tab-btn" data-tab="quickstart">Старт и подключение</button>
-    <button class="tab-btn" data-tab="services" data-advanced-only>Сервисы</button>
-    <button class="tab-btn" data-tab="stream">Стрим и оверлей</button>
-    <button class="tab-btn" data-tab="diag">Диагностика</button>
+    <button class="tab-btn" data-tab="stream">Функции</button>
   </div>
+
+<div class="page-row">
+<div class="page-main">
 
   <!-- ======================= Старт и подключение ======================= -->
   <div class="tab-panel" data-tab-panel="quickstart">
-    <div class="card status-card" id="svcStatusCard"></div>
-    <div class="card status-card" id="portStatusCard"></div>
-
     <div class="card">
-      <div class="section-title">Отсканируй в приложении</div>
-      <div class="name-row" style="margin-bottom:12px">
-        <input type="text" id="streamName" placeholder="имя стрима" />
-        <button type="button" class="dice-btn" id="regenName" title="Сгенерировать другое имя">🎲</button>
-      </div>
-      <img id="qr" alt="QR для подключения" style="display:block;margin:4px auto;border-radius:8px;width:200px;height:200px;background:#fff" />
-      <div class="row-meta" style="text-align:center;margin-top:8px">Приложение → «Сканировать QR» на первом экране</div>
-    </div>
-
-    <div class="card">
-      <div class="section-title">Для OBS — вставь одну строку</div>
-      <div class="row-meta" style="margin-bottom:12px">Медиаисточник → Свойства → URL</div>
-      <div class="addr-row">
-        <code id="obsOneLiner">—</code>
-        <button id="obsOneLinerCopy" class="primary">Копировать</button>
-      </div>
-    </div>
-
-    <div class="card" data-advanced-only>
-      <div class="grid-2">
-        <div>
-          <label class="field-label">Хост</label>
-          <div style="padding:11px 14px;background:var(--input-bg);border-radius:8px;font:600 13px 'SF Mono',Consolas,monospace" id="quickHost">—</div>
-        </div>
-        <div>
-          <label class="field-label">Порт</label>
-          <div style="padding:11px 14px;background:var(--input-bg);border-radius:8px;font:600 13px 'SF Mono',Consolas,monospace" id="quickPort">—</div>
-        </div>
-      </div>
-      <details class="nested" style="margin-top:14px">
-        <summary>Другие адреса и способы подключения</summary>
-        <div class="body" id="otherConnections"></div>
-      </details>
+      <div class="section-title" style="margin-bottom:12px">Выбери способ стрима</div>
+      <div class="flow-selector" id="flowSelector"></div>
+      <div id="flowPanel"></div>
     </div>
   </div>
 
-  <!-- ================================ Сервисы ================================ -->
-  <div class="tab-panel" data-tab-panel="services">
-    <div class="card">
-      <div id="cards"></div>
-    </div>
-  </div>
-
-  <!-- =========================== Стрим и оверлей =========================== -->
+  <!-- =============================== Функции =============================== -->
   <div class="tab-panel" data-tab-panel="stream">
-    <div class="card">
-      <div class="section-title">Распознавание голоса</div>
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
-          <div style="flex:1;min-width:180px">
-            <label class="field-label" for="hostNameInput">Имя ведущего</label>
-            <input type="text" id="hostNameInput" placeholder="напр. Женя" />
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- FEATURE: Субтитры на стриме -->
+      <div class="feature-card">
+        <div class="feature-card-head">
+          <div class="feature-card-icon">💬</div>
+          <div class="feature-card-title">
+            <b>Субтитры на стриме</b>
+            <div class="row-meta">Наложить ИИ-субтитры поверх уже идущего эфира</div>
           </div>
+          <div class="feature-switch" id="subsSwitch"><div class="knob"></div></div>
+        </div>
+        <div class="feature-card-body" id="subsBody">
+
           <div>
-            <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
-            <div class="seg">
-              <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрое</button>
-              <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точное</button>
+            <div class="section-title" style="margin-bottom:12px">Распознавание голоса</div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+                <div style="flex:1;min-width:180px">
+                  <label class="field-label" for="hostNameInput">Имя ведущего</label>
+                  <input type="text" id="hostNameInput" placeholder="напр. Женя" />
+                </div>
+                <div>
+                  <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
+                  <div class="seg">
+                    <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрое</button>
+                    <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точное</button>
+                  </div>
+                </div>
+              </div>
+              <div class="range-field">
+                <div class="range-head"><span>Строгость «ведущий/кто-то» <span class="info" tabindex="0">?<span class="bubble">Порог схожести голоса с эталоном. Выше — строже (чаще помечает как «кто-то»), ниже — мягче (чаще принимает за ведущего). Меняется при следующем «Подключить субтитры».</span></span></span><output id="speakerThresholdOut">0.25</output></div>
+                <input type="range" id="speakerThreshold" min="0" max="1" step="0.01" />
+              </div>
             </div>
           </div>
-        </div>
-        <div class="range-field" data-advanced-only>
-          <div class="range-head"><span>Строгость «ведущий/кто-то» <span class="info" tabindex="0">?<span class="bubble">Порог схожести голоса с эталоном. Выше — строже (чаще помечает как «кто-то»), ниже — мягче (чаще принимает за ведущего). Меняется при следующем «Подключить субтитры».</span></span></span><output id="speakerThresholdOut">0.25</output></div>
-          <input type="range" id="speakerThreshold" min="0" max="1" step="0.01" />
-        </div>
-      </div>
-    </div>
 
-    <div class="divider"></div>
-
-    <div>
-      <div class="section-title" style="margin-bottom:12px">Оверлей субтитров</div>
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="card" id="streamCards"></div>
-
-        <div class="card" id="capLogCard" hidden>
-          <div class="section-title" style="margin-bottom:8px">Лог субтитров — сборка / запись голоса</div>
-          <pre id="capLog" class="log-box"></pre>
-        </div>
-
-        <div class="grid-2">
-          <div class="range-field">
-            <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
-            <input type="range" id="overlaySize" min="16" max="72" />
+          <div>
+            <div class="section-title" style="margin-bottom:12px">Активные стримы</div>
+            <div id="streamCards"></div>
           </div>
-          <div class="range-field">
-            <div class="range-head"><span>Строк на экране</span><output id="overlayLinesOut">3</output></div>
-            <input type="range" id="overlayLines" min="1" max="8" />
+
+          <div class="card" id="capLogCard" hidden>
+            <div class="section-title" style="margin-bottom:8px">Лог субтитров — сборка / запись голоса</div>
+            <pre id="capLog" class="log-box"></pre>
           </div>
-        </div>
 
-        <div class="swatch-row" data-advanced-only>
-          <div class="swatch-item"><input type="color" id="overlayHostColor" /><span>Цвет ведущего</span></div>
-          <div class="swatch-item"><input type="color" id="overlayGuestColor" /><span>Цвет «Кто-то»</span></div>
-          <div class="swatch-item">
-            <input type="color" id="overlayBgColor" />
-            <span>Фон</span>
-            <input type="range" id="overlayBgOpacity" min="0" max="100" style="width:90px" />
-            <output id="overlayBgOpacityOut" style="font-family:'SF Mono',Consolas,monospace;font-size:12px;color:var(--text-secondary)">60%</output>
+          <div>
+            <div class="section-title" style="margin-bottom:12px">Оверлей субтитров</div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div class="grid-2">
+                <div class="range-field">
+                  <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
+                  <input type="range" id="overlaySize" min="16" max="72" />
+                </div>
+                <div class="range-field">
+                  <div class="range-head"><span>Строк на экране</span><output id="overlayLinesOut">3</output></div>
+                  <input type="range" id="overlayLines" min="1" max="8" />
+                </div>
+              </div>
+
+              <div class="swatch-row">
+                <div class="swatch-item"><input type="color" id="overlayHostColor" /><span>Цвет ведущего</span></div>
+                <div class="swatch-item"><input type="color" id="overlayGuestColor" /><span>Цвет «Кто-то»</span></div>
+                <div class="swatch-item">
+                  <input type="color" id="overlayBgColor" />
+                  <span>Фон</span>
+                  <input type="range" id="overlayBgOpacity" min="0" max="100" style="width:90px" />
+                  <output id="overlayBgOpacityOut" style="font-family:'SF Mono',Consolas,monospace;font-size:12px;color:var(--text-secondary)">60%</output>
+                </div>
+              </div>
+
+              <div class="overlay-preview" id="overlayPreview">
+                <div class="line host"><span class="name">Ведущий:</span>Пример реплики ведущего</div>
+                <div class="line guest"><span class="name">Кто-то:</span>Пример реплики гостя</div>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div class="overlay-preview" id="overlayPreview">
-          <div class="line host"><span class="name">Ведущий:</span>Пример реплики ведущего</div>
-          <div class="line guest"><span class="name">Кто-то:</span>Пример реплики гостя</div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- =============================== Диагностика =============================== -->
-  <div class="tab-panel" data-tab-panel="diag">
-    <div class="card">
-      <div class="card-row" style="justify-content:space-between;margin-bottom:4px">
-        <div class="section-title" style="margin:0">Превью потока (HTTP-FLV)</div>
-        <button id="loadVideo">Загрузить</button>
+      <!-- FEATURE: Умный переключатель сцен OBS -->
+      <div class="feature-card">
+        <div class="feature-card-head">
+          <div class="feature-card-icon">🔀</div>
+          <div class="feature-card-title">
+            <b>Умный переключатель сцен OBS</b>
+            <div class="row-meta">Сам переключит сцену в OBS, если сигнал со стрима пропал</div>
+          </div>
+          <div class="feature-switch" id="sceneSwitch"><div class="knob"></div></div>
+        </div>
+        <div class="feature-card-body" id="sceneSwitcherBody" hidden></div>
       </div>
-      <video id="videoEl" controls muted></video>
-      <div class="row-meta" id="videoHint" style="margin-top:6px"></div>
-    </div>
 
-    <div class="card" data-advanced-only>
-      <div class="stats" style="margin-bottom:10px">
-        <div>avg 30s: <b id="ikAvg30">—</b> kbps</div>
-        <div>avg 5s: <b id="ikAvg5">—</b> kbps</div>
-      </div>
-      <canvas id="bitrateChart" height="60"></canvas>
-
-      <div class="seg" style="margin:14px 0 10px;width:fit-content">
-        <button type="button" data-name="srs" class="active">srs</button>
-        <button type="button" data-name="srtla-rec">srtla-rec</button>
-        <button type="button" data-name="asr-worker">субтитры</button>
-      </div>
-      <pre id="log" class="log-box"></pre>
     </div>
   </div>
 
 </div>
+<div class="card page-sidebar">
+  <div class="section-title" style="margin-bottom:4px">Стримы на сервере</div>
+  <div class="row-meta" style="margin-bottom:14px">Кто сейчас подключён к этому каналу</div>
+  <div id="serverStreams" style="display:flex;flex-direction:column;gap:10px"></div>
+</div>
+<div class="card page-preview" id="previewPanel" hidden></div>
+</div>
+</div>
 
-<script src="https://cdn.jsdelivr.net/npm/flv.js@1/dist/flv.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
