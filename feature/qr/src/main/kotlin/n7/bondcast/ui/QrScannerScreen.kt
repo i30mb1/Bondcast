@@ -2,8 +2,11 @@ package n7.bondcast.ui
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -15,6 +18,7 @@ import androidx.camera.lifecycle.awaitInstance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.LifecycleOwner
@@ -130,17 +135,37 @@ public fun QrScannerScreen(
         )
 
         val hint = error ?: stringResource(R.string.qr_scanner_hint_label)
-        Text(
-            text = hint,
-            color = if (error != null) DiscordColors.accent else Color.White,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+        val landingLabel = stringResource(R.string.qr_scanner_landing_label)
+        val landingUrl = stringResource(R.string.qr_scanner_landing_url)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .fillMaxWidth()
                 .padding(24.dp),
-        )
+        ) {
+            Text(
+                text = landingLabel,
+                color = DiscordColors.accent,
+                textAlign = TextAlign.Center,
+                textDecoration = TextDecoration.Underline,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                modifier = Modifier
+                    .clickable {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(landingUrl)))
+                        }
+                    }
+                    .padding(bottom = 12.dp),
+            )
+            Text(
+                text = hint,
+                color = if (error != null) DiscordColors.accent else Color.White,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+            )
+        }
     }
 }
 

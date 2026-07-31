@@ -4,4 +4,6 @@
     <string name="qr_scanner_hint_label">Наведи на QR: сведения OBS или настройки Bondcast</string>
     <string name="qr_scanner_camera_open_error">Не удалось открыть камеру</string>
     <string name="qr_scanner_camera_busy_error">Камера занята — останови эфир</string>
+    <string name="qr_scanner_landing_label">Готовая саморазвёртываемая инфраструктура для лучшей работы →</string>
+    <string name="qr_scanner_landing_url" translatable="false">https://i30mb1.github.io/bondcast/</string>
 </resources>
