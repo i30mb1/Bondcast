@@ -662,7 +662,13 @@ function reconcileSteps(container, items) {
       unit.dataset.stepHtml = html;
     }
     if (isNew) unit.classList.add('step-reveal');
-    if (prevEl) prevEl.after(unit); else container.prepend(unit);
+    // Переставляем узел только если он реально не на своём месте. Лишний
+    // prevEl.after()/container.prepend() даже в ту же позицию по спеке снимает узел
+    // из DOM и вставляет заново, а пере-вставка перезапускает CSS-анимации внутри
+    // шага (dot-live/пакет на линии) — на каждый опрос раз в 5с шаг «моргал».
+    if (unit.parentNode !== container || unit.previousElementSibling !== prevEl) {
+      if (prevEl) prevEl.after(unit); else container.prepend(unit);
+    }
     prevEl = unit;
   });
   container.querySelectorAll(':scope > [data-step-key]').forEach((el) => {
