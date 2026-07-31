@@ -55,9 +55,15 @@ class FfmpegAudioSource:
             time.sleep(self._reconnect_delay)
 
     def _terminate(self) -> None:
-        if self._proc is not None:
-            self._proc.terminate()
-            self._proc = None
+        if self._proc is None:
+            return
+        proc, self._proc = self._proc, None
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
     def close(self) -> None:
         self._running = False

@@ -434,6 +434,7 @@
                 <div style="flex:1;min-width:180px">
                   <label class="field-label" for="hostNameInput">Имя ведущего</label>
                   <input type="text" id="hostNameInput" placeholder="напр. Женя" />
+                  <div class="flow-warn" id="hostNameError" hidden></div>
                 </div>
                 <div>
                   <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
@@ -452,6 +453,7 @@
 
           <div>
             <div class="section-title" style="margin-bottom:12px">Активные стримы</div>
+            <div class="flow-warn" id="capError" hidden></div>
             <div id="streamCards"></div>
           </div>
 
@@ -505,6 +507,7 @@
           </div>
           <div class="feature-switch" id="sceneSwitch"><div class="knob"></div></div>
         </div>
+        <div class="flow-warn" id="sceneSwitcherError" style="padding:0 20px 14px" hidden></div>
         <div class="feature-card-body" id="sceneSwitcherBody" hidden></div>
       </div>
 

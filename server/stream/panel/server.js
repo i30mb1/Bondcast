@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const Docker = require('dockerode');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
@@ -136,6 +137,14 @@ async function ensureNetwork() {
 const app = express();
 app.use(express.json());
 
+// timingSafeEqual требует буферы одной длины - сравниваем хеши фиксированного
+// размера вместо сырых строк, иначе сама длина пароля утекала бы через тайминг.
+function safeEqual(a, b) {
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
 function auth(req, res, next) {
   const user = process.env.PANEL_USER;
   const pass = process.env.PANEL_PASS;
@@ -144,7 +153,7 @@ function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const [, encoded] = header.split(' ');
   const decoded = encoded ? Buffer.from(encoded, 'base64').toString() : '';
-  if (decoded === `${user}:${pass}`) return next();
+  if (safeEqual(decoded, `${user}:${pass}`)) return next();
 
   res.set('WWW-Authenticate', 'Basic realm="stream-panel"');
   return res.status(401).send('Auth required');
@@ -300,9 +309,30 @@ async function ipReputation(ip) {
   }
 }
 
+// Каждый запрос дёргает check-host.net и ждёт его до ~9с (6 опросов по 1.5с) —
+// нормальная страница разом шлёт максимум 3 (checkPort() по всем PORTS_TO_CHECK),
+// но ничего не мешает клиенту наспамить параллельных запросов и подвесить сервер
+// пачкой висящих промисов (или получить у check-host.net бан за flood). Лимит —
+// не по времени (это ломало бы штатный параллельный чек трёх портов), а по числу
+// одновременных проверок с одного IP.
+const reachabilityInFlight = new Map();
+const MAX_CONCURRENT_REACHABILITY_PER_IP = 6;
+
 app.get('/api/reachability', async (req, res) => {
   const port = Number(req.query.port) || 5000;
   const proto = req.query.proto === 'tcp' ? 'tcp' : 'udp';
+
+  const clientIp = req.ip;
+  const inFlight = reachabilityInFlight.get(clientIp) || 0;
+  if (inFlight >= MAX_CONCURRENT_REACHABILITY_PER_IP) {
+    return res.status(429).json({ error: 'слишком много одновременных проверок — подожди немного' });
+  }
+  reachabilityInFlight.set(clientIp, inFlight + 1);
+  res.on('finish', () => {
+    const left = (reachabilityInFlight.get(clientIp) || 1) - 1;
+    if (left <= 0) reachabilityInFlight.delete(clientIp);
+    else reachabilityInFlight.set(clientIp, left);
+  });
 
   const localIps = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const localIp = localIps[0];
@@ -636,6 +666,24 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
   }
   if (enabled && !fallbackScene) {
     return res.status(400).json({ error: 'не выбрана резервная сцена' });
+  }
+
+  // fallbackScene может быть значением, запомненным с прошлого раза, когда OBS ещё
+  // был доступен (sceneSwitcher.fallbackScene переживает выключение, см. ниже) —
+  // без этой проверки включить "watching" можно вслепую, а обрыв WS вскрылся бы
+  // только в момент реальной пропажи сигнала, когда переключать сцену уже поздно.
+  if (enabled) {
+    try {
+      await ensureObsConnected();
+    } catch (e) {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к OBS — включи WebSocket-сервер (Tools → WebSocket Server Settings, порт 4455) и попробуй снова.',
+        // Клиент (app.js) по этому коду показывает не просто текст ошибки, а
+        // полную инструкцию (OBS_WEBSOCKET_HOWTO) прямо на месте, вместо
+        // "смотри подсказку в другом сценарии".
+        code: 'obs_unreachable',
+      });
+    }
   }
 
   // Смена отслеживаемого стрима или выключение — сбрасываем текущий цикл
@@ -1052,7 +1100,17 @@ const port = process.env.PORT || 8081;
 const server = http.createServer(app);
 
 server.on('upgrade', (req, socket, head) => {
-  if (new URL(req.url, 'http://localhost').pathname !== '/ws-stats') {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname !== '/ws-stats') {
+    socket.destroy();
+    return;
+  }
+  // Пусто (как и PANEL_USER/PANEL_PASS выше) — токен не требуется, тот же принцип
+  // "не задано - фича выключена". Задан - должен совпасть, иначе кто угодно,
+  // достучавшийся до панели, получил бы бесплатный доступ к битрейту стрима.
+  const requiredToken = process.env.NOALBS_STATS_TOKEN;
+  if (requiredToken && url.searchParams.get('token') !== requiredToken) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
     return;
   }

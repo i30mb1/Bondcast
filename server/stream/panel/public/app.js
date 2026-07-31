@@ -955,6 +955,26 @@ let availableObsScenes = [];
 let obsScenesError = null;
 const sceneSwitchEl = document.getElementById('sceneSwitch');
 const sceneSwitcherBodyEl = document.getElementById('sceneSwitcherBody');
+// Отдельно от sceneSwitcherBodyEl — та скрыта, пока переключатель выключен
+// (applySceneSwitch), а ошибку включения (нет сцен/OBS недоступен) нужно
+// показать именно в момент неудачной попытки включить, когда тело ещё скрыто.
+const sceneSwitcherErrorEl = document.getElementById('sceneSwitcherError');
+
+// extraHtml — готовая инструкция (напр. OBS_WEBSOCKET_HOWTO), а не ссылка "смотри
+// её в другом сценарии" — стример уже здесь, на вкладке "Функции", незачем
+// заставлять его переключаться на "Старт и подключение" за тем же текстом.
+function showSceneSwitcherError(message, extraHtml = '') {
+  // .flow-warn красит весь свой текст в акцентный красный (это ок для самой
+  // ошибки) — инструкцию внутри extraHtml возвращаем к обычному цвету текста,
+  // иначе шаги "как включить WebSocket" тоже стали бы красными.
+  const extra = extraHtml ? `<div style="color:var(--text)">${extraHtml}</div>` : '';
+  sceneSwitcherErrorEl.innerHTML = escapeHtml(message) + extra;
+  sceneSwitcherErrorEl.hidden = false;
+}
+
+function clearSceneSwitcherError() {
+  sceneSwitcherErrorEl.hidden = true;
+}
 
 function applySceneSwitch() {
   sceneSwitchEl.classList.toggle('on', sceneSwitcherState.enabled);
@@ -994,10 +1014,18 @@ async function postSceneSwitcher(body) {
       body: JSON.stringify(body),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'unknown error');
+    if (!res.ok) {
+      const err = new Error(data.error || 'unknown error');
+      err.code = data.code;
+      throw err;
+    }
     sceneSwitcherState = data;
+    clearSceneSwitcherError();
   } catch (e) {
-    alert(`Переключатель сцен: ${e.message}`);
+    // obs_unreachable — тот же диагноз, что и "Нет доступных сцен" ниже (OBS не
+    // достучаться), поэтому та же инструкция, а не просто текст ошибки.
+    const extra = e.code === 'obs_unreachable' ? OBS_LAUNCH_BUTTON + OBS_WEBSOCKET_HOWTO : '';
+    showSceneSwitcherError(`Переключатель сцен: ${e.message}`, extra);
   }
   applySceneSwitch();
   renderSceneSwitcherBody();
@@ -1011,7 +1039,10 @@ sceneSwitchEl.onclick = () => {
   const watchStreamName = sceneSwitcherState.watchStreamName || currentStreamName;
   const fallbackScene = sceneSwitcherState.fallbackScene || availableObsScenes[0];
   if (!fallbackScene) {
-    alert('Нет доступных сцен — проверь, что OBS запущен и порт 4455 открыт (см. подсказку в сценарии «Через Bondcast»).');
+    showSceneSwitcherError(
+      'Нет доступных сцен — для переключателя нужен запущенный OBS с включённым WebSocket-сервером.',
+      OBS_LAUNCH_BUTTON + OBS_WEBSOCKET_HOWTO,
+    );
     return;
   }
   postSceneSwitcher({ enabled: true, watchStreamName, fallbackScene, delaySec: sceneSwitcherState.delaySec });
@@ -1020,8 +1051,9 @@ sceneSwitchEl.onclick = () => {
 function renderSceneSwitcherBody() {
   if (obsScenesError) {
     sceneSwitcherBodyEl.innerHTML = `
-      <div class="row-meta">Не удалось получить список сцен из OBS: ${escapeHtml(obsScenesError)}. Проверь, что OBS запущен и в нём включён WebSocket-сервер (порт 4455) — подсказка есть в сценарии «Через Bondcast» на первой вкладке.</div>
-      <button type="button" id="retryObsScenes">Проверить снова</button>`;
+      <div class="row-meta">Не удалось получить список сцен из OBS: ${escapeHtml(obsScenesError)}.</div>
+      ${OBS_LAUNCH_BUTTON}${OBS_WEBSOCKET_HOWTO}
+      <button type="button" id="retryObsScenes" style="margin-top:8px">Проверить снова</button>`;
     const retryBtn = document.getElementById('retryObsScenes');
     if (retryBtn) retryBtn.onclick = refreshObsScenes;
     return;
@@ -1118,12 +1150,29 @@ function recognitionSettingsChanged() {
 }
 let capBusy = false;
 
+// Общая строка ошибки для сборки/подключения/отключения/записи голоса — эти
+// действия не привязаны к конкретной карточке стрима (streamCardsEl целиком
+// перерисовывается раз в 5с через renderStreamCards), поэтому живёт отдельным
+// узлом, а не частью того рендера.
+const capErrorEl = document.getElementById('capError');
+
+function showCapError(message) {
+  capErrorEl.textContent = message;
+  capErrorEl.hidden = false;
+}
+
+function clearCapError() {
+  capErrorEl.hidden = true;
+}
+
 const ENROLL_DURATION_SEC = 15;
 const HOST_NAME_KEY = 'bondcast_host_name';
 const hostNameInputEl = document.getElementById('hostNameInput');
+const hostNameErrorEl = document.getElementById('hostNameError');
 hostNameInputEl.value = localStorage.getItem(HOST_NAME_KEY) || '';
 hostNameInputEl.addEventListener('input', () => {
   localStorage.setItem(HOST_NAME_KEY, hostNameInputEl.value.trim());
+  hostNameErrorEl.hidden = true;
 });
 
 // --- Настройки распознавания (asr_model, speaker_threshold) -----------------
@@ -1243,7 +1292,7 @@ function captionsButtonHtml(streamName) {
 
 function captionsLoadingHtml(streamName) {
   if (!(captionsState.connected && captionsState.streamName === streamName && !captionsState.ready)) return '';
-  return `<div class="row"><span class="row-label"><span class="row-meta">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~1ГБ и может занять минуту-две. Прогресс — во «Диагностика → логи субтитров».</span></span></div>`;
+  return `<div class="row"><span class="row-label"><span class="row-meta">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~1ГБ и может занять минуту-две.</span></span></div>`;
 }
 
 function enrollButtonHtml(streamName) {
@@ -1350,13 +1399,14 @@ async function pollStreamsAndCaptions() {
 async function buildCaptions() {
   if (capBusy) return;
   capBusy = true;
+  clearCapError();
   try {
     const res = await fetch('/api/captions/build', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');
     openBuildLogStream();
   } catch (e) {
-    alert(`Сборка образа: ${e.message}`);
+    showCapError(`Сборка образа: ${e.message}`);
   } finally {
     capBusy = false;
     pollStreamsAndCaptions();
@@ -1366,6 +1416,7 @@ async function buildCaptions() {
 async function connectCaptions(name) {
   if (capBusy) return;
   capBusy = true;
+  clearCapError();
   try {
     const res = await fetch('/api/captions/connect', {
       method: 'POST',
@@ -1379,7 +1430,7 @@ async function connectCaptions(name) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');
   } catch (e) {
-    alert(`Субтитры: ${e.message}`);
+    showCapError(`Субтитры: ${e.message}`);
   } finally {
     capBusy = false;
     pollStreamsAndCaptions();
@@ -1389,12 +1440,13 @@ async function connectCaptions(name) {
 async function disconnectCaptions() {
   if (capBusy) return;
   capBusy = true;
+  clearCapError();
   try {
     const res = await fetch('/api/captions/disconnect', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');
   } catch (e) {
-    alert(`Субтитры: ${e.message}`);
+    showCapError(`Субтитры: ${e.message}`);
   } finally {
     capBusy = false;
     pollStreamsAndCaptions();
@@ -1427,11 +1479,14 @@ async function enrollHost(streamName) {
   const hostName = hostNameInputEl.value.trim();
   if (!hostName) {
     hostNameInputEl.focus();
-    alert('Сначала впиши имя ведущего.');
+    hostNameErrorEl.textContent = 'Сначала впиши имя ведущего.';
+    hostNameErrorEl.hidden = false;
     return;
   }
+  hostNameErrorEl.hidden = true;
   if (capBusy) return;
   capBusy = true;
+  clearCapError();
   try {
     const res = await fetch('/api/captions/enroll', {
       method: 'POST',
@@ -1448,7 +1503,7 @@ async function enrollHost(streamName) {
     }, 250);
     openEnrollLogStream();
   } catch (e) {
-    alert(`Запись голоса: ${e.message}`);
+    showCapError(`Запись голоса: ${e.message}`);
   } finally {
     capBusy = false;
     pollStreamsAndCaptions();

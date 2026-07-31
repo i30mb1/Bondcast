@@ -8,7 +8,7 @@
 ; до кнопки скачивания, см. ../index.html).
 
 #define MyAppName "Bondcast Stream"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.3"
 #define MyAppPublisher "Bondcast"
 #define MyAppURL "https://github.com/i30mb1/Bondcast"
 
@@ -206,33 +206,43 @@ end;
 // - это отдельный, не всегда очевидный шаг (см. историю: пользователь донёс
 // вручную найденную инструкцию для wf.msc).
 // ---------------------------------------------------------------------------
-procedure EnsureFirewallRule();
+// Порт 4455 (управление OBS) сюда намеренно не входит - это опциональный сценарий
+// (управление не из локальной сети), панель сама объясняет его отдельно (см.
+// OBS_WEBSOCKET_HOWTO в app.js) и там же явно предупреждает включить пароль в OBS
+// перед пробросом наружу - открывать его молча по умолчанию для всех не стоит.
+procedure EnsureFirewallRuleFor(RuleName, Port: String);
 var
   ResultCode: Integer;
   RuleExists: Boolean;
 begin
   RuleExists := Exec(ExpandConstant('{cmd}'),
-    '/c netsh advfirewall firewall show rule name="Bondcast Stream (SRTLA 5000/UDP)" >nul 2>&1',
+    '/c netsh advfirewall firewall show rule name="' + RuleName + '" >nul 2>&1',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
   if RuleExists then
     Exit;
 
-  WizardForm.StatusLabel.Caption := 'Открываю порт 5000/UDP в брандмауэре Windows (для приёма стрима с телефона)...';
+  WizardForm.StatusLabel.Caption := 'Открываю порт ' + Port + '/UDP в брандмауэре Windows...';
   WizardForm.Update;
 
   // Сам установщик ставится без прав администратора (PrivilegesRequired=lowest) -
   // добавление правила в firewall требует их, поэтому UAC запрашивается точечно
   // именно на эту команду через verb "runas", не элевейтя остальной инсталлятор.
   if not ShellExec('runas', ExpandConstant('{cmd}'),
-       '/c netsh advfirewall firewall add rule name="Bondcast Stream (SRTLA 5000/UDP)" dir=in action=allow protocol=UDP localport=5000',
+       '/c netsh advfirewall firewall add rule name="' + RuleName + '" dir=in action=allow protocol=UDP localport=' + Port,
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
-    MsgBox('Не удалось автоматически открыть порт 5000/UDP в брандмауэре Windows (отменено или не хватило прав).' + #13#10#13#10 +
+    MsgBox('Не удалось автоматически открыть порт ' + Port + '/UDP в брандмауэре Windows (отменено или не хватило прав).' + #13#10#13#10 +
       'Если телефон не будет подключаться - открой его вручную: Win+R -> wf.msc -> Enter -> ' +
-      '"Правила для входящих подключений" -> "Создать правило..." -> "Для порта" -> UDP, порт 5000 -> ' +
+      '"Правила для входящих подключений" -> "Создать правило..." -> "Для порта" -> UDP, порт ' + Port + ' -> ' +
       '"Разрешить подключение" -> отметить все профили -> задать имя -> Готово.',
       mbInformation, MB_OK);
   end;
+end;
+
+procedure EnsureFirewallRule();
+begin
+  EnsureFirewallRuleFor('Bondcast Stream (SRTLA 5000/UDP)', '5000');
+  EnsureFirewallRuleFor('Bondcast Stream (Direct SRT 10080/UDP)', '10080');
 end;
 
 procedure InitializeWizard();
