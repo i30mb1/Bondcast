@@ -210,8 +210,7 @@ app.get('/api/connections', async (req, res) => {
         label,
         isPublic,
         // Разбито на Сервер/Ключ так же, как это два отдельных поля в OBS (Custom → Server/Stream Key) -
-        // без имени в конце, чтобы не заставлять пользователя вручную резать готовую RTMP-ссылку.
-        obsRtmpServer: `rtmp://${address}:1935/live`,
+        // без имени в конце, чтобы не заставлять пользователя вручную резать готовую ссылку.
         obsSrtUrl: `srt://${address}:10080`,
         obsSrtStreamId: `#!::r=live/${name},m=publish`,
         playFlv: `http://${address}:8080/live/${name}.flv`,

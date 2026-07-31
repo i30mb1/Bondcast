@@ -92,7 +92,6 @@ const PORTS_TO_CHECK = [
   { port: 5000, proto: 'udp', label: 'Бондинг' },
   { port: 10080, proto: 'udp', label: 'Прямой SRT' },
   { port: 4455, proto: 'tcp', label: 'Управление OBS', optional: true, note: ' — нужен, только если управляешь OBS не из локальной сети' },
-  { port: 1935, proto: 'tcp', label: 'RTMP (приглашение друга)', optional: true, note: ' — нужен, только если приглашаешь кого-то стримить через OBS' },
 ];
 
 // Результаты последней проверки хранятся здесь (не только рендерятся) — чек-лист
@@ -269,7 +268,7 @@ function natHowtoHtml(port, localIp) {
 // Точка-диагностика на закрытой плашке сценария (см. .flow-pill-chip в index.html)
 // — по портам, реально нужным именно этому сценарию. "pending", пока проверка
 // ещё не пришла, ничего не рисуем — не мигать пустым кружком на каждую загрузку.
-const FLOW_REQUIRED_PORTS = { bondcast: [5000], 'other-app': [10080], invite: [1935] };
+const FLOW_REQUIRED_PORTS = { bondcast: [5000], 'other-app': [10080], invite: [10080] };
 
 function flowPortStatus(flowId) {
   const ports = FLOW_REQUIRED_PORTS[flowId] || [];
@@ -743,9 +742,9 @@ function inviteFlowBody() {
   const finalStep = `
     <div class="flow-step flow-step-final">
       <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Данные для OBS друга</b></div>
-      ${addrRow('Сервер', host.obsRtmpServer, 'В OBS: поле "Сервер".')}
+      ${addrRow('Сервер', host.obsSrtUrl, 'В OBS: Настройки → Трансляция → Служба «Настраиваемый» → поле "Сервер".')}
       <div class="name-row">
-        <input type="text" id="inviteName" value="${escapeHtml(inviteStreamName)}" readonly style="font-family:'SF Mono',Consolas,monospace" />
+        <input type="text" id="inviteName" value="${escapeHtml(host.obsSrtStreamId)}" readonly style="font-family:'SF Mono',Consolas,monospace" />
         <button type="button" class="dice-btn" id="regenInvite" title="Сгенерировать другое имя">🎲</button>
       </div>
       <div class="row-meta">↑ Ключ трансляции (то же поле в OBS)</div>
@@ -753,7 +752,7 @@ function inviteFlowBody() {
     </div>`;
   return gateSteps([
     { key: 'ip', html: ipStepHtml(host) },
-    { key: 'port-1935', html: portStepHtml(PORTS_TO_CHECK[3]), gate: 'optional', state: portCheckState(1935) },
+    { key: 'port-10080', html: portStepHtml(PORTS_TO_CHECK[1]), gate: 'required', state: portCheckState(10080) },
     { key: 'final', html: finalStep },
   ]);
 }
