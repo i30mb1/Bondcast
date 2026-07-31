@@ -100,20 +100,19 @@ const PORTS_TO_CHECK = [
 // читает их отсюда вместо отдельной общей карточки со списком портов.
 let latestPortResults = [];
 
-// checkPort()/renderPortChecking()/renderPortResults() раньше всегда работали со
-// ВСЕМИ четырьмя портами разом и просто затирали latestPortResults целиком —
-// перепроверка одного закрытого порта (клик "Проверить снова" на конкретном шаге)
-// поэтому на секунду сбрасывала в спиннер вообще все шаги, включая уже открытые,
-// хотя их результат не менялся. Теперь чек по умолчанию по-прежнему берёт все
-// порты (PORTS_TO_CHECK), но принимает и подмножество — тогда трогает (помечает
-// "проверяю" → перезаписывает результатом) только его, остальные записи в
-// latestPortResults остаются как были. portStepHtml() для нетронутых портов
-// выдаёт ту же самую строку, что и раньше, поэтому reconcileSteps() их и не
-// перерисовывает — обновляется визуально только та карточка/шаг, где реально
-// была проблема.
+// Порты, по которым сейчас идёт (пере)проверка. Раньше renderPortChecking просто
+// выкидывал прошлый результат порта из latestPortResults — и на время запроса к
+// check-host.net шаг проваливался в спиннер, а его gate (см. gateSteps) закрывался:
+// portCheckState становился 'pending', и все шаги НИЖЕ по чек-листу пропадали, а
+// потом заново «выезжали» (step-reveal). Перепроверка одного порта дёргала
+// пол-панели. Теперь прошлый результат остаётся на месте, порт лишь помечается
+// «проверяю» — шаг показывает маленький спиннер, но состояние (открыт/закрыт) и
+// gate держатся на прошлом результате, пока не придёт новый, поэтому соседние шаги
+// стоят на месте. flowPortStatus по той же причине не мигает в pending.
+const recheckingPorts = new Set();
+
 function renderPortChecking(ports) {
-  const checkingPorts = new Set(ports.map((p) => p.port));
-  latestPortResults = latestPortResults.filter((r) => !checkingPorts.has(r.meta.port));
+  ports.forEach((p) => recheckingPorts.add(p.port));
   renderFlowList();
 }
 
@@ -169,6 +168,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
   const noteText = optional ? (note || '') : '';
   const obsExtras = port === 4455 ? OBS_LAUNCH_BUTTON + OBS_WEBSOCKET_HOWTO : '';
   const found = latestPortResults.find((r) => r.meta.port === port);
+  const rechecking = recheckingPorts.has(port);
   if (!found) {
     return `
       <div class="flow-step">
@@ -177,7 +177,9 @@ function portStepHtml({ port, proto, label, optional, note }) {
       </div>`;
   }
   const { data } = found;
-  const recheckLink = `<a href="#" class="recheck-ports" data-port="${port}">Проверить снова</a>`;
+  const recheckLink = rechecking
+    ? '<span class="row-meta"><span class="spinner"></span> Проверяю…</span>'
+    : `<a href="#" class="recheck-ports" data-port="${port}">Проверить снова</a>`;
   if (data.error) {
     return `
       <div class="flow-step">
@@ -189,10 +191,11 @@ function portStepHtml({ port, proto, label, optional, note }) {
       </div>`;
   }
   if (data.reachable) {
+    const recheckingHint = rechecking ? ' <span class="spinner"></span>' : '';
     return `
       <div class="flow-step">
         <div class="flow-step-dot dot-live"></div>
-        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${obsExtras}</div>
+        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${recheckingHint}${obsExtras}</div>
       </div>`;
   }
   // Раньше подсказка-и-ссылка "Проверить снова" показывались только для
@@ -277,6 +280,7 @@ function flowPortStatus(flowId) {
 
 function renderPortResults(results) {
   const resultPorts = new Set(results.map((r) => r.meta.port));
+  resultPorts.forEach((port) => recheckingPorts.delete(port));
   latestPortResults = [...latestPortResults.filter((r) => !resultPorts.has(r.meta.port)), ...results];
   renderFlowList();
 }
