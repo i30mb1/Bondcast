@@ -754,27 +754,34 @@ function renderFlowBody(id) {
 // поэтому рендерится напрямую, без animateHeight — только цвет/рамка активной
 // плашки, что уже плавно меняется через CSS transition на .flow-pill.
 //
-// Тот же кэш-по-строке, что и в renderFlowPanelContent — иначе ringPulse на
-// открытой плашке дёргался бы (перезапуск infinite-анимации на новом узле) на
-// каждый опрос раз в 5с, даже когда чипы портов не изменились.
-let lastFlowSelectorHtml = null;
+// Плашки создаём один раз, дальше обновляем на месте (класс .open + чип статуса
+// порта) — раньше на любое изменение чипа перезаписывался innerHTML всего
+// селектора разом, и все три узла пересоздавались: у открытой плашки заново
+// стартовал infinite ringPulse, у соседних сбрасывались transition'ы — моргали
+// все, хотя менялся чип только одного сценария (напр. клик "Проверить снова" по
+// одному порту). Теперь трогаем ровно ту плашку, чей статус реально изменился.
+let flowPillEls = null;
 
 function renderFlowSelector() {
-  const html = FLOWS.map((f) => {
-    const status = flowPortStatus(f.id);
-    const chip = status === 'pending' ? '' : `<span class="flow-pill-chip ${status}"></span>`;
-    return `
-    <button type="button" class="flow-pill ${activeFlowId === f.id ? 'open' : ''}" data-flow="${f.id}">
-      <span class="flow-pill-badge">${f.icon}${chip}</span>
+  if (!flowPillEls) {
+    flowSelectorEl.innerHTML = FLOWS.map((f) => `
+    <button type="button" class="flow-pill" data-flow="${f.id}">
+      <span class="flow-pill-badge">${f.icon}<span class="flow-pill-chip" hidden></span></span>
       <span class="flow-pill-title"><b>${escapeHtml(f.title)}</b><span class="flow-hint">${escapeHtml(f.hint)}</span></span>
-    </button>`;
-  }).join('');
-  if (html === lastFlowSelectorHtml) return;
-  lastFlowSelectorHtml = html;
-
-  flowSelectorEl.innerHTML = html;
-  flowSelectorEl.querySelectorAll('.flow-pill').forEach((btn) => {
-    btn.onclick = () => setActiveFlow(btn.dataset.flow);
+    </button>`).join('');
+    flowPillEls = {};
+    flowSelectorEl.querySelectorAll('.flow-pill').forEach((btn) => {
+      flowPillEls[btn.dataset.flow] = btn;
+      btn.onclick = () => setActiveFlow(btn.dataset.flow);
+    });
+  }
+  FLOWS.forEach((f) => {
+    const btn = flowPillEls[f.id];
+    btn.classList.toggle('open', activeFlowId === f.id);
+    const chip = btn.querySelector('.flow-pill-chip');
+    const status = flowPortStatus(f.id);
+    chip.hidden = status === 'pending';
+    chip.className = status === 'pending' ? 'flow-pill-chip' : `flow-pill-chip ${status}`;
   });
 }
 
