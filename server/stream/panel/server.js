@@ -284,12 +284,19 @@ function isPrivateIp(ip) {
 // targetIp с "текущим видимым публичным IP" и решали "VPN, если они разошлись" — но если VPN был
 // включён и при старте контейнера (когда HOST_IPS зафиксировал внешний IP), и сейчас, оба замера
 // совпадают, расхождения не видно, и проверка молчала про VPN, хотя адрес им и остаётся.
-async function isKnownVpnExit(ip) {
+//
+// hosting — отдельным полем: ip-api помечает proxy:true почти для ЛЮБОГО IP дата-центра/VPS,
+// даже если это просто чей-то сервер, а не прокси/VPN-выход как таковой. У Bondcast сервер
+// сам по себе часто и есть такой VPS (см. CLAUDE.md — self-hosted srtla_rec) — для него
+// "похоже, включён VPN, выключи его" бессмысленный совет (выключать нечего), вводит в
+// заблуждение. Возвращаем оба флага — hintFor() в app.js выбирает подходящий текст сама.
+async function ipReputation(ip) {
   try {
-    const res = await fetch(`http://ip-api.com/line/${encodeURIComponent(ip)}?fields=proxy`);
-    return (await res.text()).trim().toLowerCase() === 'true';
+    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=proxy,hosting`);
+    const data = await res.json();
+    return { vpnLikely: Boolean(data.proxy), hostingLikely: Boolean(data.hosting) };
   } catch (e) {
-    return false;
+    return { vpnLikely: false, hostingLikely: false };
   }
 }
 
@@ -303,24 +310,32 @@ app.get('/api/reachability', async (req, res) => {
     return res.status(502).json({ error: 'HOST_IPS не задан — запусти ярлык «Запустить трансляцию»' });
   }
 
-  // Проверяем внешний (публичный) IP, а не localIp из HOST_IPS — это и есть тот адрес,
-  // на который телефон стучится снаружи через проброс порта на роутере. Раньше здесь
-  // проверялся сам localIp: будучи приватным (почти всегда, у любого домашнего роутера),
-  // это ВСЕГДА уходило в короткое замыкание на reachable:false — даже если проброс порта
-  // уже настроен и реально работает. Проверка молча не могла ничего подтвердить.
-  const publicIp = await fetchPublicIp();
-  if (!publicIp) {
+  // Проверяем внешний (публичный) IP, а не localIp напрямую — если localIp приватный
+  // (почти всегда, у любого домашнего роутера), проверка снаружи ВСЕГДА уходила бы в
+  // короткое замыкание на reachable:false, даже при рабочем пробросе порта.
+  //
+  // НО: start.bat (см. корень HOST_IPS) сам уже пытается сначала получить публичный IP
+  // через ipify.org с ХОСТА, и только если это не удалось — падает на LAN-адрес через
+  // get-host-ips.ps1. Если localIp уже выглядит публичным, это и есть тот самый адрес,
+  // что показан в QR/адресах подключения — проверяем ЕГО, а не спрашиваем ipify.org
+  // ЗАНОВО из контейнера. У Docker Desktop (WSL2/Hyper-V backend) исходящий трафик
+  // контейнера иногда идёт другим сетевым путём, чем у host-процесса start.bat, и
+  // ipify.org может отдать РАЗНЫЙ IP изнутри контейнера — тогда проверка молча уходила
+  // не по тому адресу, что реально показан пользователю, и порт выглядел "закрытым"
+  // просто потому что снаружи никто и не пробрасывал именно этот, никому не показанный IP.
+  const targetIp = isPrivateIp(localIp) ? await fetchPublicIp() : localIp;
+  if (!targetIp) {
     return res.status(502).json({ localIp, localIps, error: 'Не удалось узнать внешний IP — проверь интернет' });
   }
 
   const natLikely = isPrivateIp(localIp);
-  const vpnLikely = await isKnownVpnExit(publicIp);
+  const { vpnLikely, hostingLikely } = await ipReputation(targetIp);
 
   try {
-    const reachable = await checkPortReachable(publicIp, port, proto);
-    res.json({ targetIp: publicIp, localIp, localIps, natLikely, vpnLikely, port, proto, reachable });
+    const reachable = await checkPortReachable(targetIp, port, proto);
+    res.json({ targetIp, localIp, localIps, natLikely, vpnLikely, hostingLikely, port, proto, reachable });
   } catch (e) {
-    res.status(502).json({ targetIp: publicIp, localIp, localIps, natLikely, vpnLikely, port, proto, error: e.message });
+    res.status(502).json({ targetIp, localIp, localIps, natLikely, vpnLikely, hostingLikely, port, proto, error: e.message });
   }
 });
 
@@ -446,6 +461,13 @@ async function getActiveSrsStreams() {
       video: s.video || null,
       audio: s.audio || null,
       kbpsRecv30s: (s.kbps && s.kbps.recv_30s) ?? null,
+      // send_30s — то, что SRS суммарно раздаёт ВСЕМ смотрящим этот поток разом
+      // (не только превью в панели) — recv/send_bytes аналогично, с начала стрима.
+      // Сырые как есть из SRS, без пересчёта в МБ/Мбит — этим занимается фронт
+      // (formatKbps/formatBytes в app.js), чтобы не дублировать округление в двух местах.
+      kbpsSend30s: (s.kbps && s.kbps.send_30s) ?? null,
+      recvBytes: s.recv_bytes ?? null,
+      sendBytes: s.send_bytes ?? null,
     }));
 }
 

@@ -100,8 +100,20 @@ const PORTS_TO_CHECK = [
 // читает их отсюда вместо отдельной общей карточки со списком портов.
 let latestPortResults = [];
 
-function renderPortChecking() {
-  latestPortResults = [];
+// checkPort()/renderPortChecking()/renderPortResults() раньше всегда работали со
+// ВСЕМИ четырьмя портами разом и просто затирали latestPortResults целиком —
+// перепроверка одного закрытого порта (клик "Проверить снова" на конкретном шаге)
+// поэтому на секунду сбрасывала в спиннер вообще все шаги, включая уже открытые,
+// хотя их результат не менялся. Теперь чек по умолчанию по-прежнему берёт все
+// порты (PORTS_TO_CHECK), но принимает и подмножество — тогда трогает (помечает
+// "проверяю" → перезаписывает результатом) только его, остальные записи в
+// latestPortResults остаются как были. portStepHtml() для нетронутых портов
+// выдаёт ту же самую строку, что и раньше, поэтому reconcileSteps() их и не
+// перерисовывает — обновляется визуально только та карточка/шаг, где реально
+// была проблема.
+function renderPortChecking(ports) {
+  const checkingPorts = new Set(ports.map((p) => p.port));
+  latestPortResults = latestPortResults.filter((r) => !checkingPorts.has(r.meta.port));
   renderFlowList();
 }
 
@@ -165,11 +177,15 @@ function portStepHtml({ port, proto, label, optional, note }) {
       </div>`;
   }
   const { data } = found;
+  const recheckLink = `<a href="#" class="recheck-ports" data-port="${port}">Проверить снова</a>`;
   if (data.error) {
     return `
       <div class="flow-step">
         <div class="flow-step-dot bad"></div>
-        <div><b>${escapeHtml(label)}: проверка не удалась</b><span class="flow-step-meta">${escapeHtml(data.error)}</span>${obsExtras}</div>
+        <div>
+          <b>${escapeHtml(label)}: проверка не удалась</b><span class="flow-step-meta">${escapeHtml(data.error)}</span>${obsExtras}
+          <div class="row-meta" style="margin-top:6px">${recheckLink}</div>
+        </div>
       </div>`;
   }
   if (data.reachable) {
@@ -179,6 +195,12 @@ function portStepHtml({ port, proto, label, optional, note }) {
         <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${obsExtras}</div>
       </div>`;
   }
+  // Раньше подсказка-и-ссылка "Проверить снова" показывались только для
+  // ОБЯЗАТЕЛЬНЫХ портов (!optional) — у опционального порта 4455 просто не было
+  // способа перепроверить именно его, кроме полного цикла всех четырёх портов.
+  // Развёрнутый текст (VPN/NAT) по-прежнему только для обязательных — для
+  // опционального он не всегда даже актуален (note уже объясняет, когда порт
+  // вообще нужен), но сама возможность перепроверить нужна в обоих случаях.
   const hint = !optional ? hintFor({ port, proto }, data) : '';
   const natHowto = !optional && data.natLikely && !data.vpnLikely && data.localIp ? natHowtoHtml(port, data.localIp) : '';
   return `
@@ -186,7 +208,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
       <div class="flow-step-dot ${optional ? 'warn' : 'bad'}"></div>
       <div>
         <b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — закрыт${data.targetIp ? ` (${escapeHtml(data.targetIp)})` : ''}${escapeHtml(noteText)}</span>${obsExtras}
-        ${hint ? `<div class="row-meta" style="margin-top:6px">${escapeHtml(hint)} <a href="#" class="recheck-ports">Проверить снова</a></div>` : ''}
+        <div class="row-meta" style="margin-top:6px">${hint ? escapeHtml(hint) + ' ' : ''}${recheckLink}</div>
         ${natHowto}
       </div>
     </div>`;
@@ -197,6 +219,13 @@ function portStepHtml({ port, proto, label, optional, note }) {
 // нужного сценария, конкретно про тот порт, который сейчас закрыт.
 function hintFor({ port, proto }, data) {
   const protoLabel = proto.toUpperCase();
+  // ip-api.com красит proxy:true почти любой IP дата-центра/VPS, даже если это просто
+  // чей-то сервер, а не VPN/прокси-выход — а сам Bondcast-сервер часто и есть такой VPS
+  // (см. CLAUDE.md — self-hosted). "Выключи VPN" тогда бессмысленный совет, выключать
+  // нечего: hostingLikely отличает этот случай от настоящего VPN-клиента на машине.
+  if (data.vpnLikely && data.hostingLikely) {
+    return `Порт ${port}/${protoLabel} не отвечает на ${data.targetIp} (это адрес хостинг-провайдера, не похоже на бытовой VPN) — проверь, что нужный сервис реально запущен и слушает этот порт, и что его не блокирует файрвол этой машины (Windows Defender Firewall и т.п.).`;
+  }
   if (data.vpnLikely) {
     return 'Похоже, включён VPN — он часто блокирует трафик наружу. Выключи его и запусти start.bat ещё раз, мы всё перепроверим.';
   }
@@ -247,14 +276,15 @@ function flowPortStatus(flowId) {
 }
 
 function renderPortResults(results) {
-  latestPortResults = results;
+  const resultPorts = new Set(results.map((r) => r.meta.port));
+  latestPortResults = [...latestPortResults.filter((r) => !resultPorts.has(r.meta.port)), ...results];
   renderFlowList();
 }
 
-async function checkPort() {
-  renderPortChecking();
+async function checkPort(ports = PORTS_TO_CHECK) {
+  renderPortChecking(ports);
   const results = await Promise.all(
-    PORTS_TO_CHECK.map(async (meta) => {
+    ports.map(async (meta) => {
       try {
         const res = await fetch(`/api/reachability?port=${meta.port}&proto=${meta.proto}`);
         return { meta, data: await res.json() };
@@ -278,7 +308,9 @@ document.addEventListener('click', (e) => {
   const recheck = e.target.closest('.recheck-ports');
   if (recheck) {
     e.preventDefault();
-    checkPort();
+    const port = Number(recheck.dataset.port);
+    const meta = PORTS_TO_CHECK.find((p) => p.port === port);
+    checkPort(meta ? [meta] : undefined); // meta не найден — на всякий случай перепроверяем всё, а не молчим
     return;
   }
 
@@ -298,40 +330,146 @@ document.addEventListener('click', (e) => {
   // руками жать "Проверить снова").
   btn.disabled = true;
   btn.textContent = 'Запускаю OBS…';
-  setTimeout(checkPort, 6000);
+  // Только 4455 — эта кнопка вообще есть только у его шага, незачем дёргать
+  // остальные три порта заодно.
+  setTimeout(() => checkPort([PORTS_TO_CHECK.find((p) => p.port === 4455)]), 6000);
 });
 
-// Плеер из самого SRS (bundled, тот же что и в его /console) — надёжнее flv.js
-// (молча ломается на HEVC): корректно показывает и такое. Раньше открывался
-// отдельной вкладкой чужого вида — теперь тот же URL (тот же плеер, то же
-// HEVC-поведение, ничего не переизобретаем) встраивается iframe'ом прямо в
-// панель через openPreview() ниже, в рамке её собственного стиля.
-function srsPlayerUrl(name) {
-  const host = window.location.hostname;
-  const schema = window.location.protocol.replace(':', '');
-  return `${window.location.protocol}//${host}:8080/players/srs_player.html` +
-    `?vhost=__defaultVhost__&app=live&stream=${encodeURIComponent(name)}.flv` +
-    `&server=${host}&port=8080&autostart=true&schema=${schema}`;
+// video.play() у <video id="previewVideo"> отклоняется браузером с AbortError в
+// паре штатных ситуаций, обе безвредные: mpegts.js дёргает video.pause() внутри
+// detachMediaElement()/destroy() (см. closePreview ниже), если предыдущий play()
+// ещё не осел ("interrupted by a call to pause()") — либо сам браузер ставит
+// автовоспроизведение на паузу для экономии энергии, если вкладка/видео вне
+// фокуса ("paused to save power"). Оба — штатное поведение <video>/Promise API,
+// не баг библиотеки; гасим именно эти два задокументированных паттерна, а не
+// unhandledrejection целиком — реальные ошибки по-прежнему всплывают как обычно.
+window.addEventListener('unhandledrejection', (e) => {
+  if (e.reason && e.reason.name === 'AbortError' && /interrupted (by a call to pause|because .* paused to save power)/.test(e.reason.message || '')) {
+    e.preventDefault();
+  }
+});
+
+// URL для прямого HTTP-FLV — тот же формат, что playFlv в /api/connections на
+// сервере (server.js), просто посчитанный на клиенте для произвольного имени
+// стрима (playFlv там привязан к конкретному currentStreamName/inviteStreamName,
+// а openPreview() ниже может открыть ЛЮБОЙ стрим из /api/streams).
+function directFlvUrl(name) {
+  return `${window.location.protocol}//${window.location.hostname}:8080/live/${encodeURIComponent(name)}.flv`;
+}
+
+// mpegts.js — та же библиотека, которую использует bundled-плеер SRS (форк flv.js
+// с рабочей поддержкой HEVC, которой у обычного flv.js нет — источник фразы
+// "надёжнее flv.js" из старого комментария этого файла), поэтому просто грузим
+// её и рисуем голый <video> сами, вместо чужой debug-страницы SRS целиком
+// (вкладки/URL-поле/список рекомендуемых плееров). Файл — копия с самого SRS
+// (см. public/vendor/README.md), но обслуживается со своего origin, а не
+// cross-origin с SRS: тот отдаёт статику без Access-Control-Allow-Origin, и
+// необработанные promise-исключения из cross-origin script браузер глушит для
+// unhandledrejection на этой странице — их было не увидеть и не подавить
+// (см. AbortError-фильтр ниже, он реально работает только для same-origin).
+let mpegtsLoadPromise = null;
+function loadMpegts() {
+  if (window.mpegts) return Promise.resolve(window.mpegts);
+  if (!mpegtsLoadPromise) {
+    mpegtsLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'vendor/mpegts-1.7.3.min.js';
+      script.onload = () => (window.mpegts ? resolve(window.mpegts) : reject(new Error('mpegts.js загрузился, но window.mpegts не появился')));
+      script.onerror = () => reject(new Error('не удалось загрузить плеер (vendor/mpegts-1.7.3.min.js)'));
+      document.head.appendChild(script);
+    });
+  }
+  return mpegtsLoadPromise;
 }
 
 const pageEl = document.querySelector('.page');
 const previewPanelEl = document.getElementById('previewPanel');
+let activePreviewPlayer = null;
+let currentPreviewName = null;
 
-function openPreview(name) {
+function formatKbps(kbps) {
+  if (kbps == null) return '—';
+  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Мбит/с` : `${kbps} кбит/с`;
+}
+
+function formatBytes(bytes) {
+  if (bytes == null) return '—';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} ГБ` : `${mb.toFixed(1)} МБ`;
+}
+
+// Обновляет строку трафика/видео под превью — дёргается из refreshStreams() (тот
+// же опрос раз в 5с, что уже кормит сайдбар и "Активные стримы", отдельный поллинг
+// заводить незачем) данными, которые SRS и так возвращает в /api/streams.
+function updatePreviewStats() {
+  const statsEl = document.getElementById('previewStats');
+  if (!statsEl || !currentPreviewName) return;
+  const s = latestStreams.find((x) => x.name === currentPreviewName);
+  if (!s) {
+    statsEl.textContent = 'Стрим сейчас не публикуется.';
+    return;
+  }
+  statsEl.innerHTML = `
+    ${escapeHtml(formatCodec(s.video, s.audio))}<br>
+    ↓ ${escapeHtml(formatKbps(s.kbpsRecv30s))} приём · ↑ ${escapeHtml(formatKbps(s.kbpsSend30s))} отдача<br>
+    Всего с начала стрима: ↓ ${escapeHtml(formatBytes(s.recvBytes))} · ↑ ${escapeHtml(formatBytes(s.sendBytes))}`;
+}
+
+async function openPreview(name) {
+  if (activePreviewPlayer) {
+    activePreviewPlayer.destroy();
+    activePreviewPlayer = null;
+  }
+  currentPreviewName = name;
   previewPanelEl.innerHTML = `
     <div class="page-preview-head">
       <b>Предпросмотр: ${escapeHtml(name)}</b>
       <button type="button" class="page-preview-close">✕</button>
     </div>
-    <iframe src="${escapeHtml(srsPlayerUrl(name))}" allow="autoplay" title="Предпросмотр «${escapeHtml(name)}»"></iframe>`;
+    <video id="previewVideo" width="100%" autoplay muted controls playsinline></video>
+    <div class="row-meta" id="previewStatus" style="margin-top:8px">Подключаюсь…</div>
+    <div class="row-meta" id="previewStats" style="margin-top:8px"></div>`;
   previewPanelEl.querySelector('.page-preview-close').onclick = closePreview;
   previewPanelEl.hidden = false;
   pageEl.classList.add('has-preview');
+  updatePreviewStats();
+
+  const statusEl = document.getElementById('previewStatus');
+  const video = document.getElementById('previewVideo');
+  video.addEventListener('playing', () => { statusEl.hidden = true; }, { once: true });
+
+  try {
+    const mpegts = await loadMpegts();
+    if (!document.getElementById('previewVideo')) return; // окно предпросмотра уже закрыли, пока грузился mpegts.js
+    if (!mpegts.getFeatureList().mseLivePlayback) {
+      statusEl.textContent = 'Браузер не поддерживает воспроизведение через Media Source Extensions.';
+      return;
+    }
+    activePreviewPlayer = mpegts.createPlayer({
+      type: 'flv', url: directFlvUrl(name),
+      isLive: true, enableStashBuffer: false, liveSync: true,
+    });
+    activePreviewPlayer.on(mpegts.Events.ERROR, (type, detail) => {
+      statusEl.hidden = false;
+      statusEl.textContent = `Не удалось воспроизвести: ${type}${detail ? ' — ' + detail : ''}`;
+    });
+    activePreviewPlayer.attachMediaElement(video);
+    activePreviewPlayer.load();
+    activePreviewPlayer.play();
+  } catch (e) {
+    statusEl.hidden = false;
+    statusEl.textContent = `Не удалось запустить предпросмотр: ${e.message}`;
+  }
 }
 
 function closePreview() {
+  if (activePreviewPlayer) {
+    activePreviewPlayer.destroy();
+    activePreviewPlayer = null;
+  }
+  currentPreviewName = null;
   previewPanelEl.hidden = true;
-  previewPanelEl.innerHTML = ''; // выгружаем iframe, а не просто прячем — не гонять видео фоном впустую
+  previewPanelEl.innerHTML = ''; // выгружаем видео, а не просто прячем — не гонять поток фоном впустую
   pageEl.classList.remove('has-preview');
 }
 
@@ -1145,6 +1283,7 @@ async function refreshStreams() {
     latestStreams = data.streams || [];
     renderStreamCards(latestStreams);
     renderServerStreams(latestStreams);
+    updatePreviewStats();
     // Раскрытая ветка сценария (если есть) ждёт именно факта "SRS увидел поток" —
     // перерисовываем её на каждый опрос, чтобы "жду начала стрима" само сменилось
     // на "Стрим идёт!" без ручного обновления страницы.
