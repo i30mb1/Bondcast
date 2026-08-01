@@ -1715,16 +1715,92 @@ setInterval(pollStreamsAndCaptions, 5000);
 // "Запустить OBS") запускается ТОЛЬКО по явному клику — и не с одного клика:
 // первый превращает кнопку в вопрос-подтверждение, реально скачивает и ставит
 // только второй. Без нативных alert()/confirm() (в проекте их уже сознательно
-// убирали — см. git log), вся кнопка целиком в баннере.
+// убирали — см. git log). Сам прогресс (скачивание/установка) — update.ps1
+// шлёт его на локальный /api/update/progress (см. server.js), а не рисует
+// отдельным системным окошком — пользователь жал кнопку здесь же, в панели,
+// здесь и должен видеть, что происходит.
 const updateBannerEl = document.getElementById('updateBanner');
+const updateBannerOfferEl = document.getElementById('updateBannerOffer');
 const updateBannerTextEl = document.getElementById('updateBannerText');
 const updateBannerBtnEl = document.getElementById('updateBannerBtn');
+const updateBannerProgressEl = document.getElementById('updateBannerProgress');
+const updateProgressTextEl = document.getElementById('updateProgressText');
+const updateProgressBarEl = document.getElementById('updateProgressBar');
 let updateConfirmPending = false;
+// true с момента подтверждённого клика (или если при загрузке страницы уже
+// шло обновление, начатое до перезагрузки — см. checkResumeUpdateProgress) —
+// пока true, refreshUpdateStatus не трогает баннер: 5-минутный опрос иначе
+// мог бы затереть прогресс обратно на "Обновить" посреди скачивания.
+let updateInProgress = false;
+let updateProgressTimer = null;
 
 function resetUpdateButton() {
   updateConfirmPending = false;
   updateBannerBtnEl.textContent = 'Обновить';
   updateBannerBtnEl.classList.remove('primary');
+}
+
+function stopUpdateProgressPolling() {
+  if (updateProgressTimer) {
+    clearInterval(updateProgressTimer);
+    updateProgressTimer = null;
+  }
+}
+
+function renderUpdateProgress(data) {
+  updateBannerOfferEl.hidden = true;
+  updateBannerProgressEl.hidden = false;
+  if (data.status === 'downloading') {
+    updateProgressBarEl.value = data.percent;
+    updateProgressTextEl.textContent = `Скачиваю обновление... ${data.percent}%`;
+  } else if (data.status === 'installing') {
+    // Без value — браузер сам рисует "бегущую" полосу: Inno Setup в /VERYSILENT
+    // не отдаёт наружу прогресс копирования файлов, честнее не выдумывать процент.
+    updateProgressBarEl.removeAttribute('value');
+    updateProgressTextEl.textContent = 'Устанавливаю...';
+  } else if (data.status === 'done') {
+    updateProgressBarEl.value = 100;
+    updateProgressTextEl.textContent = 'Готово! Перезапусти трансляцию (закрой и открой ярлык заново), чтобы применить.';
+    stopUpdateProgressPolling();
+  } else if (data.status === 'error') {
+    updateProgressBarEl.removeAttribute('value');
+    updateProgressTextEl.textContent = `Не получилось: ${data.message || 'неизвестная ошибка'}`;
+    stopUpdateProgressPolling();
+  } else {
+    updateProgressBarEl.removeAttribute('value');
+    updateProgressTextEl.textContent = 'Запускаю обновление...';
+  }
+}
+
+async function pollUpdateProgress() {
+  try {
+    const res = await fetch('/api/update/progress');
+    const data = await res.json();
+    if (data.status && data.status !== 'idle') renderUpdateProgress(data);
+  } catch (e) {
+    // тихо — попробуем на следующем тике
+  }
+}
+
+// На случай, если страницу перезагрузили посреди уже идущего обновления
+// (начатого до перезагрузки) — подхватываем текущий прогресс с сервера, а не
+// показываем снова "Обновить" поверх того, что уже вовсю качается/ставится.
+async function checkResumeUpdateProgress() {
+  try {
+    const res = await fetch('/api/update/progress');
+    const data = await res.json();
+    if (data.status && data.status !== 'idle') {
+      updateInProgress = true;
+      updateBannerEl.hidden = false;
+      renderUpdateProgress(data);
+      if (data.status !== 'done' && data.status !== 'error') {
+        stopUpdateProgressPolling();
+        updateProgressTimer = setInterval(pollUpdateProgress, 500);
+      }
+    }
+  } catch (e) {
+    // тихо
+  }
 }
 
 updateBannerBtnEl.onclick = () => {
@@ -1734,11 +1810,25 @@ updateBannerBtnEl.onclick = () => {
     updateBannerBtnEl.classList.add('primary');
     return;
   }
-  window.location.href = 'bondcast-update://install';
-  resetUpdateButton();
+  updateInProgress = true;
+  renderUpdateProgress({ status: 'starting' });
+  stopUpdateProgressPolling();
+  updateProgressTimer = setInterval(pollUpdateProgress, 500);
+  // Сбрасываем прогресс на сервере ДО перехода по протоколу — иначе первый же
+  // опрос мог увидеть "хвост" от прошлого обновления (status: done/error).
+  fetch('/api/update/progress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'starting', percent: 0 }),
+  })
+    .catch(() => {})
+    .finally(() => {
+      window.location.href = 'bondcast-update://install';
+    });
 };
 
 async function refreshUpdateStatus() {
+  if (updateInProgress) return;
   try {
     const res = await fetch('/api/update/status');
     const data = await res.json();
@@ -1748,6 +1838,8 @@ async function refreshUpdateStatus() {
       const noteHtml = data.note ? `<b>${escapeHtml(data.note)}</b> — ` : '';
       updateBannerTextEl.innerHTML = `${noteHtml}вышла версия ${escapeHtml(data.latestVersion)} (сейчас ${escapeHtml(data.currentVersion)})`;
       updateBannerEl.hidden = false;
+      updateBannerOfferEl.hidden = false;
+      updateBannerProgressEl.hidden = true;
     } else {
       updateBannerEl.hidden = true;
       resetUpdateButton();
@@ -1756,7 +1848,7 @@ async function refreshUpdateStatus() {
     // тихо — панель могла быть недоступна секунду, попробуем на следующем опросе
   }
 }
-refreshUpdateStatus();
+checkResumeUpdateProgress().then(refreshUpdateStatus);
 setInterval(refreshUpdateStatus, 5 * 60 * 1000);
 // Дольше 5 минут не открывал вкладку — статус мог устареть (напр. только что
 // поставил обновление в фоне) — перепроверяем сразу, как вернулся, а не ждём

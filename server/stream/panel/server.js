@@ -254,6 +254,23 @@ app.get('/api/captions/overlay-style', (req, res) => {
   res.json(readOverlayStyle());
 });
 
+// Прогресс тихой установки (update.ps1 на хосте) — панель сама рисует его в
+// баннере (см. app.js), а не update.ps1 отдельным окошком: пользователь жал
+// кнопку "Обновить" в панели, там же логично видеть, что происходит. update.ps1
+// шлёт сюда сам, у него нет способа авторизоваться (тот же принцип, что и
+// GET выше) — публично, до auth. GET ниже панель опрашивает обычным способом,
+// уже за auth, как всё остальное.
+let updateProgress = { status: 'idle', percent: 0, message: '' };
+app.post('/api/update/progress', (req, res) => {
+  const body = req.body || {};
+  updateProgress = {
+    status: String(body.status || 'idle'),
+    percent: Math.min(100, Math.max(0, Number(body.percent) || 0)),
+    message: String(body.message || ''),
+  };
+  res.json({ ok: true });
+});
+
 app.use(auth);
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -616,6 +633,10 @@ app.get('/api/update/status', (req, res) => {
     updateAvailable: Boolean(latestVersion) && isVersionNewer(latestVersion, currentVersion),
     checkedAt: latestVersionCache.checkedAt,
   });
+});
+
+app.get('/api/update/progress', (req, res) => {
+  res.json(updateProgress);
 });
 
 // --- OBS: время жизни стримов + «Умный переключатель сцен» ------------------

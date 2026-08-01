@@ -8,7 +8,7 @@
 ; до кнопки скачивания, см. ../index.html).
 
 #define MyAppName "Bondcast Stream"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "Bondcast"
 #define MyAppURL "https://github.com/i30mb1/Bondcast"
 

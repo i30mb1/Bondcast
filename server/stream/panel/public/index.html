@@ -415,6 +415,12 @@
      #overlaySection, наступил снова на новом элементе. */
   .update-banner[hidden] { display: none; }
   .update-banner span { flex: 1; min-width: 200px; }
+  /* Класс, не инлайн-style — [hidden] переключается тем же <div>, а инлайн
+     display перебивал бы его точно так же, как и авторский класс (см. общее
+     правило [hidden] в конце файла — оно спасает только от конфликтов с
+     ДРУГИМИ правилами стиля, не с инлайн-style на том же элементе). */
+  .update-banner-row { display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap; }
+  #updateProgressBar { flex: 1; min-width: 160px; height: 8px; }
 
   /* Подстраховка от всего класса бага выше (перебой [hidden] авторским display:
      ловили уже трижды за сессию на разных элементах) — при равной специфичности
@@ -429,8 +435,14 @@
 <div class="page">
 
   <div class="update-banner" id="updateBanner" hidden>
-    <span id="updateBannerText"></span>
-    <button type="button" id="updateBannerBtn" class="primary">Обновить</button>
+    <div class="update-banner-row" id="updateBannerOffer">
+      <span id="updateBannerText"></span>
+      <button type="button" id="updateBannerBtn" class="primary">Обновить</button>
+    </div>
+    <div class="update-banner-row" id="updateBannerProgress" hidden>
+      <span id="updateProgressText"></span>
+      <progress id="updateProgressBar" max="100"></progress>
+    </div>
   </div>
 
   <div class="top-bar">
