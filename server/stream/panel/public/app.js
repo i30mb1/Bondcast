@@ -1733,6 +1733,7 @@ let updateConfirmPending = false;
 // мог бы затереть прогресс обратно на "Обновить" посреди скачивания.
 let updateInProgress = false;
 let updateProgressTimer = null;
+let updateStartTimeoutTimer = null;
 
 function resetUpdateButton() {
   updateConfirmPending = false;
@@ -1747,22 +1748,35 @@ function stopUpdateProgressPolling() {
   }
 }
 
+// Если статус реально сдвинулся (не "starting") — update.ps1 точно запустился,
+// протокол у пользователя зарегистрирован. Таймаут ниже больше не нужен.
+function clearUpdateStartTimeout() {
+  if (updateStartTimeoutTimer) {
+    clearTimeout(updateStartTimeoutTimer);
+    updateStartTimeoutTimer = null;
+  }
+}
+
 function renderUpdateProgress(data) {
   updateBannerOfferEl.hidden = true;
   updateBannerProgressEl.hidden = false;
   if (data.status === 'downloading') {
+    clearUpdateStartTimeout();
     updateProgressBarEl.value = data.percent;
     updateProgressTextEl.textContent = `Скачиваю обновление... ${data.percent}%`;
   } else if (data.status === 'installing') {
+    clearUpdateStartTimeout();
     // Без value — браузер сам рисует "бегущую" полосу: Inno Setup в /VERYSILENT
     // не отдаёт наружу прогресс копирования файлов, честнее не выдумывать процент.
     updateProgressBarEl.removeAttribute('value');
     updateProgressTextEl.textContent = 'Устанавливаю...';
   } else if (data.status === 'done') {
+    clearUpdateStartTimeout();
     updateProgressBarEl.value = 100;
     updateProgressTextEl.textContent = 'Готово! Перезапусти трансляцию (закрой и открой ярлык заново), чтобы применить.';
     stopUpdateProgressPolling();
   } else if (data.status === 'error') {
+    clearUpdateStartTimeout();
     updateProgressBarEl.removeAttribute('value');
     updateProgressTextEl.textContent = `Не получилось: ${data.message || 'неизвестная ошибка'}`;
     stopUpdateProgressPolling();
@@ -1814,6 +1828,17 @@ updateBannerBtnEl.onclick = () => {
   renderUpdateProgress({ status: 'starting' });
   stopUpdateProgressPolling();
   updateProgressTimer = setInterval(pollUpdateProgress, 500);
+  // Если через 8с статус так и не сдвинулся с "starting" — почти наверняка
+  // Windows не запустила update.ps1 вообще (у старых установленных копий,
+  // до этой версии, протокол bondcast-update:// просто не зарегистрирован в
+  // реестре — сам он появляется только начиная с той версии, что его ввела).
+  // Без этой подсказки кнопка выглядела бы зависшей навсегда без объяснений.
+  clearUpdateStartTimeout();
+  updateStartTimeoutTimer = setTimeout(() => {
+    updateProgressTextEl.innerHTML = 'Не запускается — похоже, установлена версия без этой функции. ' +
+      '<a href="https://github.com/i30mb1/Bondcast/releases/latest" target="_blank" rel="noopener">Скачай последнюю версию вручную</a> ' +
+      'и поставь один раз — дальше обновления заработают сами.';
+  }, 8000);
   // Сбрасываем прогресс на сервере ДО перехода по протоколу — иначе первый же
   // опрос мог увидеть "хвост" от прошлого обновления (status: done/error).
   fetch('/api/update/progress', {
