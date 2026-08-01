@@ -1743,7 +1743,10 @@ async function refreshUpdateStatus() {
     const res = await fetch('/api/update/status');
     const data = await res.json();
     if (data.updateAvailable) {
-      updateBannerTextEl.textContent = `Доступна версия ${data.latestVersion} (сейчас ${data.currentVersion})`;
+      // note — первая строка текста релиза (см. checkForUpdate в server.js),
+      // шуточное однострочное описание в духе Discord-патчноутов, не сухой номер версии.
+      const noteHtml = data.note ? `<b>${escapeHtml(data.note)}</b> — ` : '';
+      updateBannerTextEl.innerHTML = `${noteHtml}вышла версия ${escapeHtml(data.latestVersion)} (сейчас ${escapeHtml(data.currentVersion)})`;
       updateBannerEl.hidden = false;
     } else {
       updateBannerEl.hidden = true;
@@ -1755,3 +1758,9 @@ async function refreshUpdateStatus() {
 }
 refreshUpdateStatus();
 setInterval(refreshUpdateStatus, 5 * 60 * 1000);
+// Дольше 5 минут не открывал вкладку — статус мог устареть (напр. только что
+// поставил обновление в фоне) — перепроверяем сразу, как вернулся, а не ждём
+// остаток интервала.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshUpdateStatus();
+});

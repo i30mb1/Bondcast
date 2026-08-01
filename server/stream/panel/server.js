@@ -156,7 +156,7 @@ function isVersionNewer(a, b) {
 
 // В памяти, переживать перезапуск панели незачем - опрашивается заново при
 // каждом старте (тот же принцип, что buildStatus/captionsReady выше).
-let latestVersionCache = { version: null, checkedAt: null };
+let latestVersionCache = { version: null, note: null, checkedAt: null };
 
 async function checkForUpdate() {
   try {
@@ -166,7 +166,12 @@ async function checkForUpdate() {
     if (!res.ok) return;
     const data = await res.json();
     const tag = String(data.tag_name || '').replace(/^v/, '');
-    if (tag) latestVersionCache = { version: tag, checkedAt: Date.now() };
+    // Первая строка текста релиза — шуточное мини-описание в духе Discord-патчноутов
+    // (см. gh release create при публикации), остальное — подробный список изменений,
+    // его читают на GitHub, не в баннере панели. Без первой строки просто пусто —
+    // не показываем весь markdown-текст релиза как есть.
+    const note = String(data.body || '').split('\n').map((l) => l.trim()).find(Boolean) || null;
+    if (tag) latestVersionCache = { version: tag, note: note ? note.slice(0, 140) : null, checkedAt: Date.now() };
   } catch (e) {
     // сеть моргнула/GitHub недоступен — не критично, попробуем на следующем тике
   }
@@ -607,6 +612,7 @@ app.get('/api/update/status', (req, res) => {
   res.json({
     currentVersion,
     latestVersion,
+    note: latestVersionCache.note,
     updateAvailable: Boolean(latestVersion) && isVersionNewer(latestVersion, currentVersion),
     checkedAt: latestVersionCache.checkedAt,
   });
