@@ -8,7 +8,7 @@
 ; до кнопки скачивания, см. ../index.html).
 
 #define MyAppName "Bondcast Stream"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Bondcast"
 #define MyAppURL "https://github.com/i30mb1/Bondcast"
 
@@ -59,11 +59,10 @@ Source: "..\panel\*"; DestDir: "{app}\panel"; Flags: ignoreversion recursesubdir
 ; asr-obs (субтитры) - должен остаться sibling'ом srs/srtla-rec/panel: docker-compose.yml
 ; ссылается на него как на "./asr-obs" (build-контекст аср-worker), а панель монтирует
 ; его же как build-context на "/build-context/asr-obs" - оба пути ломаются, если это
-; не прямой подкаталог {app}. __pycache__/reference.npy/host_name.txt/host_samples -
-; локальный сгенерированный мусор (см. server/stream/asr-obs/.gitignore), таскать
-; незачем; reference.npy отдельно опасен - раньше на нём уже ловили баг, когда Docker
-; создавал пустую директорию на месте несуществующего bind-source (см. app/speaker.py).
-Source: "..\asr-obs\*"; DestDir: "{app}\asr-obs"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\__pycache__\*,\app\__pycache__\*,\host_samples\*,\reference.npy,\reference.npy\*,\host_name.txt"
+; не прямой подкаталог {app}. __pycache__/voices/host_samples - локальный сгенерированный
+; мусор (см. server/stream/asr-obs/.gitignore), таскать незачем - voices/ панель создаёт
+; сама при первом старте (см. server.js), тащить чужие эталоны голосов в установщике не нужно.
+Source: "..\asr-obs\*"; DestDir: "{app}\asr-obs"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\__pycache__\*,\app\__pycache__\*,\host_samples\*,\voices\*"
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

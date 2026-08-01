@@ -1,3 +1,12 @@
+# Имя проекта закреплено явно - иначе Compose берёт его из имени папки
+# (server/stream в репо -> "stream", %localappdata%\BondcastStream в
+# установленной копии -> "bondcaststream"), и это два РАЗНЫХ проекта с
+# независимыми стеками контейнеров. Для сервисов без container_name (overlay,
+# asr-worker) это означает отдельный "<project>-overlay-1" на каждый проект -
+# они конкурируют за порт 8082, и старый осиротевший контейнер остаётся висеть,
+# когда переключаешься между запуском из репо и установленным ярлыком.
+name: bondcast-stream
+
 networks:
   bondcast-net:
     name: bondcast-net
@@ -66,13 +75,14 @@ services:
   asr-worker:
     build: ./asr-obs
     image: bondcast-asr-worker:latest
+    container_name: asr-worker
     profiles: ["captions"]
     networks: [bondcast-net]
     ports:
       - "8765:8765"
     volumes:
       - ./asr-obs/config.yaml:/srv/config.yaml:ro
-      - ./asr-obs/reference.npy:/srv/reference.npy:ro
+      - ./asr-obs/voices:/srv/voices:ro
       - hf-cache:/root/.cache/huggingface
       - gigaam-cache:/root/.cache/gigaam
     deploy:
@@ -86,6 +96,7 @@ services:
   # Статичный оверлей субтитров для OBS Browser Source — лёгкий, всегда доступен.
   overlay:
     image: nginx:alpine
+    container_name: overlay
     restart: unless-stopped
     networks: [bondcast-net]
     volumes:

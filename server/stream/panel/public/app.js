@@ -7,6 +7,22 @@ function tooltip(text) {
   return `<span class="info" tabindex="0">?<span class="bubble">${escapeHtml(text)}</span></span>`;
 }
 
+// Сдвиг фазы для повторяющихся анимаций (dot-live/dot-live-red, conn-packet) —
+// несколько штук на экране разом (список активных стримов, чек-лист портов,
+// пакет на соединительных линиях между шагами) без этого идут в такт и выглядят
+// как одна и та же анимация под копирку. Детерминированно от seed, не
+// Math.random() — reconcileSteps сравнивает html строкой и перерисовывает узел
+// только когда она реально изменилась, случайное значение на каждый рендер
+// заставило бы шаг мигать на каждый опрос. durationSec — длительность анимации
+// конкретного элемента (dotPulse/dotPulseRed — 1.8s, packetTravel — 1.6s), сдвиг
+// считается в её пределах.
+function pulseDelay(seed, durationSec = 1.8) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  const offset = (hash % 100) / 100 * durationSec;
+  return `animation-delay:-${offset.toFixed(2)}s`;
+}
+
 function addrRow(label, value, hint) {
   return `
     <div class="addr-row">
@@ -107,7 +123,7 @@ let latestPortResults = [];
 // пол-панели. Теперь прошлый результат остаётся на месте, порт лишь помечается
 // «проверяю» — шаг показывает маленький спиннер, но состояние (открыт/закрыт) и
 // gate держатся на прошлом результате, пока не придёт новый, поэтому соседние шаги
-// стоят на месте. flowPortStatus по той же причине не мигает в pending.
+// стоят на месте.
 const recheckingPorts = new Set();
 
 function renderPortChecking(ports) {
@@ -193,7 +209,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
     const recheckingHint = rechecking ? ' <span class="spinner"></span>' : '';
     return `
       <div class="flow-step">
-        <div class="flow-step-dot dot-live"></div>
+        <div class="flow-step-dot dot-live" style="${pulseDelay('port-' + port)}"></div>
         <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — открыт снаружи (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span>${recheckingHint}</div>
       </div>`;
   }
@@ -265,18 +281,6 @@ function natHowtoHtml(port, localIp) {
     </details>`;
 }
 
-// Точка-диагностика на закрытой плашке сценария (см. .flow-pill-chip в index.html)
-// — по портам, реально нужным именно этому сценарию. "pending", пока проверка
-// ещё не пришла, ничего не рисуем — не мигать пустым кружком на каждую загрузку.
-const FLOW_REQUIRED_PORTS = { bondcast: [5000], 'other-app': [10080], invite: [10080] };
-
-function flowPortStatus(flowId) {
-  const ports = FLOW_REQUIRED_PORTS[flowId] || [];
-  const found = ports.map((port) => latestPortResults.find((r) => r.meta.port === port));
-  if (found.some((r) => !r)) return 'pending';
-  return found.every((r) => r.data.reachable) ? 'ok' : 'bad';
-}
-
 function renderPortResults(results) {
   const resultPorts = new Set(results.map((r) => r.meta.port));
   resultPorts.forEach((port) => recheckingPorts.delete(port));
@@ -336,6 +340,12 @@ document.addEventListener('click', (e) => {
   // Только 4455 — эта кнопка вообще есть только у его шага, незачем дёргать
   // остальные три порта заодно.
   setTimeout(() => checkPort([PORTS_TO_CHECK.find((p) => p.port === 4455)]), 6000);
+  // Список сцен (карточка "Умный переключатель сцен OBS") — отдельный запрос,
+  // не завязанный на checkPort выше: он идёт от панели напрямую в OBS-websocket,
+  // а не через внешний check-host.net. OBS + сам плагин WebSocket поднимаются не
+  // сразу — несколько попыток с нарастающей паузой, чтобы карточка сама ожила,
+  // без ручных кликов "Проверить снова".
+  [3000, 6000, 10000, 15000].forEach((delay) => setTimeout(refreshObsScenes, delay));
 });
 
 // video.play() у <video id="previewVideo"> отклоняется браузером с AbortError в
@@ -615,7 +625,7 @@ function ipStepHtml(host) {
   if (!host) {
     return `<div class="flow-step"><div class="flow-step-dot bad"></div><div><b>IP не определён</b><span class="flow-step-meta">Запусти ярлык «Запустить трансляцию» на рабочем столе</span></div></div>`;
   }
-  return `<div class="flow-step"><div class="flow-step-dot dot-live"></div><div><b>IP статический</b><span class="flow-step-meta">${escapeHtml(host.mobileSrtlaHost)}</span></div></div>`;
+  return `<div class="flow-step"><div class="flow-step-dot dot-live" style="${pulseDelay('static-ip')}"></div><div><b>IP статический</b><span class="flow-step-meta">${escapeHtml(host.mobileSrtlaHost)}</span></div></div>`;
 }
 
 // Прогрессивное раскрытие: шаг с gate:'required' блокирует показ всего, что идёт
@@ -653,7 +663,7 @@ function reconcileSteps(container, items) {
       unit.dataset.stepKey = item.key;
     }
     const connector = prevEl
-      ? '<div class="conn-wrap"><div class="conn-line"></div><div class="conn-packet"></div></div>'
+      ? `<div class="conn-wrap"><div class="conn-line"></div><div class="conn-packet" style="${pulseDelay('conn-' + item.key, 1.6)}"></div></div>`
       : '';
     const html = connector + item.html;
     if (unit.dataset.stepHtml !== html) {
@@ -680,7 +690,7 @@ function bondcastFlowBody() {
   if (!host) return noHostWarningItems();
   const finalStep = `
     <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Отсканируй QR в приложении</b></div>
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('qr-scan')}"></div><b>Отсканируй QR в приложении</b></div>
       <div class="name-row">
         <input type="text" id="streamName" value="${escapeHtml(currentStreamName)}" placeholder="имя стрима" />
         <button type="button" class="dice-btn" id="regenName" title="Сгенерировать другое имя">🎲</button>
@@ -714,16 +724,20 @@ function otherAppFlowBody() {
   const isLarix = selectedThirdPartyApp === 'larix';
   const finalStep = `
     <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Выбери приложение</b></div>
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('choose-app')}"></div><b>Выбери приложение</b></div>
       <div class="app-seg seg">
         <button type="button" class="${selectedThirdPartyApp === 'moblin' ? 'active' : ''}" data-app="moblin">Moblin</button>
         <button type="button" class="${selectedThirdPartyApp === 'larix' ? 'active' : ''}" data-app="larix">Larix</button>
       </div>
-      ${addrRow('URL', host.obsSrtUrl, 'Без бондинга — сразу в SRS, не в srtla-rec.')}
       ${addrRow(
-        isLarix ? 'streamid' : 'Идентификатор стрима',
+        isLarix ? 'URL' : 'Настройки → Стримы → «Создать» → «Пользовательский» → SRT(LA) → URL',
+        host.obsSrtUrl,
+        isLarix ? 'Без бондинга — сразу в SRS, не в srtla-rec.' : null,
+      )}
+      ${addrRow(
+        isLarix ? 'streamid' : 'Настройки → Стримы → «Создать» → «Пользовательский» → SRT(LA) → Идентификатор стрима',
         host.obsSrtStreamId,
-        isLarix ? 'Поле "streamid" в настройках SRT-подключения — без него Larix уйдёт в режим просмотра, а не публикации.' : 'В Moblin — поле "Идентификатор стрима"; в других приложениях может называться Stream ID/Stream Key.',
+        isLarix ? 'Поле "streamid" в настройках SRT-подключения — без него Larix уйдёт в режим просмотра, а не публикации.' : null,
       )}
       ${liveOrWaitingHtml(currentStreamName, host.playSrt)}
     </div>`;
@@ -741,7 +755,7 @@ function inviteFlowBody() {
   }
   const finalStep = `
     <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red"></div><b>Данные для OBS друга</b></div>
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('obs-friend-data')}"></div><b>Данные для OBS друга</b></div>
       ${addrRow('Сервер', host.obsSrtUrl, 'В OBS: Настройки → Трансляция → Служба «Настраиваемый» → поле "Сервер".')}
       <div class="name-row">
         <input type="text" id="inviteName" value="${escapeHtml(host.obsSrtStreamId)}" readonly style="font-family:'SF Mono',Consolas,monospace" />
@@ -768,19 +782,18 @@ function renderFlowBody(id) {
 // поэтому рендерится напрямую, без animateHeight — только цвет/рамка активной
 // плашки, что уже плавно меняется через CSS transition на .flow-pill.
 //
-// Плашки создаём один раз, дальше обновляем на месте (класс .open + чип статуса
-// порта) — раньше на любое изменение чипа перезаписывался innerHTML всего
-// селектора разом, и все три узла пересоздавались: у открытой плашки заново
-// стартовал infinite ringPulse, у соседних сбрасывались transition'ы — моргали
-// все, хотя менялся чип только одного сценария (напр. клик "Проверить снова" по
-// одному порту). Теперь трогаем ровно ту плашку, чей статус реально изменился.
+// Плашки создаём один раз, дальше обновляем на месте (класс .open) — раньше на
+// любое изменение перезаписывался innerHTML всего селектора разом, и все три
+// узла пересоздавались: у открытой плашки заново стартовал infinite ringPulse,
+// у соседних сбрасывались transition'ы — моргали все, хотя менялась одна.
+// Теперь трогаем ровно ту плашку, чей статус реально изменился.
 let flowPillEls = null;
 
 function renderFlowSelector() {
   if (!flowPillEls) {
     flowSelectorEl.innerHTML = FLOWS.map((f) => `
     <button type="button" class="flow-pill" data-flow="${f.id}">
-      <span class="flow-pill-badge">${f.icon}<span class="flow-pill-chip" hidden></span></span>
+      <span class="flow-pill-badge">${f.icon}</span>
       <span class="flow-pill-title"><b>${escapeHtml(f.title)}</b><span class="flow-hint">${escapeHtml(f.hint)}</span></span>
     </button>`).join('');
     flowPillEls = {};
@@ -792,10 +805,6 @@ function renderFlowSelector() {
   FLOWS.forEach((f) => {
     const btn = flowPillEls[f.id];
     btn.classList.toggle('open', activeFlowId === f.id);
-    const chip = btn.querySelector('.flow-pill-chip');
-    const status = flowPortStatus(f.id);
-    chip.hidden = status === 'pending';
-    chip.className = status === 'pending' ? 'flow-pill-chip' : `flow-pill-chip ${status}`;
   });
 }
 
@@ -899,7 +908,7 @@ function renderServerStreams(streams) {
           <b>${escapeHtml(s.name)}</b>
           <span class="meta">${escapeHtml(labelForServerStream(s.name))}${s.liveSinceMs ? ' · ' + escapeHtml(formatLiveSince(s.liveSinceMs)) : ''}</span>
         </div>
-        <div class="live-badge"><span class="dot dot-live"></span>Live</div>
+        <div class="live-badge"><span class="dot dot-live" style="${pulseDelay('stream-' + s.name)}"></span>Live</div>
       </div>
       <div class="server-stream-slot-actions">
         <button type="button" class="copy-addr" data-value="${escapeHtml(srtPlayUrl(s.name))}">Копировать для OBS</button>
@@ -927,10 +936,10 @@ function renderServerStreams(streams) {
 
 // --- "Субтитры на стриме" — тумблер сворачивает/разворачивает существующий
 // блок настроек и управления; сама подписка на субтитры остаётся отдельной
-// явной кнопкой внутри (см. captionsButtonHtml ниже) — тумблер только прячет
+// явной кнопкой внутри (см. streamRowHtml ниже) — тумблер только прячет
 // лишнее, не меняет реальное подключённое состояние.
 const SUBS_EXPANDED_KEY = 'bondcast_subs_expanded';
-let subsExpanded = localStorage.getItem(SUBS_EXPANDED_KEY) !== '0';
+let subsExpanded = localStorage.getItem(SUBS_EXPANDED_KEY) === '1';
 const subsSwitchEl = document.getElementById('subsSwitch');
 const subsBodyEl = document.getElementById('subsBody');
 
@@ -950,7 +959,7 @@ applySubsSwitch();
 // без единого клика следит за currentStreamName (стрим этого телефона/сессии —
 // он существует всегда, даже если ещё не в эфире) — выбор в селекте нужен, только
 // если параллельно стримит кто-то ещё и приглядывать нужно не за своим именем.
-let sceneSwitcherState = { enabled: false, watchStreamName: null, fallbackScene: null, delaySec: 3, state: 'idle', lastError: null };
+let sceneSwitcherState = { enabled: false, watchStreamName: null, fallbackScene: null, delaySec: 3, minBitrateKbps: 0, state: 'idle', lastError: null };
 let availableObsScenes = [];
 let obsScenesError = null;
 const sceneSwitchEl = document.getElementById('sceneSwitch');
@@ -1045,7 +1054,7 @@ sceneSwitchEl.onclick = () => {
     );
     return;
   }
-  postSceneSwitcher({ enabled: true, watchStreamName, fallbackScene, delaySec: sceneSwitcherState.delaySec });
+  postSceneSwitcher({ enabled: true, watchStreamName, fallbackScene, delaySec: sceneSwitcherState.delaySec, minBitrateKbps: sceneSwitcherState.minBitrateKbps });
 };
 
 function renderSceneSwitcherBody() {
@@ -1086,21 +1095,32 @@ function renderSceneSwitcherBody() {
       <input type="range" id="switchDelay" min="0" max="30" value="${sceneSwitcherState.delaySec}" />
       <div class="row-meta" style="margin-top:6px">После потери сигнала. Как только эфир вернётся — вернём рабочую сцену автоматически</div>
     </div>
+    <div class="range-field" style="margin-top:8px">
+      <div class="range-head"><span>Минимальный битрейт</span><output id="minBitrateOut">${sceneSwitcherState.minBitrateKbps ? sceneSwitcherState.minBitrateKbps + ' кбит/с' : 'выкл'}</output></div>
+      <input type="range" id="minBitrate" min="0" max="20000" step="100" value="${sceneSwitcherState.minBitrateKbps || 0}" />
+      <div class="row-meta" style="margin-top:6px">Если битрейт входящего сигнала падает ниже — тоже переключаем сцену, даже если публикация формально не оборвалась (плохой канал). 0 — не проверять, только полная потеря сигнала</div>
+    </div>
     ${sceneSwitcherState.lastError ? `<div class="flow-warn">${escapeHtml(sceneSwitcherState.lastError)}</div>` : ''}
   `;
   const streamSelect = document.getElementById('watchStreamSelect');
   if (streamSelect) {
-    streamSelect.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: streamSelect.value, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: sceneSwitcherState.delaySec });
+    streamSelect.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: streamSelect.value, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: sceneSwitcherState.delaySec, minBitrateKbps: sceneSwitcherState.minBitrateKbps });
   }
   const select = document.getElementById('fallbackSceneSelect');
   if (select) {
-    select.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: select.value, delaySec: sceneSwitcherState.delaySec });
+    select.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: select.value, delaySec: sceneSwitcherState.delaySec, minBitrateKbps: sceneSwitcherState.minBitrateKbps });
   }
   const delayInput = document.getElementById('switchDelay');
   const delayOut = document.getElementById('switchDelayOut');
   if (delayInput) {
     delayInput.oninput = () => { delayOut.textContent = `${delayInput.value} сек`; };
-    delayInput.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: Number(delayInput.value) });
+    delayInput.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: Number(delayInput.value), minBitrateKbps: sceneSwitcherState.minBitrateKbps });
+  }
+  const minBitrateInput = document.getElementById('minBitrate');
+  const minBitrateOut = document.getElementById('minBitrateOut');
+  if (minBitrateInput) {
+    minBitrateInput.oninput = () => { minBitrateOut.textContent = Number(minBitrateInput.value) ? `${minBitrateInput.value} кбит/с` : 'выкл'; };
+    minBitrateInput.onchange = () => postSceneSwitcher({ enabled: true, watchStreamName: sceneSwitcherState.watchStreamName, fallbackScene: sceneSwitcherState.fallbackScene, delaySec: sceneSwitcherState.delaySec, minBitrateKbps: Number(minBitrateInput.value) });
   }
 }
 
@@ -1136,24 +1156,27 @@ function openCapLogStream(url) {
 
 // --- Активные стримы + субтитры (asr-obs) ----------------------------------
 const streamCardsEl = document.getElementById('streamCards');
+const capBuildStageEl = document.getElementById('capBuildStage');
+const capReadyStageEl = document.getElementById('capReadyStage');
+const connectedSectionEl = document.getElementById('connectedSection');
+const connectedStreamLabelEl = document.getElementById('connectedStreamLabel');
+const obsUrlRowEl = document.getElementById('obsUrlRow');
+const voicesListEl = document.getElementById('voicesList');
+const addVoiceBtnEl = document.getElementById('addVoiceBtn');
+
 let captionsState = {
   connected: false, streamName: null, overlayUrl: null, imageExists: false, buildStatus: 'idle', buildError: null,
-  hostName: null, hasVoiceReference: false, enrollStatus: 'idle', enrollError: null, ready: false,
-  asrModel: null, speakerThreshold: null,
+  voices: [], enrollStatus: 'idle', enrollError: null, enrollVoiceId: null, ready: false, asrModel: null,
 };
 
 function recognitionSettingsChanged() {
-  if (captionsState.asrModel !== recognitionInputs.asrModel()) return true;
-  const running = Number(captionsState.speakerThreshold);
-  const selected = Number(recognitionInputs.speakerThreshold.value);
-  return !Number.isFinite(running) || Math.abs(running - selected) > 0.005;
+  return captionsState.asrModel !== recognitionInputs.asrModel();
 }
 let capBusy = false;
 
-// Общая строка ошибки для сборки/подключения/отключения/записи голоса — эти
-// действия не привязаны к конкретной карточке стрима (streamCardsEl целиком
-// перерисовывается раз в 5с через renderStreamCards), поэтому живёт отдельным
-// узлом, а не частью того рендера.
+// Общая строка ошибки для установки/подключения/отключения/записи голоса —
+// вне стадийных контейнеров (см. index.html), чтобы быть видимой независимо
+// от текущей стадии (в частности — ошибка установки образа на стадии 1).
 const capErrorEl = document.getElementById('capError');
 
 function showCapError(message) {
@@ -1166,24 +1189,16 @@ function clearCapError() {
 }
 
 const ENROLL_DURATION_SEC = 15;
-const HOST_NAME_KEY = 'bondcast_host_name';
-const hostNameInputEl = document.getElementById('hostNameInput');
-const hostNameErrorEl = document.getElementById('hostNameError');
-hostNameInputEl.value = localStorage.getItem(HOST_NAME_KEY) || '';
-hostNameInputEl.addEventListener('input', () => {
-  localStorage.setItem(HOST_NAME_KEY, hostNameInputEl.value.trim());
-  hostNameErrorEl.hidden = true;
-});
 
-// --- Настройки распознавания (asr_model, speaker_threshold) -----------------
-const RECOGNITION_DEFAULTS = { asrModel: 'v3_e2e_rnnt', speakerThreshold: 0.25 };
+// --- Настройки распознавания (asr_model) — connect-time параметр, нужен до
+// подключения (см. Стадия 2 в index.html). Порог схожести голоса больше не
+// общий: у каждого голоса свой слайдер в мини-списке ниже.
+const RECOGNITION_DEFAULTS = { asrModel: 'v3_e2e_rnnt' };
 const qualityFastBtn = document.getElementById('qualityFastBtn');
 const qualityPreciseBtn = document.getElementById('qualityPreciseBtn');
 const recognitionInputs = {
   asrModel: () => (qualityPreciseBtn.classList.contains('active') ? qualityPreciseBtn.dataset.model : qualityFastBtn.dataset.model),
-  speakerThreshold: document.getElementById('speakerThreshold'),
 };
-const speakerThresholdOutEl = document.getElementById('speakerThresholdOut');
 
 function setAsrModel(model) {
   const isPrecise = model === qualityPreciseBtn.dataset.model;
@@ -1192,26 +1207,32 @@ function setAsrModel(model) {
   localStorage.setItem('bondcast_asrModel', isPrecise ? qualityPreciseBtn.dataset.model : qualityFastBtn.dataset.model);
 }
 setAsrModel(localStorage.getItem('bondcast_asrModel') || RECOGNITION_DEFAULTS.asrModel);
-qualityFastBtn.addEventListener('click', () => { setAsrModel(qualityFastBtn.dataset.model); renderStreamCards(latestStreams); });
-qualityPreciseBtn.addEventListener('click', () => { setAsrModel(qualityPreciseBtn.dataset.model); renderStreamCards(latestStreams); });
 
-{
-  const stored = localStorage.getItem('bondcast_speakerThreshold');
-  recognitionInputs.speakerThreshold.value = stored !== null ? stored : RECOGNITION_DEFAULTS.speakerThreshold;
+// Без ручной кнопки "Применить": если уже подключены к стриму — переключение
+// Быстрое/Точное само переподключает субтитры с новой моделью; если ещё не
+// подключены — модель просто запомнилась и применится при следующем "Подключить".
+function applyRecognitionModelIfConnected() {
+  if (captionsState.connected && captionsState.streamName && recognitionSettingsChanged()) {
+    connectCaptions(captionsState.streamName);
+  } else {
+    renderStreamCards(latestStreams);
+  }
 }
-speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
-recognitionInputs.speakerThreshold.addEventListener('input', () => {
-  localStorage.setItem('bondcast_speakerThreshold', recognitionInputs.speakerThreshold.value);
-  speakerThresholdOutEl.textContent = Number(recognitionInputs.speakerThreshold.value).toFixed(2);
-  renderStreamCards(latestStreams);
-});
+qualityFastBtn.addEventListener('click', () => { setAsrModel(qualityFastBtn.dataset.model); applyRecognitionModelIfConnected(); });
+qualityPreciseBtn.addEventListener('click', () => { setAsrModel(qualityPreciseBtn.dataset.model); applyRecognitionModelIfConnected(); });
 
 // --- Оформление оверлея ------------------------------------------------------
-const OVERLAY_DEFAULTS = { size: 34, lines: 3, hostColor: '#ff3b30', guestColor: '#34c759', bgColor: '#000000', bgOpacity: 60 };
+// hostColor ушёл — именованные голоса красятся детерминированной палитрой по
+// id (см. colorForId в overlay/index.html), не настраиваются здесь по одному.
+// Само оформление больше не кодируется в ссылке для OBS (query-параметрами) —
+// источник истины теперь на сервере (/api/captions/overlay-style, публичный
+// GET), а overlay/index.html сам его переопрашивает раз в 5с. Поэтому: (а)
+// ссылка для OBS теперь ПОСТОЯННАЯ, копируется в Browser Source один раз
+// навсегда; (б) правки здесь просто PATCH'ат тот же эндпоинт с debounce,
+// никакого localStorage — при следующей загрузке страницы читаем с сервера.
 const overlayInputs = {
   size: document.getElementById('overlaySize'),
   lines: document.getElementById('overlayLines'),
-  hostColor: document.getElementById('overlayHostColor'),
   guestColor: document.getElementById('overlayGuestColor'),
   bgColor: document.getElementById('overlayBgColor'),
   bgOpacity: document.getElementById('overlayBgOpacity'),
@@ -1232,39 +1253,90 @@ function hexToRgba(hex, alpha) {
 function updateOverlayPreview() {
   const preview = document.getElementById('overlayPreview');
   preview.style.setProperty('--prev-size', `${overlayInputs.size.value}px`);
-  preview.style.setProperty('--prev-host', overlayInputs.hostColor.value);
   preview.style.setProperty('--prev-guest', overlayInputs.guestColor.value);
   preview.style.setProperty('--prev-bg', hexToRgba(overlayInputs.bgColor.value, Number(overlayInputs.bgOpacity.value) / 100));
   if (overlayOutputs.size) overlayOutputs.size.textContent = overlayInputs.size.value;
   if (overlayOutputs.lines) overlayOutputs.lines.textContent = overlayInputs.lines.value;
   if (overlayOutputs.bgOpacity) overlayOutputs.bgOpacity.textContent = `${overlayInputs.bgOpacity.value}%`;
+  // Превью должно один в один повторять то, что реально покажет оверлей (см.
+  // fill() в overlay/index.html) — при выключенном "Показывать, кто говорит"
+  // там тоже нет ни имени, ни "Кто-то:", просто голый текст.
+  const showSpeaker = showSpeakerToggleEl.checked;
+  preview.querySelectorAll('.name').forEach((el) => { el.hidden = !showSpeaker; });
 }
 
-Object.keys(overlayInputs).forEach((key) => {
-  const el = overlayInputs[key];
-  const stored = localStorage.getItem(`bondcast_overlay_${key}`);
-  el.value = stored !== null ? stored : OVERLAY_DEFAULTS[key];
+let overlayStylePatchTimer = null;
+function patchOverlayStyle() {
+  clearTimeout(overlayStylePatchTimer);
+  overlayStylePatchTimer = setTimeout(() => {
+    fetch('/api/captions/overlay-style', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        size: overlayInputs.size.value,
+        lines: overlayInputs.lines.value,
+        guestColor: overlayInputs.guestColor.value,
+        bgColor: overlayInputs.bgColor.value,
+        bgOpacity: overlayInputs.bgOpacity.value,
+      }),
+    }).catch(() => {});
+  }, 300);
+}
+
+Object.values(overlayInputs).forEach((el) => {
   el.addEventListener('input', () => {
-    localStorage.setItem(`bondcast_overlay_${key}`, el.value);
     updateOverlayPreview();
-    renderStreamCards(latestStreams);
+    patchOverlayStyle();
   });
 });
-updateOverlayPreview();
 
-function buildOverlayUrl(baseUrl) {
+// Отдельно от overlayInputs — живёт в карточке "Голоса", не в раскрывающемся
+// "Оформлении", но правит тот же ресурс (showSpeaker в overlay_style.json):
+// полностью гасит подпись говорящего в оверлее (и "Имя:", и "Кто-то:"),
+// просто голый текст реплики, если она не нужна вообще.
+const showSpeakerToggleEl = document.getElementById('showSpeakerToggle');
+showSpeakerToggleEl.addEventListener('change', () => {
+  updateOverlayPreview();
+  fetch('/api/captions/overlay-style', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ showSpeaker: showSpeakerToggleEl.checked }),
+  }).catch(() => {});
+});
+
+async function loadOverlayStyle() {
   try {
-    const u = new URL(baseUrl);
-    u.searchParams.set('size', overlayInputs.size.value || OVERLAY_DEFAULTS.size);
-    u.searchParams.set('lines', overlayInputs.lines.value || OVERLAY_DEFAULTS.lines);
-    u.searchParams.set('hostColor', overlayInputs.hostColor.value || OVERLAY_DEFAULTS.hostColor);
-    u.searchParams.set('guestColor', overlayInputs.guestColor.value || OVERLAY_DEFAULTS.guestColor);
-    u.searchParams.set('bg', hexToRgba(overlayInputs.bgColor.value, (Number(overlayInputs.bgOpacity.value) || OVERLAY_DEFAULTS.bgOpacity) / 100));
-    return u.toString();
+    const res = await fetch('/api/captions/overlay-style');
+    const style = await res.json();
+    overlayInputs.size.value = style.size;
+    overlayInputs.lines.value = style.lines;
+    overlayInputs.guestColor.value = style.guestColor;
+    overlayInputs.bgColor.value = style.bgColor;
+    overlayInputs.bgOpacity.value = style.bgOpacity;
+    showSpeakerToggleEl.checked = style.showSpeaker !== false;
   } catch (e) {
-    return baseUrl;
+    // тихо — останутся дефолты из атрибутов инпутов, следующий заход подтянет реальные
   }
+  updateOverlayPreview();
 }
+loadOverlayStyle();
+
+// --- Раскрывающаяся панель "Оформление оверлея" ------------------------------
+const OVERLAY_STYLE_EXPANDED_KEY = 'bondcast_overlay_style_expanded';
+let overlayStyleExpanded = localStorage.getItem(OVERLAY_STYLE_EXPANDED_KEY) === '1';
+const overlayStyleToggleEl = document.getElementById('overlayStyleToggle');
+const overlayStyleSwitchEl = document.getElementById('overlayStyleSwitch');
+const overlaySectionEl = document.getElementById('overlaySection');
+function applyOverlayStyleToggle() {
+  overlayStyleSwitchEl.classList.toggle('on', overlayStyleExpanded);
+  overlaySectionEl.hidden = !overlayStyleExpanded;
+}
+overlayStyleToggleEl.onclick = () => {
+  overlayStyleExpanded = !overlayStyleExpanded;
+  localStorage.setItem(OVERLAY_STYLE_EXPANDED_KEY, overlayStyleExpanded ? '1' : '0');
+  applyOverlayStyleToggle();
+};
+applyOverlayStyleToggle();
 
 function formatCodec(video, audio) {
   const parts = [];
@@ -1273,94 +1345,208 @@ function formatCodec(video, audio) {
   return parts.join(' · ') || 'кодеки ещё не определены';
 }
 
-function captionsButtonHtml(streamName) {
-  if (captionsState.buildStatus === 'building') return '<button disabled>Собираю образ…</button>';
-  if (!captionsState.imageExists) return '<button class="cap-build">Собрать образ для субтитров</button>';
-  if (captionsState.connected && captionsState.streamName === streamName) {
-    let applyBtn;
-    if (!captionsState.ready) {
-      applyBtn = '<button disabled title="Дождись загрузки модели">Применить настройки</button>';
-    } else if (!recognitionSettingsChanged()) {
-      applyBtn = '<button disabled title="Настройки не менялись с момента подключения">Применить настройки</button>';
-    } else {
-      applyBtn = `<button class="cap-connect" data-name="${escapeHtml(streamName)}" title="Переподключить с текущими настройками распознавания">Применить настройки</button>`;
-    }
-    return applyBtn + '<button class="cap-disconnect primary">Субтитры: отключить</button>';
-  }
-  return `<button class="cap-connect primary" data-name="${escapeHtml(streamName)}">Субтитры: подключить</button>`;
+// --- Стадии карточки: установка ПО -> список стримов -> подключено ---------
+function applyCaptionsStage() {
+  const ready = captionsState.imageExists;
+  capBuildStageEl.hidden = ready;
+  capReadyStageEl.hidden = !ready;
+  const buildBtn = capBuildStageEl.querySelector('.cap-build');
+  buildBtn.disabled = captionsState.buildStatus === 'building';
+  buildBtn.textContent = captionsState.buildStatus === 'building' ? 'Устанавливаю…' : 'Установить нужное ПО';
 }
+capBuildStageEl.querySelector('.cap-build').onclick = buildCaptions;
+addVoiceBtnEl.title = `${ENROLL_DURATION_SEC} секунд — говорить должен только этот голос`;
+addVoiceBtnEl.onclick = () => {
+  if (captionsState.streamName) enrollVoice(captionsState.streamName);
+};
 
-function captionsLoadingHtml(streamName) {
-  if (!(captionsState.connected && captionsState.streamName === streamName && !captionsState.ready)) return '';
-  return `<div class="row"><span class="row-label"><span class="row-meta">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~1ГБ и может занять минуту-две.</span></span></div>`;
-}
-
-function enrollButtonHtml(streamName) {
-  if (!captionsState.imageExists) {
-    return '<button disabled title="Сначала собери образ — кнопка «Собрать образ для субтитров» справа">🎙 Записать голос ведущего</button>';
-  }
-  if (captionsState.enrollStatus === 'running') return '<button disabled>Идёт запись…</button>';
-  const label = captionsState.hasVoiceReference ? 'Перезаписать голос' : 'Записать голос ведущего';
-  return `<button class="cap-enroll" data-name="${escapeHtml(streamName)}" title="${ENROLL_DURATION_SEC} секунд — говорить должен только ведущий">🎙 ${label}</button>`;
-}
-
-function hostStatusHtml() {
-  if (captionsState.enrollStatus === 'running') {
-    const elapsed = enrollStartedAt ? (Date.now() - enrollStartedAt) / 1000 : 0;
-    const capturing = elapsed < ENROLL_DURATION_SEC;
-    const label = capturing
-      ? `🎙 Говори без пауз — ещё ${Math.max(0, Math.ceil(ENROLL_DURATION_SEC - elapsed))}с`
-      : '⏳ Считаю эмбеддинг голоса…';
-    return `<div class="row"><span class="row-label">
-      <span class="row-meta">${label}</span>
-      <progress value="${Math.min(elapsed, ENROLL_DURATION_SEC).toFixed(1)}" max="${ENROLL_DURATION_SEC}" style="width:100%; margin-top:6px"></progress>
-    </span></div>`;
-  }
-  if (captionsState.enrollStatus === 'error') {
-    return `<div class="row"><span class="row-label"><span class="row-meta">Запись не удалась: ${escapeHtml(captionsState.enrollError || '')}</span></span></div>`;
-  }
-  if (captionsState.hasVoiceReference) {
-    return `<div class="row"><span class="row-label"><span class="row-meta">Эталон голоса записан${captionsState.hostName ? ': ' + escapeHtml(captionsState.hostName) : ''} — реплики других помечаются как «Кто-то»</span></span></div>`;
-  }
-  return '';
+// Настройки распознавания применяются сами (см. applyRecognitionModelIfConnected)
+// — отдельной кнопки "Применить" тут больше нет. "Смотреть" тоже убрали:
+// в контексте подключения субтитров превью стрима не нужно, это не тот экран.
+function streamRowHtml(s) {
+  const isThisConnected = captionsState.connected && captionsState.streamName === s.name;
+  const actionHtml = isThisConnected
+    ? '<button class="cap-disconnect primary">Субтитры: отключить</button>'
+    : `<button class="cap-connect primary" data-name="${escapeHtml(s.name)}">Подключить субтитры</button>`;
+  const loadingHtml = isThisConnected && !captionsState.ready
+    ? '<div class="row-meta" style="margin-top:8px">⏳ Загружается модель распознавания — при первом запуске (без кэша) это ~1ГБ и может занять минуту-две.</div>'
+    : '';
+  // .stream-row — рамка вокруг имени+кнопки, чтобы при нескольких стримах сразу
+  // читалось, какая кнопка к какому стриму относится (не просто список строк).
+  return `
+    <div class="stream-row">
+      <div class="row" style="padding:0">
+        <div class="row-label">
+          <b>${escapeHtml(s.name)}</b>
+        </div>
+        <div class="row-actions">
+          ${actionHtml}
+        </div>
+      </div>
+      ${loadingHtml}
+    </div>`;
 }
 
 function renderStreamCards(streams) {
   if (!streams.length) {
     streamCardsEl.innerHTML = '<div class="row"><span class="row-label"><span class="row-meta">пока никто не стримит</span></span></div>';
-    return;
+  } else {
+    streamCardsEl.innerHTML = streams.map(streamRowHtml).join('');
   }
-  streamCardsEl.innerHTML = hostStatusHtml() + streams
-    .map(
-      (s) => `
-    <div class="row">
-      <div class="row-label">
-        <b>${escapeHtml(s.name)}</b>
-        <span class="row-meta">${escapeHtml(formatCodec(s.video, s.audio))}</span>
-      </div>
-      <div class="row-actions">
-        <button class="watch-stream" data-name="${escapeHtml(s.name)}">Смотреть</button>
-        ${enrollButtonHtml(s.name)}
-        ${captionsButtonHtml(s.name)}
-      </div>
-    </div>
-    ${captionsLoadingHtml(s.name)}
-    ${
-      captionsState.connected && captionsState.streamName === s.name
-        ? addrRow('Оверлей для OBS', buildOverlayUrl(captionsState.overlayUrl), 'Добавь как Browser Source в OBS — субтитры поверх видео. Оформление ниже.')
-        : ''
-    }`,
-    )
-    .join('');
-
-  streamCardsEl.querySelectorAll('.watch-stream').forEach((btn) => {
-    btn.onclick = () => openPreview(btn.dataset.name);
-  });
-  streamCardsEl.querySelectorAll('.cap-build').forEach((btn) => { btn.onclick = buildCaptions; });
   streamCardsEl.querySelectorAll('.cap-connect').forEach((btn) => { btn.onclick = () => connectCaptions(btn.dataset.name); });
   streamCardsEl.querySelectorAll('.cap-disconnect').forEach((btn) => { btn.onclick = disconnectCaptions; });
-  streamCardsEl.querySelectorAll('.cap-enroll').forEach((btn) => { btn.onclick = () => enrollHost(btn.dataset.name); });
-  bindCopyButtons(streamCardsEl);
+
+  connectedSectionEl.hidden = !captionsState.connected;
+  if (captionsState.connected) {
+    connectedStreamLabelEl.textContent = `Голоса и ссылка для OBS — стрим «${captionsState.streamName}»`;
+    renderObsUrlRow();
+    renderVoices();
+  }
+}
+
+// --- Ссылка для OBS: серая ("fresh"), пока оформление не менялось с момента
+// последнего копирования; акцентная ("stale") + подсказка — когда изменилось.
+// Оформление больше не в URL (см. комментарий у overlayInputs выше) — ссылка
+// постоянная, копируется в OBS Browser Source один раз и больше не меняется.
+function renderObsUrlRow() {
+  if (!(captionsState.connected && captionsState.overlayUrl)) {
+    obsUrlRowEl.innerHTML = '';
+    return;
+  }
+  obsUrlRowEl.innerHTML = addrRow('Оверлей для OBS', captionsState.overlayUrl, 'Добавь как Browser Source в OBS — субтитры поверх видео. Оформление меняется прямо здесь, ссылку обновлять не нужно.');
+  bindCopyButtons(obsUrlRowEl);
+}
+
+// --- Мини-список голосов ------------------------------------------------------
+function voiceEnrollProgressHtml() {
+  const elapsed = enrollStartedAt ? (Date.now() - enrollStartedAt) / 1000 : 0;
+  const capturing = elapsed < ENROLL_DURATION_SEC;
+  const label = capturing
+    ? `🎙 Говори без пауз — ещё ${Math.max(0, Math.ceil(ENROLL_DURATION_SEC - elapsed))}с`
+    : '⏳ Считаю эмбеддинг голоса…';
+  return `<span class="row-meta">${label}</span><progress value="${Math.min(elapsed, ENROLL_DURATION_SEC).toFixed(1)}" max="${ENROLL_DURATION_SEC}" style="width:100%;margin-top:6px"></progress>`;
+}
+
+function voiceRowHtml(voice) {
+  const isEnrollingThis = captionsState.enrollStatus === 'running' && captionsState.enrollVoiceId === voice.id;
+  const busy = captionsState.enrollStatus === 'running';
+  const body = isEnrollingThis
+    ? voiceEnrollProgressHtml()
+    : `<div class="range-field">
+        <div class="range-head"><span>Строгость</span><output class="voice-threshold-out">${Number(voice.threshold).toFixed(2)}</output></div>
+        <input type="range" class="voice-threshold-input" min="0" max="1" step="0.01" value="${voice.threshold}" ${busy ? 'disabled' : ''} />
+      </div>`;
+  return `
+    <div class="voice-row" data-voice-id="${escapeHtml(voice.id)}">
+      <div class="voice-row-main">
+        <input type="text" class="voice-name-input" value="${escapeHtml(voice.name)}" maxlength="40" ${busy ? 'disabled' : ''} />
+        <button type="button" class="voice-rerecord" title="Перезаписать голос" ${busy ? 'disabled' : ''}>🔁</button>
+        <button type="button" class="voice-delete" title="Удалить голос" ${busy ? 'disabled' : ''}>✕</button>
+      </div>
+      ${body}
+      ${!voice.hasEmbedding && !isEnrollingThis ? '<div class="row-meta">Запись ещё не завершена</div>' : ''}
+    </div>`;
+}
+
+function bindVoiceRowHandlers() {
+  voicesListEl.querySelectorAll('.voice-row[data-voice-id]').forEach((row) => {
+    const id = row.dataset.voiceId;
+    const nameInput = row.querySelector('.voice-name-input');
+    if (nameInput) {
+      const commit = () => {
+        const name = nameInput.value.trim();
+        if (name) patchVoice(id, { name });
+      };
+      nameInput.addEventListener('blur', commit);
+      nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });
+    }
+    const thresholdInput = row.querySelector('.voice-threshold-input');
+    const thresholdOut = row.querySelector('.voice-threshold-out');
+    if (thresholdInput) {
+      let debounceTimer = null;
+      thresholdInput.addEventListener('input', () => {
+        if (thresholdOut) thresholdOut.textContent = Number(thresholdInput.value).toFixed(2);
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => patchVoice(id, { threshold: Number(thresholdInput.value) }), 250);
+      });
+    }
+    const rerecordBtn = row.querySelector('.voice-rerecord');
+    if (rerecordBtn) {
+      rerecordBtn.onclick = () => {
+        if (!captionsState.streamName) return;
+        enrollVoice(captionsState.streamName, id);
+        rerecordBtn.blur(); // иначе фокус внутри #voicesList заблокирует рендер прогресс-бара (см. гейт в renderVoices)
+      };
+    }
+    const deleteBtn = row.querySelector('.voice-delete');
+    if (deleteBtn) {
+      deleteBtn.onclick = () => {
+        deleteBtn.blur();
+        deleteVoice(id);
+      };
+    }
+  });
+}
+
+// Правки одного голоса идут строго по очереди — не Promise.all, чтобы более
+// старый ответ (напр. на первый keystroke) не затёр более новое значение,
+// пришедшее позже по сети раньше своего места в очереди.
+const voicePatchInFlight = new Map();
+function patchVoice(id, body) {
+  const prev = voicePatchInFlight.get(id) || Promise.resolve();
+  const next = prev
+    .then(() =>
+      fetch(`/api/captions/voices/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    )
+    .then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'unknown error');
+      // Правим локальный кэш сразу — не ждём следующего 5-секундного опроса,
+      // иначе значение визуально "откатится" на старое до него.
+      const voice = captionsState.voices.find((v) => v.id === id);
+      if (voice) Object.assign(voice, data.voice);
+    })
+    .catch((e) => showCapError(`Голос: ${e.message}`));
+  voicePatchInFlight.set(id, next);
+  return next;
+}
+
+function deleteVoice(id) {
+  fetch(`/api/captions/voices/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    .then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'unknown error');
+      captionsState.voices = captionsState.voices.filter((v) => v.id !== id);
+      renderVoices();
+    })
+    .catch((e) => showCapError(`Голос: ${e.message}`));
+}
+
+// Точечный рендер, отдельно от renderStreamCards (которая перезаписывает
+// соседний streamCardsEl целиком раз в 5с) — если этого не сделать, печать
+// имени голоса или перетаскивание слайдера строгости будут обрываться каждым
+// опросом (streamCardsEl.innerHTML полностью пересоздаёт DOM).
+function renderVoices() {
+  const enrollingNew = captionsState.enrollStatus === 'running'
+    && captionsState.enrollVoiceId
+    && !captionsState.voices.some((v) => v.id === captionsState.enrollVoiceId);
+  addVoiceBtnEl.disabled = captionsState.enrollStatus === 'running';
+  addVoiceBtnEl.textContent = enrollingNew ? '🎙 Идёт запись…' : '🎙 Определить голос';
+
+  if (voicesListEl.contains(document.activeElement)) return; // юзер сейчас печатает/тащит слайдер — не трогаем DOM
+
+  const errorHtml = captionsState.enrollStatus === 'error'
+    ? `<div class="flow-warn">Запись голоса не удалась: ${escapeHtml(captionsState.enrollError || '')}</div>`
+    : '';
+  const rows = captionsState.voices.map(voiceRowHtml).join('');
+  const pendingRow = enrollingNew ? `<div class="voice-row">${voiceEnrollProgressHtml()}</div>` : '';
+  const body = rows + pendingRow;
+  voicesListEl.innerHTML = errorHtml + (body || '<div class="row-meta">Голоса ещё не записаны — все реплики подписываются «Кто-то»</div>');
+  bindVoiceRowHandlers();
 }
 
 let latestStreams = [];
@@ -1389,6 +1575,7 @@ async function refreshCaptionsStatus() {
   } catch (e) {
     // тихо — просто не обновляем состояние субтитров до следующего опроса
   }
+  applyCaptionsStage();
 }
 
 async function pollStreamsAndCaptions() {
@@ -1406,7 +1593,7 @@ async function buildCaptions() {
     if (!res.ok) throw new Error(data.error || 'unknown error');
     openBuildLogStream();
   } catch (e) {
-    showCapError(`Сборка образа: ${e.message}`);
+    showCapError(`Установка: ${e.message}`);
   } finally {
     capBusy = false;
     pollStreamsAndCaptions();
@@ -1421,11 +1608,7 @@ async function connectCaptions(name) {
     const res = await fetch('/api/captions/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        asrModel: recognitionInputs.asrModel(),
-        speakerThreshold: recognitionInputs.speakerThreshold.value,
-      }),
+      body: JSON.stringify({ name, asrModel: recognitionInputs.asrModel() }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');
@@ -1460,7 +1643,7 @@ function openBuildLogStream() {
     pollStreamsAndCaptions();
   });
   source.onerror = () => {
-    appendCapLog('[поток логов сборки прерван]');
+    appendCapLog('[поток логов установки прерван]');
     source.close();
   };
 }
@@ -1475,15 +1658,10 @@ function stopEnrollTicker() {
   }
 }
 
-async function enrollHost(streamName) {
-  const hostName = hostNameInputEl.value.trim();
-  if (!hostName) {
-    hostNameInputEl.focus();
-    hostNameErrorEl.textContent = 'Сначала впиши имя ведущего.';
-    hostNameErrorEl.hidden = false;
-    return;
-  }
-  hostNameErrorEl.hidden = true;
+// Без voiceId — запись НОВОГО голоса (имя вводится после успеха, не до —
+// плейсхолдер приходит с сервера уже рабочим). С voiceId — перезапись
+// существующего (имя/порог не меняются).
+async function enrollVoice(streamName, voiceId) {
   if (capBusy) return;
   capBusy = true;
   clearCapError();
@@ -1491,15 +1669,21 @@ async function enrollHost(streamName) {
     const res = await fetch('/api/captions/enroll', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ streamName, hostName }),
+      body: JSON.stringify(voiceId ? { streamName, voiceId } : { streamName }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'unknown error');
     enrollStartedAt = Date.now();
+    captionsState.enrollStatus = 'running';
+    captionsState.enrollVoiceId = data.voiceId;
+    const isNewVoice = !voiceId;
     stopEnrollTicker();
     enrollTicker = setInterval(() => {
-      renderStreamCards(latestStreams);
-      if (captionsState.enrollStatus !== 'running') stopEnrollTicker();
+      renderVoices();
+      if (captionsState.enrollStatus !== 'running') {
+        stopEnrollTicker();
+        if (isNewVoice && captionsState.enrollStatus === 'done') focusVoiceNameInput(data.voiceId);
+      }
     }, 250);
     openEnrollLogStream();
   } catch (e) {
@@ -1508,6 +1692,11 @@ async function enrollHost(streamName) {
     capBusy = false;
     pollStreamsAndCaptions();
   }
+}
+
+function focusVoiceNameInput(voiceId) {
+  const input = voicesListEl.querySelector(`.voice-row[data-voice-id="${CSS.escape(voiceId)}"] .voice-name-input`);
+  if (input) { input.focus(); input.select(); }
 }
 
 function openEnrollLogStream() {

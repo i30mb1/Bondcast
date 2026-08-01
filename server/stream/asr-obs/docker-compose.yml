@@ -6,7 +6,7 @@ services:
       ASR_OBS_CONFIG: /srv/config.yaml
     volumes:
       - ./config.yaml:/srv/config.yaml:ro
-      - ./reference.npy:/srv/reference.npy:ro
+      - ./voices:/srv/voices:ro
       - hf-cache:/root/.cache/huggingface
     ports:
       - "8765:8765"

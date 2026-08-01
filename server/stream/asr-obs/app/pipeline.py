@@ -7,7 +7,7 @@ from .asr import Asr
 from .audio_source import AudioSource
 from .events import CaptionEvent
 from .publisher import Publisher
-from .speaker import HOST, SpeakerGate
+from .speaker import MultiSpeakerGate
 from .vad import Vad
 
 log = logging.getLogger("pipeline")
@@ -16,7 +16,7 @@ log = logging.getLogger("pipeline")
 def _produce(source, vad, asr, gate, min_speaker_sec, loop, queue) -> None:
     seq = 0
     open_utt = False
-    utt_speaker: str | None = None
+    utt_speaker: tuple[str, str] | None = None
     last_text = ""
     try:
         for segment in vad.segments(source.frames()):
@@ -33,7 +33,10 @@ def _produce(source, vad, asr, gate, min_speaker_sec, loop, queue) -> None:
             duration = segment.end - segment.start
             if utt_speaker is None and (segment.is_final or duration >= min_speaker_sec):
                 utt_speaker = gate.classify(segment)
-            speaker = utt_speaker or HOST
+            # Пока сегмент короче min_speaker_sec — оптимистичный дефолт гейта
+            # (первый известный голос, а не жёстко "host" — с несколькими
+            # голосами нет привилегированного), чтобы подпись не мигала.
+            speaker_id, speaker_name = utt_speaker or gate.default()
 
             if segment.is_final:
                 open_utt = False
@@ -45,7 +48,8 @@ def _produce(source, vad, asr, gate, min_speaker_sec, loop, queue) -> None:
 
             event = CaptionEvent(
                 seq=seq,
-                speaker=speaker,
+                speaker_id=speaker_id,
+                speaker_name=speaker_name,
                 text=text,
                 start=segment.start,
                 end=segment.end,
@@ -57,7 +61,7 @@ def _produce(source, vad, asr, gate, min_speaker_sec, loop, queue) -> None:
         asyncio.run_coroutine_threadsafe(queue.put(None), loop)
 
 
-async def pipeline(source: AudioSource, vad: Vad, asr: Asr, gate: SpeakerGate, pub: Publisher, min_speaker_sec: float) -> None:
+async def pipeline(source: AudioSource, vad: Vad, asr: Asr, gate: MultiSpeakerGate, pub: Publisher, min_speaker_sec: float) -> None:
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
     server_task = asyncio.create_task(pub.serve())

@@ -33,9 +33,9 @@ const NETWORK = 'bondcast-net';
 // Имя стрима идёт в SRT streamid / URL-адреса — то же ограничение символов, что уже
 // негласно подразумевает генератор имён в app.js (adjective-noun-число).
 const STREAM_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
-// Имя ведущего идёт в URL оверлея (?host=...) и в innerHTML — не URL-путь и не файловое
-// имя, поэтому ограничение мягче: просто разумная длина, без переводов строк.
-const HOST_NAME_RE = /^[^\r\n]{1,40}$/;
+// Имя голоса идёт в voices.json и в innerHTML оверлея — не URL-путь и не
+// файловое имя, поэтому ограничение мягче: просто разумная длина, без переводов строк.
+const VOICE_NAME_RE = /^[^\r\n]{1,40}$/;
 // GigaAM модели, которые реально пригодны как ASR-декодер для нашего asr.py
 // (transcribe() → текст) — не весь список из gigaam._MODEL_HASHES: например "ssl" —
 // это self-supervised backbone без текстового выхода, предлагать его в UI бессмысленно.
@@ -52,46 +52,78 @@ const ENROLL_DURATION_SEC = 15;
 
 // Тот же каталог, что панель монтирует себе на запись для сборки образа
 // (docker-compose.yml: ./asr-obs:/build-context/asr-obs) — переиспользуем его и для
-// эталона голоса/имени ведущего: панель пишет их напрямую на диск, без похода в
-// контейнер asr-worker/asr-enroll, они лишь читают то же самое через свой bind.
+// голосов: панель пишет их напрямую на диск, без похода в контейнер
+// asr-worker/asr-enroll, они лишь читают то же самое через свой bind.
 const ASR_OBS_DIR = '/build-context/asr-obs';
-const REFERENCE_PATH = path.join(ASR_OBS_DIR, 'reference.npy');
-const HOST_NAME_PATH = path.join(ASR_OBS_DIR, 'host_name.txt');
+// Директория (не отдельный файл) с несколькими именованными голосами:
+// voices.json — манифест [{id,name,threshold}], <id>.npy — эталон каждого.
+// Монтируется целиком в оба контейнера (asr-worker :ro, asr-enroll rw) —
+// asr-worker сам следит за mtime манифеста и подхватывает новые/переименованные/
+// удалённые голоса живьём, без пересоздания контейнера.
+const VOICES_DIR = path.join(ASR_OBS_DIR, 'voices');
+const VOICES_MANIFEST_PATH = path.join(VOICES_DIR, 'voices.json');
+// Директория создаётся один раз здесь, при старте панели — этим полностью
+// устраняется старый баг "bind-mount несуществующего ФАЙЛА молча создаёт
+// вместо него директорию": теперь bind-mount'ится директория, которая уже
+// существует к моменту первого создания любого контейнера; файлы внутри нёе
+// создаются/удаляются штатно, без фантомных директорий на их месте.
+fs.mkdirSync(VOICES_DIR, { recursive: true });
 
-function readHostName() {
+function readVoices() {
   try {
-    return fs.readFileSync(HOST_NAME_PATH, 'utf8').trim() || null;
+    const parsed = JSON.parse(fs.readFileSync(VOICES_MANIFEST_PATH, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    return null;
+    return [];
   }
 }
 
-function hasVoiceReference() {
+function writeVoicesAtomic(voices) {
+  // rename — атомарная замена на одной ФС, важно: Python параллельно читает
+  // этот же манифест по mtime (может быть прямо во время эфира), временный
+  // файл исключает шанс увидеть его недописанным.
+  const tmpPath = `${VOICES_MANIFEST_PATH}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(voices, null, 2));
+  fs.renameSync(tmpPath, VOICES_MANIFEST_PATH);
+}
+
+function voiceEmbeddingPath(id) {
+  return path.join(VOICES_DIR, `${id}.npy`);
+}
+
+function hasVoiceEmbedding(id) {
   try {
-    const st = fs.statSync(REFERENCE_PATH);
-    // size > 0 — иначе пустышка от ensureReferenceFileIsReal() (до первого
-    // энроллмента) читается как "эталон есть", и speaker-gate падает на np.load().
+    const st = fs.statSync(voiceEmbeddingPath(id));
     return st.isFile() && st.size > 0;
   } catch (e) {
     return false;
   }
 }
 
-// Docker bind-mount несуществующего хостового файла молча создаёт на его месте
-// ПУСТУЮ ДИРЕКТОРИЮ (и на хосте, и в контейнере) — не файл. До первого энроллмента
-// reference.npy на диске не существует вообще, и как только его первым бинд-маунтит
-// любой контейнер (asr-worker или asr-enroll), там появляется директория, на которой
-// потом падает np.load()/np.save() внутри Python (уже ловили оба раза). Вызывать перед
-// каждым созданием контейнера, который монтирует REFERENCE_PATH — идемпотентно и дёшево.
-function ensureReferenceFileIsReal() {
+// Оформление оверлея субтитров (размер шрифта, кол-во строк, цвета/фон) —
+// раньше кодировалось в query-параметрах ссылки для OBS, из-за чего каждую
+// правку нужно было заново копировать в Browser Source. Теперь панель хранит
+// его сама (этот файл) и отдаёт публично через GET (см. app.get ниже, ДО
+// app.use(auth) — статичная страница оверлея на отдельном порту 8082 читает
+// анонимно, без логина панели), а overlay/index.html периодически перечитывает
+// и применяет живьём — сама ссылка на оверлей остаётся постоянной навсегда.
+const OVERLAY_STYLE_PATH = path.join(ASR_OBS_DIR, 'overlay_style.json');
+const OVERLAY_STYLE_DEFAULTS = { size: 34, lines: 3, guestColor: '#34c759', bgColor: '#000000', bgOpacity: 60, showSpeaker: true };
+const OVERLAY_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+function readOverlayStyle() {
   try {
-    const st = fs.statSync(REFERENCE_PATH);
-    if (st.isFile()) return;
-    fs.rmSync(REFERENCE_PATH, { recursive: true, force: true }); // фантомная директория от прошлого бага
+    const parsed = JSON.parse(fs.readFileSync(OVERLAY_STYLE_PATH, 'utf8'));
+    return { ...OVERLAY_STYLE_DEFAULTS, ...parsed };
   } catch (e) {
-    // ENOENT — файла ещё нет, это нормально, просто создаём ниже
+    return { ...OVERLAY_STYLE_DEFAULTS };
   }
-  fs.closeSync(fs.openSync(REFERENCE_PATH, 'w'));
+}
+
+function writeOverlayStyleAtomic(style) {
+  const tmpPath = `${OVERLAY_STYLE_PATH}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(style, null, 2));
+  fs.renameSync(tmpPath, OVERLAY_STYLE_PATH);
 }
 
 const SPECS = {
@@ -158,6 +190,17 @@ function auth(req, res, next) {
   res.set('WWW-Authenticate', 'Basic realm="stream-panel"');
   return res.status(401).send('Auth required');
 }
+// Публично, без авторизации — см. комментарий у OVERLAY_STYLE_PATH выше:
+// overlay/index.html читает это анонимно с отдельного порта (8082), у него
+// нет и не может быть логина панели (PANEL_USER/PANEL_PASS), даже если он задан.
+// CORS обязателен по той же причине: 8082 и 8081 — разные origin для браузера,
+// без Access-Control-Allow-Origin fetch() со страницы оверлея молча падает
+// ("Failed to fetch") ещё до того, как auth/PANEL_PASS вообще стали бы иметь значение.
+app.get('/api/captions/overlay-style', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json(readOverlayStyle());
+});
+
 app.use(auth);
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -560,6 +603,7 @@ let sceneSwitcher = {
   watchStreamName: null,
   fallbackScene: null,
   delaySec: 3,
+  minBitrateKbps: 0, // 0 — не проверять, переключать только при полном пропадании паблиша
   state: 'idle', // idle (выключен) | watching (включён, ждёт) | switched (сейчас на резервной сцене)
   lastError: null,
 };
@@ -623,7 +667,12 @@ async function monitorTick() {
   }
 
   if (!sceneSwitcher.enabled || !sceneSwitcher.watchStreamName || !sceneSwitcher.fallbackScene) return;
-  const isLive = liveNames.has(sceneSwitcher.watchStreamName);
+  const watched = streams.find((s) => s.name === sceneSwitcher.watchStreamName);
+  // minBitrateKbps=0 — прежнее поведение (только публикует/нет). С порогом канал
+  // формально в эфире, но битрейта в нём уже недостаточно, тоже считаем "не живым" —
+  // kbpsRecv30s ещё null первые секунды после коннекта, тогда тоже "недостаточно".
+  const bitrateOk = !sceneSwitcher.minBitrateKbps || (watched && watched.kbpsRecv30s != null && watched.kbpsRecv30s >= sceneSwitcher.minBitrateKbps);
+  const isLive = Boolean(watched) && bitrateOk;
 
   if (isLive && pendingSwitchTimer) {
     clearPendingSwitch(); // сигнал вернулся раньше, чем истёк delay — переключать не нужно
@@ -660,6 +709,8 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
   const fallbackScene = body.fallbackScene != null ? String(body.fallbackScene).trim() : null;
   const rawDelay = Number(body.delaySec);
   const delaySec = Number.isFinite(rawDelay) ? Math.min(60, Math.max(0, rawDelay)) : sceneSwitcher.delaySec;
+  const rawMinBitrate = Number(body.minBitrateKbps);
+  const minBitrateKbps = Number.isFinite(rawMinBitrate) ? Math.min(50000, Math.max(0, Math.round(rawMinBitrate))) : sceneSwitcher.minBitrateKbps;
 
   if (enabled && (!watchStreamName || !STREAM_NAME_RE.test(watchStreamName))) {
     return res.status(400).json({ error: 'не выбран стрим для отслеживания' });
@@ -699,6 +750,7 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
   sceneSwitcher.watchStreamName = enabled ? watchStreamName : null;
   sceneSwitcher.fallbackScene = enabled ? fallbackScene : sceneSwitcher.fallbackScene; // помним выбор даже выключенным
   sceneSwitcher.delaySec = delaySec;
+  sceneSwitcher.minBitrateKbps = minBitrateKbps;
   sceneSwitcher.state = enabled ? 'watching' : 'idle';
   if (enabled) sceneSwitcher.lastError = null;
 
@@ -750,13 +802,19 @@ let buildLog = [];
 const buildEmitter = new EventEmitter();
 const MAX_BUILD_LOG_LINES = 1000;
 
-// Живой энроллмент голоса ведущего (см. /api/captions/enroll) — прогресс/итог
-// живёт в памяти процесса так же, как buildStatus у сборки образа: это штучная
+// Живой энроллмент голоса (см. /api/captions/enroll) — прогресс/итог живёт в
+// памяти процесса так же, как buildStatus у сборки образа: это штучная
 // операция на 15-20 секунд, не постоянный поток, переживать перезапуск панели ей
-// незачем — единственный переживающий рестарт факт (сам эталон + имя) лежит на
-// диске (reference.npy, host_name.txt), читается заново при каждом /status.
+// незачем — единственный переживающий рестарт факт (сами голоса) лежит на
+// диске (voices/voices.json + *.npy), читается заново при каждом /status.
 let enrollStatus = 'idle'; // idle | running | done | error
 let enrollError = null;
+// Какой голос сейчас пишется (или только что дописался) — существующий id
+// при перезаписи, null при первой записи нового (фронту нужно понимать, чей
+// прогресс-бар/инпут имени показывать; настоящий id нового голоса он узнаёт
+// из ответа POST /api/captions/enroll, здесь — на случай, если страницу
+// обновили посреди записи и voiceId из ответа уже потерян).
+let enrollVoiceId = null;
 
 // Готовность asr-worker после (пере)подключения — контейнер "Running" сразу, но
 // внутри ещё загружается модель GigaAM (~420МБ, минута+ без кэша — см. gigaam-cache
@@ -802,21 +860,17 @@ async function imageExists() {
   }
 }
 
-function captionsSpec(streamName, asrModel, speakerThreshold) {
-  // Эталон голоса появляется только после успешного энроллмента (см.
-  // /api/captions/enroll) — до этого speaker-gate явно выключаем, чтобы не
-  // упасть на .npy-файле, который либо не существует, либо (баг Docker при
-  // отсутствующем bind-source) окажется пустой директорией.
-  const speakerEnabled = hasVoiceReference();
+function captionsSpec(streamName, asrModel) {
+  // Голоса (список + пороги) больше не передаются через Env — asr-worker сам
+  // следит за voices.json внутри смонтированной директории и подхватывает
+  // правки живьём, без пересоздания контейнера.
   return {
     name: CAPTIONS_CONTAINER,
     Image: CAPTIONS_IMAGE,
     Env: [
       `ASR_OBS_SOURCE_URL=srt://srs:10080?streamid=live/${streamName}`,
       'ASR_OBS_CONFIG=/srv/config.yaml',
-      `ASR_OBS_SPEAKER_ENABLED=${speakerEnabled}`,
       `ASR_OBS_ASR_MODEL=${asrModel}`,
-      `ASR_OBS_SPEAKER_THRESHOLD=${speakerThreshold}`,
     ],
     ExposedPorts: { '8765/tcp': {} },
     HostConfig: {
@@ -827,7 +881,7 @@ function captionsSpec(streamName, asrModel, speakerThreshold) {
       PortBindings: { '8765/tcp': [{ HostPort: '8765' }] },
       Binds: [
         `${hostPath('asr-obs\\config.yaml')}:/srv/config.yaml:ro`,
-        `${hostPath('asr-obs\\reference.npy')}:/srv/reference.npy:ro`,
+        `${hostPath('asr-obs\\voices')}:/srv/voices:ro`,
         'hf-cache:/root/.cache/huggingface',
         // GigaAM кэширует свой чекпоинт сам (не через huggingface_hub) — без этого
         // тома ~420МБ модели качались заново на каждое подключение (см. progress
@@ -843,7 +897,7 @@ function captionsSpec(streamName, asrModel, speakerThreshold) {
   };
 }
 
-function enrollSpec(streamName, durationSec) {
+function enrollSpec(streamName, durationSec, voiceId) {
   return {
     name: ENROLL_CONTAINER,
     Image: CAPTIONS_IMAGE,
@@ -851,15 +905,17 @@ function enrollSpec(streamName, durationSec) {
     Cmd: [
       '--source-url', `srt://srs:10080?streamid=live/${streamName}`,
       '--duration', String(durationSec),
-      '--out', '/srv/reference.npy',
+      '--out', `/srv/voices/${voiceId}.npy`,
     ],
     Env: ['ASR_OBS_CONFIG=/srv/config.yaml'],
     HostConfig: {
       RestartPolicy: { Name: 'no' },
       Binds: [
         `${hostPath('asr-obs\\config.yaml')}:/srv/config.yaml:ro`,
-        // Не :ro — сюда пишем результат энроллмента.
-        `${hostPath('asr-obs\\reference.npy')}:/srv/reference.npy`,
+        // Не :ro — сюда пишем результат энроллмента (весь каталог голосов,
+        // не отдельный файл — новому voiceId ещё нет соответствующего .npy
+        // на диске, и это нормально, live_enroll.py создаёт его сам).
+        `${hostPath('asr-obs\\voices')}:/srv/voices`,
         'hf-cache:/root/.cache/huggingface',
       ],
       DeviceRequests: [{ Driver: 'nvidia', Count: 1, Capabilities: [['gpu']] }],
@@ -930,17 +986,20 @@ app.get('/api/captions/status', async (req, res) => {
   const hasImage = await imageExists();
   const localIps = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const overlayHost = localIps[0] || 'localhost';
-  const hostName = readHostName();
-  const overlayUrl = `http://${overlayHost}:${CAPTIONS_OVERLAY_PORT}/index.html` + (hostName ? `?host=${encodeURIComponent(hostName)}` : '');
+  // Имя/цвет каждого голоса больше не в URL — их резолвит живьём сам
+  // asr-worker (см. speaker.py) и шлёт по WS, оверлей просто рендерит.
+  // Ссылка меняется только от оформления (см. buildOverlayUrl во фронте).
+  const overlayUrl = `http://${overlayHost}:${CAPTIONS_OVERLAY_PORT}/index.html`;
+  const voices = readVoices().map((v) => ({ ...v, hasEmbedding: hasVoiceEmbedding(v.id) }));
   const common = {
     overlayUrl,
     imageExists: hasImage,
     buildStatus,
     buildError,
-    hostName,
-    hasVoiceReference: hasVoiceReference(),
+    voices,
     enrollStatus,
     enrollError,
+    enrollVoiceId,
   };
 
   try {
@@ -977,10 +1036,9 @@ app.get('/api/captions/status', async (req, res) => {
       streamName: m ? m[1] : null,
       ready: captionsReady,
       asrModel: findEnv('ASR_OBS_ASR_MODEL'),
-      speakerThreshold: findEnv('ASR_OBS_SPEAKER_THRESHOLD'),
     });
   } catch (e) {
-    res.json({ ...common, connected: false, streamName: null, ready: false, asrModel: null, speakerThreshold: null });
+    res.json({ ...common, connected: false, streamName: null, ready: false, asrModel: null });
   }
 });
 
@@ -990,8 +1048,6 @@ app.post('/api/captions/connect', async (req, res) => {
     return res.status(400).json({ error: 'некорректное имя стрима' });
   }
   const asrModel = ASR_MODELS.includes(req.body && req.body.asrModel) ? req.body.asrModel : ASR_MODELS[0];
-  const rawThreshold = Number(req.body && req.body.speakerThreshold);
-  const speakerThreshold = Number.isFinite(rawThreshold) ? Math.min(1, Math.max(0, rawThreshold)) : 0.25;
   if (!PROJECT_ROOT) {
     return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
   }
@@ -1006,10 +1062,9 @@ app.post('/api/captions/connect', async (req, res) => {
       if (e.statusCode !== 404) throw e;
     }
 
-    ensureReferenceFileIsReal();
     await ensureNetwork();
     captionsReady = false;
-    const container = await docker.createContainer(captionsSpec(name, asrModel, speakerThreshold));
+    const container = await docker.createContainer(captionsSpec(name, asrModel));
     await container.start();
     watchCaptionsReadiness(container); // не await — следит в фоне, ответ не блокирует
     res.json({ ok: true, streamName: name });
@@ -1029,19 +1084,30 @@ app.post('/api/captions/disconnect', async (req, res) => {
   }
 });
 
-// Живая запись голоса ведущего: короткий одноразовый контейнер слушает указанный
-// живой стрим ENROLL_DURATION_SEC секунд, режет речь через VAD и усредняет ECAPA-
+// Живая запись голоса: короткий одноразовый контейнер слушает указанный живой
+// стрим ENROLL_DURATION_SEC секунд, режет речь через VAD и усредняет ECAPA-
 // эмбеддинги (app/live_enroll.py — то же самое, что офлайновый app/enroll.py по
-// wav-файлам, только источник — сам живой SRT-поток). Имя ведущего панель пишет
-// сама на диск (host_name.txt) — Python-скрипту про него знать не нужно.
+// wav-файлам, только источник — сам живой SRT-поток). Без voiceId — запись
+// НОВОГО голоса (имя вводится ПОСЛЕ успешной записи, не до — см. app.js); с
+// voiceId существующего голоса — перезапись его эталона тем же id/именем/порогом.
 app.post('/api/captions/enroll', async (req, res) => {
   const streamName = String((req.body && req.body.streamName) || '').trim();
-  const hostName = String((req.body && req.body.hostName) || '').trim();
+  const requestedVoiceId = req.body && req.body.voiceId != null ? String(req.body.voiceId).trim() : null;
   if (!STREAM_NAME_RE.test(streamName)) {
     return res.status(400).json({ error: 'некорректное имя стрима' });
   }
-  if (!HOST_NAME_RE.test(hostName)) {
-    return res.status(400).json({ error: 'введи имя ведущего (до 40 символов, без переводов строк)' });
+  const voices = readVoices();
+  let voiceId;
+  let isNewVoice;
+  if (requestedVoiceId) {
+    if (!voices.some((v) => v.id === requestedVoiceId)) {
+      return res.status(404).json({ error: 'голос не найден' });
+    }
+    voiceId = requestedVoiceId;
+    isNewVoice = false;
+  } else {
+    voiceId = crypto.randomUUID();
+    isNewVoice = true;
   }
   if (!PROJECT_ROOT) {
     return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
@@ -1055,6 +1121,7 @@ app.post('/api/captions/enroll', async (req, res) => {
 
   enrollStatus = 'running';
   enrollError = null;
+  enrollVoiceId = voiceId;
 
   try {
     try {
@@ -1063,11 +1130,10 @@ app.post('/api/captions/enroll', async (req, res) => {
       if (e.statusCode !== 404) throw e;
     }
 
-    ensureReferenceFileIsReal();
     await ensureNetwork();
-    const container = await docker.createContainer(enrollSpec(streamName, ENROLL_DURATION_SEC));
+    const container = await docker.createContainer(enrollSpec(streamName, ENROLL_DURATION_SEC, voiceId));
     await container.start();
-    res.json({ ok: true, durationSec: ENROLL_DURATION_SEC });
+    res.json({ ok: true, durationSec: ENROLL_DURATION_SEC, voiceId });
 
     // Не блокируем ответ ожиданием записи (15+ секунд) — статус и логи клиент
     // дальше сам опрашивает/стримит (/api/captions/status, .../logs).
@@ -1075,7 +1141,14 @@ app.post('/api/captions/enroll', async (req, res) => {
       .wait()
       .then(({ StatusCode }) => {
         if (StatusCode === 0) {
-          fs.writeFileSync(HOST_NAME_PATH, hostName, 'utf8');
+          // Запись в манифест — ТОЛЬКО теперь, после успешного .npy на диске
+          // (при перезаписи существующего голоса эмбеддинг уже перезаписан по
+          // тому же пути, манифест/имя/порог не трогаем).
+          if (isNewVoice) {
+            const current = readVoices();
+            current.push({ id: voiceId, name: `Голос ${current.length + 1}`, threshold: 0.25 });
+            writeVoicesAtomic(current);
+          }
           enrollStatus = 'done';
         } else {
           enrollStatus = 'error';
@@ -1094,6 +1167,90 @@ app.post('/api/captions/enroll', async (req, res) => {
     enrollError = e.message;
     res.status(500).json({ error: e.message });
   }
+});
+
+// Правка имени/порога голоса — лёгкая операция без Docker (только правка
+// voices.json), живой mtime-реслав на стороне asr-worker подхватывает её без
+// пересоздания контейнера. Белый список полей — не Object.assign(voice,
+// req.body): произвольные поля из тела запроса не должны попадать в манифест,
+// который Python потом доверчиво читает с диска.
+app.patch('/api/captions/voices/:id', (req, res) => {
+  const voices = readVoices();
+  const voice = voices.find((v) => v.id === req.params.id);
+  if (!voice) {
+    return res.status(404).json({ error: 'голос не найден' });
+  }
+  const body = req.body || {};
+  if (body.name !== undefined) {
+    const name = String(body.name).trim();
+    if (!VOICE_NAME_RE.test(name)) {
+      return res.status(400).json({ error: 'имя голоса — до 40 символов, без переводов строк, не пустое' });
+    }
+    voice.name = name;
+  }
+  if (body.threshold !== undefined) {
+    const rawThreshold = Number(body.threshold);
+    if (!Number.isFinite(rawThreshold)) {
+      return res.status(400).json({ error: 'некорректный порог' });
+    }
+    voice.threshold = Math.min(1, Math.max(0, rawThreshold));
+  }
+  writeVoicesAtomic(voices);
+  res.json({ ok: true, voice });
+});
+
+app.delete('/api/captions/voices/:id', (req, res) => {
+  const voices = readVoices();
+  const idx = voices.findIndex((v) => v.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'голос не найден' });
+  }
+  const [removed] = voices.splice(idx, 1);
+  writeVoicesAtomic(voices);
+  try {
+    fs.unlinkSync(voiceEmbeddingPath(removed.id));
+  } catch (e) {
+    // эталона могло не быть (напр. запись не успела завершиться) — не критично
+  }
+  res.json({ ok: true });
+});
+
+// Правка оформления — та же атомарная запись, тот же принцип "меняем живьём,
+// без пересоздания чего-либо": overlay/index.html сам перечитывает файл
+// (см. readOverlayStyle/GET выше, публичный), панель просто пишет.
+app.patch('/api/captions/overlay-style', (req, res) => {
+  const body = req.body || {};
+  const next = readOverlayStyle();
+
+  if (body.size !== undefined) {
+    const size = Number(body.size);
+    if (!Number.isFinite(size)) return res.status(400).json({ error: 'некорректный размер шрифта' });
+    next.size = Math.min(72, Math.max(16, Math.round(size)));
+  }
+  if (body.lines !== undefined) {
+    const lines = Number(body.lines);
+    if (!Number.isFinite(lines)) return res.status(400).json({ error: 'некорректное число строк' });
+    next.lines = Math.min(8, Math.max(1, Math.round(lines)));
+  }
+  if (body.guestColor !== undefined) {
+    if (!OVERLAY_COLOR_RE.test(body.guestColor)) return res.status(400).json({ error: 'некорректный цвет' });
+    next.guestColor = body.guestColor;
+  }
+  if (body.bgColor !== undefined) {
+    if (!OVERLAY_COLOR_RE.test(body.bgColor)) return res.status(400).json({ error: 'некорректный цвет' });
+    next.bgColor = body.bgColor;
+  }
+  if (body.bgOpacity !== undefined) {
+    const opacity = Number(body.bgOpacity);
+    if (!Number.isFinite(opacity)) return res.status(400).json({ error: 'некорректная прозрачность фона' });
+    next.bgOpacity = Math.min(100, Math.max(0, Math.round(opacity)));
+  }
+  if (body.showSpeaker !== undefined) {
+    next.showSpeaker = Boolean(body.showSpeaker);
+  }
+
+  writeOverlayStyleAtomic(next);
+  res.json({ ok: true, style: next });
 });
 
 const port = process.env.PORT || 8081;

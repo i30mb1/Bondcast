@@ -17,7 +17,8 @@ class Segment:
 @dataclass(frozen=True)
 class CaptionEvent:
     seq: int
-    speaker: str
+    speaker_id: str
+    speaker_name: str
     text: str
     start: float
     end: float

@@ -160,6 +160,19 @@
      sceneSwitcherBodyEl.hidden из app.js не прятали бы карточку визуально
      (уже ловили этот же перебой раньше на другом элементе). */
   .feature-card-body[hidden] { display: none; }
+  /* Тот же перебой (см. комментарий выше), ещё на двух элементах карточки
+     субтитров — держим правило рядом с первым для единообразия. */
+  #connectedSection { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+  #connectedSection[hidden] { display: none; }
+  #overlaySection { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+  #overlaySection[hidden] { display: none; }
+  /* Голоса — отдельная колонка справа (тот же приём, что .page-row/.page-sidebar
+     для всей страницы), а не ещё один блок в общем вертикальном потоке — так
+     сразу видно, что это отдельная настройка, а не шаг мастера сверху вниз. */
+  .connected-columns { display: flex; gap: 16px; align-items: flex-start; }
+  .connected-columns-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+  .connected-columns-side { flex: 0 0 280px; width: 280px; }
+  @media (max-width: 860px) { .connected-columns { flex-direction: column; } .connected-columns-side { width: 100%; flex: 1 1 auto; } }
 
   .section-title { font: 700 11.5px -apple-system, sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
 
@@ -174,6 +187,18 @@
     white-space: normal; word-break: break-all; align-self: center;
   }
   .addr-row button { flex-shrink: 0; }
+
+  .voice-row { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--divider); }
+  .voice-row:last-child { border-bottom: none; }
+  .voice-row-main { display: flex; align-items: center; gap: 8px; }
+  .voice-name-input {
+    flex: 1; min-width: 0; background: var(--input-bg); border: 1px solid var(--divider);
+    border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px;
+  }
+  .voice-row-main button { flex-shrink: 0; }
+  .voice-row .range-field { padding-left: 2px; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; }
+  .checkbox-row input { flex-shrink: 0; }
 
   .info {
     display: inline-flex; align-items: center; justify-content: center;
@@ -249,16 +274,6 @@
     background: linear-gradient(135deg, #ff5b5b, #c81e1e); color: #fff;
     box-shadow: 0 6px 14px -4px rgba(255,60,60,0.7);
   }
-  /* Точка-диагностика прямо на плашке сценария — вместо баннера наверху страницы,
-     который был виден всегда и не показывал, какого именно сценария касается.
-     Здесь она конкретна и видна ровно там, где нужна — обёрнута в конкретный
-     сценарий, а не абстрактный "порт не виден снаружи" на весь экран. */
-  .flow-pill-chip {
-    position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%;
-    border: 2px solid #161616;
-  }
-  .flow-pill-chip.ok { background: var(--green); }
-  .flow-pill-chip.bad { background: var(--accent); }
   .flow-pill-title { flex: 1; min-width: 0; }
   .flow-pill-title b { font-size: 13.5px; color: #fff; display: block; }
   .flow-pill-title .flow-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: block; }
@@ -361,7 +376,9 @@
     text-shadow: 0 2px 4px rgba(0,0,0,0.8);
   }
   .overlay-preview .name { margin-right: 10px; font-weight: 800; }
-  .overlay-preview .host .name { color: var(--prev-host, #ff3b30); }
+  /* Именованные голоса красятся палитрой по id (см. colorForId в app.js/overlay) —
+     здесь просто иллюстрация, фиксированный цвет для примера, не настройка. */
+  .overlay-preview .voice .name { color: #ff3b30; }
   .overlay-preview .guest .name { color: var(--prev-guest, #34c759); }
 
   .log-box {
@@ -380,6 +397,11 @@
   .row-label b { font-size: 14px; font-weight: 600; }
   .row-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  /* Рамка вокруг конкретного стрима в списке (см. streamRowHtml в app.js) — тот
+     же визуальный язык, что и .flow-step: сразу видно, какая кнопка к какому
+     стриму относится, не просто разделитель между строками списка. */
+  .stream-row { border: 1px solid var(--divider); border-radius: 12px; padding: 12px 14px; background: linear-gradient(180deg, #1b1b1b, #161616); }
+  .stream-row + .stream-row { margin-top: 8px; }
   .dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .dot.stopped { background: var(--accent); }
 </style>
@@ -427,71 +449,98 @@
         </div>
         <div class="feature-card-body" id="subsBody">
 
-          <div>
-            <div class="section-title" style="margin-bottom:12px">Распознавание голоса</div>
-            <div style="display:flex;flex-direction:column;gap:14px">
-              <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
-                <div style="flex:1;min-width:180px">
-                  <label class="field-label" for="hostNameInput">Имя ведущего</label>
-                  <input type="text" id="hostNameInput" placeholder="напр. Женя" />
-                  <div class="flow-warn" id="hostNameError" hidden></div>
-                </div>
-                <div>
-                  <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
-                  <div class="seg">
-                    <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрое</button>
-                    <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точное</button>
-                  </div>
-                </div>
+          <!-- Общая строка ошибки для установки/подключения/записи голоса — вне
+               стадийных контейнеров ниже: ошибка установки должна быть видна
+               именно на стадии 1, когда #capReadyStage ещё скрыт. -->
+          <div class="flow-warn" id="capError" hidden></div>
+
+          <!-- Стадия 1: ПО для субтитров ещё не установлено — единственное
+               видимое действие, всё остальное появится после установки. -->
+          <div id="capBuildStage">
+            <div class="row">
+              <div class="row-label">
+                <b>Нужно установить ПО для субтитров</b>
+                <span class="row-meta">Разовая загрузка (~10ГБ) — дальше не потребуется</span>
               </div>
-              <div class="range-field">
-                <div class="range-head"><span>Строгость «ведущий/кто-то» <span class="info" tabindex="0">?<span class="bubble">Порог схожести голоса с эталоном. Выше — строже (чаще помечает как «кто-то»), ниже — мягче (чаще принимает за ведущего). Меняется при следующем «Подключить субтитры».</span></span></span><output id="speakerThresholdOut">0.25</output></div>
-                <input type="range" id="speakerThreshold" min="0" max="1" step="0.01" />
+              <div class="row-actions">
+                <button type="button" class="cap-build primary">Установить нужное ПО</button>
               </div>
             </div>
           </div>
 
-          <div>
-            <div class="section-title" style="margin-bottom:12px">Активные стримы</div>
-            <div class="flow-warn" id="capError" hidden></div>
+          <!-- Стадия 2+: ПО установлено — список стримов появляется сразу,
+               остальное (голоса/оформление/ссылка для OBS) — только после
+               подключения к конкретному стриму, см. #connectedSection. -->
+          <div id="capReadyStage" hidden>
+            <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+              <div>
+                <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
+                <div class="seg">
+                  <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрое</button>
+                  <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точное</button>
+                </div>
+              </div>
+            </div>
+
             <div id="streamCards"></div>
+
+            <div id="connectedSection" hidden>
+              <div class="section-title" id="connectedStreamLabel"></div>
+              <div class="connected-columns">
+                <div class="connected-columns-main">
+                  <div id="obsUrlRow"></div>
+
+                  <div>
+                    <div style="display:flex;align-items:center;gap:10px;cursor:pointer" id="overlayStyleToggle">
+                      <div class="feature-switch" id="overlayStyleSwitch" style="transform:scale(0.75);transform-origin:left center"><div class="knob"></div></div>
+                      <b style="font-size:13px">🎨 Оформление оверлея</b>
+                    </div>
+                    <div id="overlaySection" hidden>
+                      <div class="grid-2">
+                        <div class="range-field">
+                          <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
+                          <input type="range" id="overlaySize" min="16" max="72" />
+                        </div>
+                        <div class="range-field">
+                          <div class="range-head"><span>Строк на экране</span><output id="overlayLinesOut">3</output></div>
+                          <input type="range" id="overlayLines" min="1" max="8" />
+                        </div>
+                      </div>
+
+                      <div class="swatch-row">
+                        <div class="swatch-item"><input type="color" id="overlayGuestColor" /><span>Цвет «Кто-то»</span></div>
+                        <div class="swatch-item">
+                          <input type="color" id="overlayBgColor" />
+                          <span>Фон</span>
+                          <input type="range" id="overlayBgOpacity" min="0" max="100" style="width:90px" />
+                          <output id="overlayBgOpacityOut" style="font-family:'SF Mono',Consolas,monospace;font-size:12px;color:var(--text-secondary)">60%</output>
+                        </div>
+                      </div>
+
+                      <div class="overlay-preview" id="overlayPreview">
+                        <div class="line voice"><span class="name">Женя:</span>Пример реплики узнанного голоса</div>
+                        <div class="line guest"><span class="name">Кто-то:</span>Пример реплики незнакомого голоса</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card connected-columns-side">
+                  <div class="section-title" style="margin-bottom:12px">Голоса</div>
+                  <button type="button" id="addVoiceBtn" class="cap-enroll">🎙 Определить голос</button>
+                  <label class="checkbox-row">
+                    <input type="checkbox" id="showSpeakerToggle" checked />
+                    <span>Показывать, кто говорит</span>
+                  </label>
+                  <div id="voicesList" style="margin-top:10px"></div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="card" id="capLogCard" hidden>
-            <div class="section-title" style="margin-bottom:8px">Лог субтитров — сборка / запись голоса</div>
+            <div class="section-title" style="margin-bottom:8px">Лог субтитров — установка / запись голоса</div>
             <pre id="capLog" class="log-box"></pre>
-          </div>
-
-          <div>
-            <div class="section-title" style="margin-bottom:12px">Оверлей субтитров</div>
-            <div style="display:flex;flex-direction:column;gap:16px">
-              <div class="grid-2">
-                <div class="range-field">
-                  <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
-                  <input type="range" id="overlaySize" min="16" max="72" />
-                </div>
-                <div class="range-field">
-                  <div class="range-head"><span>Строк на экране</span><output id="overlayLinesOut">3</output></div>
-                  <input type="range" id="overlayLines" min="1" max="8" />
-                </div>
-              </div>
-
-              <div class="swatch-row">
-                <div class="swatch-item"><input type="color" id="overlayHostColor" /><span>Цвет ведущего</span></div>
-                <div class="swatch-item"><input type="color" id="overlayGuestColor" /><span>Цвет «Кто-то»</span></div>
-                <div class="swatch-item">
-                  <input type="color" id="overlayBgColor" />
-                  <span>Фон</span>
-                  <input type="range" id="overlayBgOpacity" min="0" max="100" style="width:90px" />
-                  <output id="overlayBgOpacityOut" style="font-family:'SF Mono',Consolas,monospace;font-size:12px;color:var(--text-secondary)">60%</output>
-                </div>
-              </div>
-
-              <div class="overlay-preview" id="overlayPreview">
-                <div class="line host"><span class="name">Ведущий:</span>Пример реплики ведущего</div>
-                <div class="line guest"><span class="name">Кто-то:</span>Пример реплики гостя</div>
-              </div>
-            </div>
           </div>
 
         </div>

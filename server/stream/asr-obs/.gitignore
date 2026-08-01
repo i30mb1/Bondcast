@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+voices/
+host_samples/
+overlay_style.json
 reference.npy
 host_name.txt
-host_samples/

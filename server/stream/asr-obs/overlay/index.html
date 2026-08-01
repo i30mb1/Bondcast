@@ -7,7 +7,6 @@
   html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
   :root {
     --caption-size: 34px;
-    --host-color: #ff3b30;
     --guest-color: #34c759;
     --caption-bg: rgba(0,0,0,0.6);
   }
@@ -23,8 +22,6 @@
     text-shadow: 0 2px 4px rgba(0,0,0,0.8);
     transition: opacity 0.15s ease;
   }
-  .host .name { color: var(--host-color); }
-  .guest .name { color: var(--guest-color); }
   .name { margin-right: 10px; font-weight: 800; }
   .partial { opacity: 0.65; }
 </style>
@@ -38,29 +35,59 @@
   }
 
   var WS_URL = queryParam("ws") || "ws://" + location.hostname + ":8765";
-  var HOST_NAME = queryParam("host") || "Ведущий";
-  var MAX_LINES = Math.max(1, parseInt(queryParam("lines"), 10) || 3);
   var container = document.getElementById("captions");
   var activeSeq = null;
   var activeEl = null;
+  var MAX_LINES = 3;
 
-  // Оформление — через CSS custom properties, значения берём из URL (?size=/?hostColor=/
-  // ?guestColor=/?bg=), не валидируем строго: некорректный CSS-цвет браузер просто
-  // проигнорирует и останется дефолт, ничего не сломает и не выполнится как код.
-  (function applyStyleParams() {
+  // Оформление раньше кодировалось в query-параметрах этой же ссылки (?size=/
+  // ?guestColor=/?bg=/?lines=) — каждую правку в панели приходилось заново
+  // копировать в OBS Browser Source. Теперь панель хранит оформление сама и
+  // отдаёт его публично (GET /api/captions/overlay-style, без логина — этой
+  // странице неоткуда взять пароль панели) — эта ссылка больше НЕ меняется
+  // никогда, поллинг просто подтягивает live-значения с фиксированным периодом,
+  // тем же паттерном, что и остальная панель (5с).
+  var STYLE_API = "http://" + location.hostname + ":8081/api/captions/overlay-style";
+  var SHOW_SPEAKER = true;
+
+  function hexToRgba(hex, alpha) {
+    var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+    if (!m) return null;
+    var r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+
+  function applyStyle(style) {
     var root = document.documentElement.style;
-    var size = parseInt(queryParam("size"), 10);
+    var size = parseInt(style.size, 10);
     if (size > 0) root.setProperty("--caption-size", size + "px");
-    var hostColor = queryParam("hostColor");
-    if (hostColor) root.setProperty("--host-color", hostColor);
-    var guestColor = queryParam("guestColor");
-    if (guestColor) root.setProperty("--guest-color", guestColor);
-    var bg = queryParam("bg");
+    if (style.guestColor) root.setProperty("--guest-color", style.guestColor);
+    var bg = hexToRgba(style.bgColor, (Number(style.bgOpacity) || 0) / 100);
     if (bg) root.setProperty("--caption-bg", bg);
-  })();
+    MAX_LINES = Math.max(1, parseInt(style.lines, 10) || 3);
+    SHOW_SPEAKER = style.showSpeaker !== false;
+    trim();
+  }
 
-  function label(speaker) {
-    return speaker === "host" ? HOST_NAME : "Кто-то";
+  function pollStyle() {
+    fetch(STYLE_API)
+      .then(function (r) { return r.json(); })
+      .then(applyStyle)
+      .catch(function () {}); // панель могла быть недоступна секунду — просто ждём следующего опроса
+  }
+  pollStyle();
+  setInterval(pollStyle, 5000);
+
+  // Палитра для именованных голосов — тот же приём детерминированного хеша,
+  // что и pulseDelay() в panel/public/app.js (тоже десинхронизирует несколько
+  // похожих анимаций/цветов по seed), продублирован здесь: у оверлея нет
+  // общего бандла с панелью. speaker_id стабилен (voiceId с сервера), поэтому
+  // один и тот же голос всегда красится одним и тем же цветом на этом экране.
+  var VOICE_PALETTE = ["#ff3b30", "#0a84ff", "#ffd60a", "#bf5af2", "#30d158", "#ff9f0a"];
+  function colorForId(id) {
+    var hash = 0;
+    for (var i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    return VOICE_PALETTE[hash % VOICE_PALETTE.length];
   }
 
   function escapeHtml(s) {
@@ -70,8 +97,13 @@
   }
 
   function fill(el, evt) {
-    el.className = "line " + evt.speaker + (evt.final ? "" : " partial");
-    el.innerHTML = '<span class="name">' + escapeHtml(label(evt.speaker)) + ':</span>' + escapeHtml(evt.text);
+    el.className = "line" + (evt.final ? "" : " partial");
+    if (!SHOW_SPEAKER) {
+      el.innerHTML = escapeHtml(evt.text);
+      return;
+    }
+    var nameColor = evt.speaker_id === "guest" ? "var(--guest-color)" : colorForId(evt.speaker_id);
+    el.innerHTML = '<span class="name" style="color:' + nameColor + '">' + escapeHtml(evt.speaker_name) + ':</span>' + escapeHtml(evt.text);
   }
 
   function trim() {
