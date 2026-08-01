@@ -410,7 +410,19 @@
     background: var(--accent-dim); border: 1px solid rgba(255,60,60,0.35); border-radius: 10px;
     padding: 10px 14px; margin-bottom: 14px; font-size: 13px;
   }
+  /* display:flex выше сильнее UA-стиля [hidden]{display:none} той же
+     специфичности — тот же перебой уже ловили на #connectedSection/
+     #overlaySection, наступил снова на новом элементе. */
+  .update-banner[hidden] { display: none; }
   .update-banner span { flex: 1; min-width: 200px; }
+
+  /* Подстраховка от всего класса бага выше (перебой [hidden] авторским display:
+     ловили уже трижды за сессию на разных элементах) — при равной специфичности
+     побеждает правило ниже по тексту, так что это правило В САМОМ КОНЦЕ файла
+     перебивает любой одиночный class/id-селектор с display где угодно выше,
+     без per-элементных [hidden]-переопределений на каждый новый случай. Не
+     спасает только от селекторов специфичнее одного класса/id (таких пока нет). */
+  [hidden] { display: none; }
 </style>
 </head>
 <body>
