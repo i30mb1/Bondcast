@@ -11,3 +11,7 @@ app/release
 claude_task
 local.properties
 stream.mdclac
+
+# Пишется installer/setup.iss при установке/обновлении (см. server/stream/start.bat
+# для dev-заглушки) — не версия исходников, версия конкретной установленной копии.
+server/stream/VERSION

@@ -404,10 +404,22 @@
   .stream-row + .stream-row { margin-top: 8px; }
   .dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .dot.stopped { background: var(--accent); }
+
+  .update-banner {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--accent-dim); border: 1px solid rgba(255,60,60,0.35); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 14px; font-size: 13px;
+  }
+  .update-banner span { flex: 1; min-width: 200px; }
 </style>
 </head>
 <body>
 <div class="page">
+
+  <div class="update-banner" id="updateBanner" hidden>
+    <span id="updateBannerText"></span>
+    <button type="button" id="updateBannerBtn" class="primary">Обновить</button>
+  </div>
 
   <div class="top-bar">
     <div>

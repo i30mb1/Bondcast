@@ -130,6 +130,13 @@ pause
 exit /b 1
 
 :dockerReady
+:: docker-compose.yml bind-mounts this file into the panel (see /api/update/status
+:: in server.js) - a bind-mount of a MISSING host file silently creates an empty
+:: DIRECTORY in its place instead (already bit us once with reference.npy/voices),
+:: so make sure it exists before compose ever runs. Only missing when running
+:: straight from a git checkout (the installer writes the real version on install).
+if not exist "%~dp0VERSION" echo dev> "%~dp0VERSION"
+
 :: Force-remove any leftover containers from a previous run before recreating them.
 :: Needed because the panel can also start/stop/recreate srs and srtla-rec directly
 :: via the Docker API (see server.js), bypassing compose - a stale or half-removed

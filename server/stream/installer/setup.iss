@@ -8,7 +8,7 @@
 ; до кнопки скачивания, см. ../index.html).
 
 #define MyAppName "Bondcast Stream"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Bondcast"
 #define MyAppURL "https://github.com/i30mb1/Bondcast"
 
@@ -47,6 +47,7 @@ Source: "..\docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\get-host-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\launch-obs.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\update.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\check-static-ip.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-missing.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-not-running.html"; DestDir: "{app}"; Flags: ignoreversion
@@ -78,6 +79,13 @@ Name: "{group}\Запустить трансляцию"; Filename: "{app}\start.
 Root: HKCU; Subkey: "Software\Classes\bondcast-obs"; ValueType: string; ValueName: ""; ValueData: "URL:Bondcast OBS Launcher"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\bondcast-obs"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\bondcast-obs\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """powershell.exe"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\launch-obs.ps1"" ""%1"""
+
+; Кнопка "Обновить" в панели (после явного подтверждения вторым кликом —
+; см. app.js) дёргает bondcast-update://install — тот же мост, что и выше
+; для OBS: панель сама не может скачать/запустить .exe на хосте.
+Root: HKCU; Subkey: "Software\Classes\bondcast-update"; ValueType: string; ValueName: ""; ValueData: "URL:Bondcast Stream Updater"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\bondcast-update"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\bondcast-update\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """powershell.exe"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\update.ps1"" ""%1"""
 
 [Run]
 ; Чекбокс на странице Finished, отмечен по умолчанию (postinstall) - запускает
@@ -281,5 +289,10 @@ begin
     if DockerMissing then
       DownloadAndInstallDocker();
     EnsureFirewallRule();
+    // Источник правды по версии для панели (см. server.js: /api/update/status)
+    // и для update.ps1 (сверяет перед повторной установкой) - пишется на
+    // каждую установку/обновление, не только на первую. False = перезаписать,
+    // если файл уже есть от предыдущей версии.
+    SaveStringToFile(ExpandConstant('{app}\VERSION'), '{#MyAppVersion}', False);
   end;
 end;

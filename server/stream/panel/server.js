@@ -126,6 +126,54 @@ function writeOverlayStyleAtomic(style) {
   fs.renameSync(tmpPath, OVERLAY_STYLE_PATH);
 }
 
+// --- Проверка обновлений -----------------------------------------------------
+// VERSION пишет installer/setup.iss при установке/обновлении (bind-mount файла,
+// не env — см. docker-compose.yml) — читаем заново на каждый запрос, поэтому
+// update.ps1 меняет её "на лету", без пересоздания панели: свежая версия видна
+// сразу на следующий опрос /api/update/status.
+const VERSION_PATH = '/build-context/VERSION';
+function readCurrentVersion() {
+  try {
+    return fs.readFileSync(VERSION_PATH, 'utf8').trim() || 'dev';
+  } catch (e) {
+    return 'dev';
+  }
+}
+
+// Числовое сравнение по компонентам (1.10.0 > 1.9.0) - строковое сравнение
+// версий врёт на двузначных номерах. Нечисловые версии (напр. "dev") — не
+// считаем меньше/больше ничего, isNewer просто вернёт false.
+function isVersionNewer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  if (pa.some(Number.isNaN) || pb.some(Number.isNaN)) return false;
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
+}
+
+// В памяти, переживать перезапуск панели незачем - опрашивается заново при
+// каждом старте (тот же принцип, что buildStatus/captionsReady выше).
+let latestVersionCache = { version: null, checkedAt: null };
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch('https://api.github.com/repos/i30mb1/Bondcast/releases/latest', {
+      headers: { 'User-Agent': 'BondcastStream-Panel' },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const tag = String(data.tag_name || '').replace(/^v/, '');
+    if (tag) latestVersionCache = { version: tag, checkedAt: Date.now() };
+  } catch (e) {
+    // сеть моргнула/GitHub недоступен — не критично, попробуем на следующем тике
+  }
+}
+checkForUpdate();
+setInterval(checkForUpdate, 30 * 60 * 1000);
+
 const SPECS = {
   srs: {
     name: 'srs',
@@ -551,6 +599,17 @@ app.get('/api/streams', async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: `не удалось спросить SRS: ${e.message}` });
   }
+});
+
+app.get('/api/update/status', (req, res) => {
+  const currentVersion = readCurrentVersion();
+  const latestVersion = latestVersionCache.version;
+  res.json({
+    currentVersion,
+    latestVersion,
+    updateAvailable: Boolean(latestVersion) && isVersionNewer(latestVersion, currentVersion),
+    checkedAt: latestVersionCache.checkedAt,
+  });
 });
 
 // --- OBS: время жизни стримов + «Умный переключатель сцен» ------------------

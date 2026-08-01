@@ -1709,3 +1709,49 @@ function openEnrollLogStream() {
 
 pollStreamsAndCaptions();
 setInterval(pollStreamsAndCaptions, 5000);
+
+// --- Баннер обновления --------------------------------------------------------
+// Тихая установка (bondcast-update:// -> update.ps1, тот же мост, что и у
+// "Запустить OBS") запускается ТОЛЬКО по явному клику — и не с одного клика:
+// первый превращает кнопку в вопрос-подтверждение, реально скачивает и ставит
+// только второй. Без нативных alert()/confirm() (в проекте их уже сознательно
+// убирали — см. git log), вся кнопка целиком в баннере.
+const updateBannerEl = document.getElementById('updateBanner');
+const updateBannerTextEl = document.getElementById('updateBannerText');
+const updateBannerBtnEl = document.getElementById('updateBannerBtn');
+let updateConfirmPending = false;
+
+function resetUpdateButton() {
+  updateConfirmPending = false;
+  updateBannerBtnEl.textContent = 'Обновить';
+  updateBannerBtnEl.classList.remove('primary');
+}
+
+updateBannerBtnEl.onclick = () => {
+  if (!updateConfirmPending) {
+    updateConfirmPending = true;
+    updateBannerBtnEl.textContent = 'Точно? Скачает и тихо установит .exe';
+    updateBannerBtnEl.classList.add('primary');
+    return;
+  }
+  window.location.href = 'bondcast-update://install';
+  resetUpdateButton();
+};
+
+async function refreshUpdateStatus() {
+  try {
+    const res = await fetch('/api/update/status');
+    const data = await res.json();
+    if (data.updateAvailable) {
+      updateBannerTextEl.textContent = `Доступна версия ${data.latestVersion} (сейчас ${data.currentVersion})`;
+      updateBannerEl.hidden = false;
+    } else {
+      updateBannerEl.hidden = true;
+      resetUpdateButton();
+    }
+  } catch (e) {
+    // тихо — панель могла быть недоступна секунду, попробуем на следующем опросе
+  }
+}
+refreshUpdateStatus();
+setInterval(refreshUpdateStatus, 5 * 60 * 1000);
