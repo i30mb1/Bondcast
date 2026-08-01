@@ -1835,8 +1835,13 @@ async function refreshUpdateStatus() {
     if (data.updateAvailable) {
       // note — первая строка текста релиза (см. checkForUpdate в server.js),
       // шуточное однострочное описание в духе Discord-патчноутов, не сухой номер версии.
-      const noteHtml = data.note ? `<b>${escapeHtml(data.note)}</b> — ` : '';
-      updateBannerTextEl.innerHTML = `${noteHtml}вышла версия ${escapeHtml(data.latestVersion)} (сейчас ${escapeHtml(data.currentVersion)})`;
+      const versionsHtml = `<span class="update-version">
+        <span class="update-version-chip is-current">${escapeHtml(data.currentVersion)}</span>
+        <span class="update-version-arrow">→</span>
+        <span class="update-version-chip is-target">${escapeHtml(data.latestVersion)}</span>
+      </span>`;
+      const noteHtml = data.note ? escapeHtml(data.note) : 'Доступно обновление';
+      updateBannerTextEl.innerHTML = `${versionsHtml}${noteHtml}`;
       updateBannerEl.hidden = false;
       updateBannerOfferEl.hidden = false;
       updateBannerProgressEl.hidden = true;
