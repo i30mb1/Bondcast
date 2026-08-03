@@ -134,6 +134,8 @@ public fun StreamScreen(
     val stabilizationWanted by CameraControlBus.stabilizationWanted.collectAsState()
     val stabilizationActive by CameraControlBus.stabilizationActive.collectAsState()
     val stabilizationSupported by CameraControlBus.stabilizationSupported.collectAsState()
+    val noiseReductionWanted by CameraControlBus.noiseReductionWanted.collectAsState()
+    val noiseReductionSupported by CameraControlBus.noiseReductionSupported.collectAsState()
     var aeAwbLocked by remember { mutableStateOf(false) }
     var llbEnabled by remember { mutableStateOf(false) }
     val cameraControlsAvailable = currentCamera?.id != USB_CAMERA_ID && camera != null
@@ -443,6 +445,9 @@ public fun StreamScreen(
                 stabilizationEnabled = stabilizationWanted,
                 stabilizationActive = stabilizationActive,
                 onStabilizationEnabled = { CameraControlBus.setStabilizationWanted(it) },
+                noiseReductionSupported = noiseReductionSupported,
+                noiseReductionEnabled = noiseReductionWanted,
+                onNoiseReductionEnabled = { CameraControlBus.setNoiseReductionWanted(it) },
                 aeAwbLocked = aeAwbLocked,
                 onAeAwbLocked = { aeAwbLocked = it },
                 exposureSupported = exposureSupported,

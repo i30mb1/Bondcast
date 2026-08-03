@@ -35,6 +35,9 @@ public fun CameraPanel(
     stabilizationEnabled: Boolean = false,
     stabilizationActive: Boolean = false,
     onStabilizationEnabled: (Boolean) -> Unit = {},
+    noiseReductionSupported: Boolean = false,
+    noiseReductionEnabled: Boolean = false,
+    onNoiseReductionEnabled: (Boolean) -> Unit = {},
     aeAwbLocked: Boolean = false,
     onAeAwbLocked: (Boolean) -> Unit = {},
     exposureSupported: Boolean = false,
@@ -74,6 +77,17 @@ public fun CameraPanel(
             }
             if (stabilizationEnabled && !stabilizationActive) {
                 PanelHint(stringResource(R.string.camera_panel_stabilization_unsupported_hint))
+            }
+        }
+
+        if (cameraControlsAvailable && noiseReductionSupported) {
+            PanelLabel(
+                stringResource(R.string.camera_panel_noise_reduction_label),
+                info = stringResource(R.string.camera_panel_noise_reduction_info),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StreetChip(onLabel, noiseReductionEnabled, Modifier.weight(1f)) { onNoiseReductionEnabled(true) }
+                StreetChip(offLabel, !noiseReductionEnabled, Modifier.weight(1f)) { onNoiseReductionEnabled(false) }
             }
         }
 

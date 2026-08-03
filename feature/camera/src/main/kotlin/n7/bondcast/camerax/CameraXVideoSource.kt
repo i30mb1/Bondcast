@@ -3,6 +3,7 @@ package n7.bondcast.camerax
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PorterDuff
+import android.hardware.camera2.CaptureRequest
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -80,6 +81,7 @@ internal class CameraXVideoSource(
         // время, и его resetOutput()/release() не должны затирать то, что публикует этот источник
         CameraControlBus.claim(this)
         CameraControlBus.onStabilizationChanged = { mainHandler.post { bind() } }
+        CameraControlBus.onNoiseReductionChanged = { mainHandler.post { bind() } }
         bind()
     }
 
@@ -136,7 +138,22 @@ internal class CameraXVideoSource(
                     )
                     .build()
 
-                val encoderPreview = Preview.Builder().setResolutionSelector(resolutionSelector).build()
+                val cameraInfo = runCatching { cameraProvider.getCameraInfo(cameraSelector) }.getOrNull()
+
+                // шумодав сенсора/ISP — CaptureRequest-опция, ставится на билдер до бинда
+                val nrModes = cameraInfo?.noiseReductionModes() ?: IntArray(0)
+                val nrSwitchable = nrModes.noiseReductionSwitchable()
+                CameraControlBus.publishNoiseReductionSupported(this, nrSwitchable)
+                val nrMode = if (CameraControlBus.noiseReductionWanted.value) {
+                    nrModes.bestNoiseReductionMode()
+                } else {
+                    CaptureRequest.NOISE_REDUCTION_MODE_OFF
+                }
+
+                val encoderPreview = Preview.Builder()
+                    .setResolutionSelector(resolutionSelector)
+                    .apply { if (nrSwitchable) setNoiseReductionMode(nrMode) }
+                    .build()
                 encoderPreview.setSurfaceProvider(mainExecutor) { request ->
                     Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
                     request.provideSurface(encoder, mainExecutor) { }
@@ -151,7 +168,6 @@ internal class CameraXVideoSource(
                     null
                 }
 
-                val cameraInfo = runCatching { cameraProvider.getCameraInfo(cameraSelector) }.getOrNull()
                 val frameRateRange = fps?.let { cameraInfo?.pickFrameRateRange(it) }
                 val useCases = listOfNotNull(encoderPreview, displayPreview)
                 val effects = if (compositor.hasOverlays()) listOf(overlayEffect()) else emptyList()
