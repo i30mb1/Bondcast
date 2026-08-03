@@ -335,6 +335,9 @@ app.get('/api/connections', async (req, res) => {
         // без имени в конце, чтобы не заставлять пользователя вручную резать готовую ссылку.
         obsSrtUrl: `srt://${address}:10080`,
         obsSrtStreamId: `#!::r=live/${name},m=publish`,
+        // Прямой RTMP-вход в SRS (в обход srtla-rec/бондинга) — для приложений без
+        // поддержки SRT, только два поля (URL + ключ), как PRISM Live.
+        rtmpUrl: `rtmp://${address}:1935/live`,
         playFlv: `http://${address}:8080/live/${name}.flv`,
         playHls: `http://${address}:8080/live/${name}.m3u8`,
         playSrt: `srt://${address}:10080?streamid=#!::r=live/${name},m=request`,

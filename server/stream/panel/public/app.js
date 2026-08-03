@@ -108,6 +108,12 @@ const PORTS_TO_CHECK = [
   { port: 5000, proto: 'udp', label: 'Бондинг' },
   { port: 10080, proto: 'udp', label: 'Прямой SRT' },
   { port: 4455, proto: 'tcp', label: 'Управление OBS', optional: true, note: ' — нужен, только если управляешь OBS не из локальной сети' },
+  { port: 1935, proto: 'tcp', label: 'Прямой RTMP' },
+  // Не блокирует публикацию (для неё хватает 1935) — но без него у RTMP-источника
+  // (PRISM Live) нет рабочего способа предпросмотра в OBS: SRT-play в этой SRS-сборке
+  // отдаёт кадры только для стримов, пришедших тоже по SRT, для RTMP-источника
+  // остаётся только HTTP-FLV (см. obsPlayUrl) — а он идёт именно через этот порт.
+  { port: 8080, proto: 'tcp', label: 'HTTP-просмотр (превью в OBS для RTMP-источника)', optional: true, note: ' — нужен для предпросмотра в OBS, если стримишь по RTMP (PRISM Live)' },
 ];
 
 // Результаты последней проверки хранятся здесь (не только рендерятся) — чек-лист
@@ -543,7 +549,7 @@ function regenerateInvite() {
 // страница не превращалась в простыню из всех трёх сразу.
 const FLOWS = [
   { id: 'bondcast', icon: '📱', title: 'Через Bondcast', hint: 'Приложение всё настроит по QR' },
-  { id: 'other-app', icon: '⇄', title: 'Стороннее приложение', hint: 'Moblin, Larix — адрес вручную' },
+  { id: 'other-app', icon: '⇄', title: 'Стороннее приложение', hint: 'Moblin, Larix, PRISM — адрес вручную' },
   { id: 'invite', icon: '👥', title: 'Пригласить друга', hint: 'Экран/вебка через его OBS' },
 ];
 
@@ -707,10 +713,14 @@ function bondcastFlowBody() {
   ]);
 }
 
-// Тумблер Moblin/Larix — чисто визуальный выбор ярлыка приложения, оба показывают
-// один и тот же реальный SRT-адрес и идентификатор стрима (нет отдельного протокола
-// под каждое приложение — это упростило бы неверно).
-let selectedThirdPartyApp = localStorage.getItem('bondcast_thirdparty_app') === 'larix' ? 'larix' : 'moblin';
+// Тумблер Moblin/Larix/PRISM — выбор ярлыка приложения. Moblin и Larix показывают
+// один и тот же SRT-адрес и идентификатор стрима (нет отдельного протокола под
+// каждое приложение — это усложнило бы без пользы). PRISM Live не умеет SRT вообще,
+// только RTMP — для него отдельная пара полей (см. otherAppFlowBody).
+const THIRD_PARTY_APPS = ['moblin', 'larix', 'prism'];
+let selectedThirdPartyApp = THIRD_PARTY_APPS.includes(localStorage.getItem('bondcast_thirdparty_app'))
+  ? localStorage.getItem('bondcast_thirdparty_app')
+  : 'moblin';
 
 function setThirdPartyApp(app) {
   selectedThirdPartyApp = app;
@@ -722,30 +732,59 @@ function otherAppFlowBody() {
   const host = latestHosts[0];
   if (!host) return noHostWarningItems();
   const isLarix = selectedThirdPartyApp === 'larix';
-  const finalStep = `
-    <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('choose-app')}"></div><b>Выбери приложение</b></div>
+  const isPrism = selectedThirdPartyApp === 'prism';
+  const appSeg = `
       <div class="app-seg seg">
         <button type="button" class="${selectedThirdPartyApp === 'moblin' ? 'active' : ''}" data-app="moblin">Moblin</button>
-        <button type="button" class="${selectedThirdPartyApp === 'larix' ? 'active' : ''}" data-app="larix">Larix</button>
-      </div>
-      ${addrRow(
+        <button type="button" class="${isLarix ? 'active' : ''}" data-app="larix">Larix</button>
+        <button type="button" class="${isPrism ? 'active' : ''}" data-app="prism">PRISM Live</button>
+      </div>`;
+  // PRISM Live умеет только RTMP (не SRT) — отдельная пара полей, без бондинга,
+  // напрямую в SRS (как Larix). Ключ трансляции — просто имя стрима, без префикса/
+  // символов streamid-формата, который используют Moblin/Larix через SRT.
+  const addrRows = isPrism
+    ? addrRow(
+        'RTMP-вход → URL трансляции',
+        host.rtmpUrl,
+        'В PRISM Live: настройки трансляции → RTMP-вход → поле «URL трансляции».',
+      ) +
+      addrRow(
+        'RTMP-вход → Ключ трансляции',
+        currentStreamName,
+        'То же меню → поле «Ключ трансляции» — просто имя стрима, без дополнительных символов.',
+      )
+    : addrRow(
         isLarix ? 'URL' : 'Настройки → Стримы → «Создать» → «Пользовательский» → SRT(LA) → URL',
         host.obsSrtUrl,
         isLarix ? 'Без бондинга — сразу в SRS, не в srtla-rec.' : null,
-      )}
-      ${addrRow(
+      ) +
+      addrRow(
         isLarix ? 'streamid' : 'Настройки → Стримы → «Создать» → «Пользовательский» → SRT(LA) → Идентификатор стрима',
         host.obsSrtStreamId,
         isLarix ? 'Поле "streamid" в настройках SRT-подключения — без него Larix уйдёт в режим просмотра, а не публикации.' : null,
-      )}
-      ${liveOrWaitingHtml(currentStreamName, host.playSrt)}
+      );
+  const finalStep = `
+    <div class="flow-step flow-step-final">
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('choose-app')}"></div><b>Выбери приложение</b></div>
+      ${appSeg}
+      ${addrRows}
+      ${liveOrWaitingHtml(currentStreamName, isPrism ? host.playFlv : host.playSrt)}
     </div>`;
-  return gateSteps([
-    { key: 'ip', html: ipStepHtml(host) },
-    { key: 'port-10080', html: portStepHtml(PORTS_TO_CHECK[1]), gate: 'required', state: portCheckState(10080) },
-    { key: 'final', html: finalStep },
-  ]);
+  // PRISM пришёл по RTMP, а не по SRT — SRT-play у этой SRS-сборки не отдаёт кадры
+  // для RTMP-источника (сессия открывается и виснет без данных), поэтому для
+  // предпросмотра берём HTTP-FLV — он ремуксится из общего источника независимо
+  // от протокола приёма (см. obsPlayUrl выше).
+  //
+  // PRISM без SRT — гейт на порт 1935/RTMP вместо 10080/SRT, который используют
+  // Moblin/Larix. Плюс отдельный (необязательный, не блокирует финальный шаг)
+  // шаг про 8080 — без него публикация пройдёт, но предпросмотр в OBS не заработает.
+  const steps = isPrism
+    ? [
+        { key: 'port-1935', html: portStepHtml(PORTS_TO_CHECK[3]), gate: 'required', state: portCheckState(1935) },
+        { key: 'port-8080', html: portStepHtml(PORTS_TO_CHECK[4]), gate: 'optional', state: portCheckState(8080) },
+      ]
+    : [{ key: 'port-10080', html: portStepHtml(PORTS_TO_CHECK[1]), gate: 'required', state: portCheckState(10080) }];
+  return gateSteps([{ key: 'ip', html: ipStepHtml(host) }, ...steps, { key: 'final', html: finalStep }]);
 }
 
 function inviteFlowBody() {
@@ -874,10 +913,17 @@ checkPort();
 // кто есть и куда стримить, если это OBS друга).
 const serverStreamsEl = document.getElementById('serverStreams');
 
-function srtPlayUrl(name) {
+// HTTP-FLV, а не SRT: SRT-play в этой SRS-сборке отдаёт кадры, только если сам
+// стрим тоже пришёл по SRT (Bondcast/Moblin/Larix) — для стрима, пришедшего по
+// RTMP (PRISM Live и вообще любой сторонний RTMP-источник), SRT-сессия у OBS
+// открывается, но виснет без единого кадра и рвётся по таймауту (проверено:
+// то же самое "зависшее превью", про которое сообщил пользователь). HTTP-FLV
+// работает в обоих случаях — SRS ремуксит в него независимо от протокола приёма
+// (та же технология, что у встроенного плеера панели, см. loadMpegts() выше).
+function obsPlayUrl(name) {
   const host = latestHosts[0];
   if (!host) return '';
-  return `srt://${host.mobileSrtlaHost}:10080?streamid=#!::r=live/${name},m=request`;
+  return `http://${host.mobileSrtlaHost}:8080/live/${name}.flv`;
 }
 
 function formatLiveSince(liveSinceMs) {
@@ -911,7 +957,7 @@ function renderServerStreams(streams) {
         <div class="live-badge"><span class="dot dot-live" style="${pulseDelay('stream-' + s.name)}"></span>Live</div>
       </div>
       <div class="server-stream-slot-actions">
-        <button type="button" class="copy-addr" data-value="${escapeHtml(srtPlayUrl(s.name))}">Копировать для OBS</button>
+        <button type="button" class="copy-addr" data-value="${escapeHtml(obsPlayUrl(s.name))}">Копировать для OBS</button>
         <button type="button" class="primary server-watch-stream" data-name="${escapeHtml(s.name)}">Просмотр</button>
       </div>
     </div>`,
