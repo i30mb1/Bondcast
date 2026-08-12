@@ -516,7 +516,7 @@ public fun StreamScreen(
     }
 }
 
-private fun glyphColor(active: Boolean): Color = if (active) Color.White else DiscordColors.textSecondary
+private fun glyphColor(active: Boolean): Color = if (active) DiscordColors.onAccent else DiscordColors.textSecondary
 
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"

@@ -254,7 +254,7 @@ public fun SettingsScreen(
                             val selected = expertMode == isExpert
                             Text(
                                 text = label,
-                                color = if (selected) Color.White else DiscordColors.textSecondary,
+                                color = if (selected) DiscordColors.onAccent else DiscordColors.textSecondary,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 modifier = Modifier
@@ -582,7 +582,7 @@ private fun RecommendChip(
 ) {
     Text(
         text = text,
-        color = if (selected) Color.White else DiscordColors.textSecondary,
+        color = if (selected) DiscordColors.onAccent else DiscordColors.textSecondary,
         style = MaterialTheme.typography.labelLarge,
         modifier = Modifier
             .clip(ButtonShape)

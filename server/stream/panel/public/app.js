@@ -7,14 +7,14 @@ function tooltip(text) {
   return `<span class="info" tabindex="0">?<span class="bubble">${escapeHtml(text)}</span></span>`;
 }
 
-// Сдвиг фазы для повторяющихся анимаций (dot-live/dot-live-red, conn-packet) —
+// Сдвиг фазы для повторяющихся анимаций (dot-live/dot-live-accent, conn-packet) —
 // несколько штук на экране разом (список активных стримов, чек-лист портов,
 // пакет на соединительных линиях между шагами) без этого идут в такт и выглядят
 // как одна и та же анимация под копирку. Детерминированно от seed, не
 // Math.random() — reconcileSteps сравнивает html строкой и перерисовывает узел
 // только когда она реально изменилась, случайное значение на каждый рендер
 // заставило бы шаг мигать на каждый опрос. durationSec — длительность анимации
-// конкретного элемента (dotPulse/dotPulseRed — 1.8s, packetTravel — 1.6s), сдвиг
+// конкретного элемента (dotPulse/dotPulseAccent — 1.8s, packetTravel — 1.6s), сдвиг
 // считается в её пределах.
 function pulseDelay(seed, durationSec = 1.8) {
   let hash = 0;
@@ -243,15 +243,21 @@ function portStepHtml({ port, proto, label, optional, note }) {
 // нужного сценария, конкретно про тот порт, который сейчас закрыт.
 function hintFor({ port, proto }, data) {
   const protoLabel = proto.toUpperCase();
-  // ip-api.com красит proxy:true почти любой IP дата-центра/VPS, даже если это просто
-  // чей-то сервер, а не VPN/прокси-выход — а сам Bondcast-сервер часто и есть такой VPS
-  // (см. CLAUDE.md — self-hosted). "Выключи VPN" тогда бессмысленный совет, выключать
-  // нечего: hostingLikely отличает этот случай от настоящего VPN-клиента на машине.
-  if (data.vpnLikely && data.hostingLikely) {
-    return `Порт ${port}/${protoLabel} не отвечает на ${data.targetIp} (это адрес хостинг-провайдера, не похоже на бытовой VPN) — проверь, что нужный сервис реально запущен и слушает этот порт, и что его не блокирует файрвол этой машины (Windows Defender Firewall и т.п.).`;
-  }
+  // hosting НЕ отличает "свой VPS" от "включён VPN": почти любой коммерческий
+  // VPN-выход тоже стоит в дата-центре и приходит с hosting:true. Замеры по ip-api:
+  // Hetzner/DigitalOcean/Scaleway/Google — proxy:false + hosting:true, а реальный
+  // VPN-выход (FranTech) — proxy:true + hosting:true. То есть proxy:true сам по себе
+  // и есть признак VPN/прокси, а hosting лишь говорит "адрес дата-центра".
+  // Раньше на комбинации proxy+hosting панель писала "не похоже на бытовой VPN" и прямо
+  // противоречила start.bat, который по тому же флагу уже сказал "VPN detected".
   if (data.vpnLikely) {
-    return 'Похоже, включён VPN — он часто блокирует трафик наружу. Выключи его и запусти start.bat ещё раз, мы всё перепроверим.';
+    // Остаточная неоднозначность только одна: сам Bondcast-сервер может стоять на VPS
+    // из диапазона, помеченного как прокси (см. CLAUDE.md — self-hosted). Не гадаем за
+    // пользователя — называем факт и обе трактовки, частую первой.
+    const selfHosted = data.hostingLikely
+      ? ' Если же VPN не включён и это твой собственный сервер на VPS — тогда проверь, что сервис слушает этот порт и его не блокирует файрвол машины.'
+      : '';
+    return `Порт ${port}/${protoLabel} не отвечает на ${data.targetIp} — этот адрес помечен как известный VPN/прокси-выход. Скорее всего на этой машине включён VPN: выключи его и запусти ярлык «Запустить трансляцию» заново, тогда определится настоящий публичный IP.${selfHosted}`;
   }
   if (data.natLikely) {
     return `Порт ${port}/${protoLabel} закрыт снаружи (внешний IP: ${data.targetIp}) — нужно прокинуть его на роутере.`;
@@ -696,7 +702,7 @@ function bondcastFlowBody() {
   if (!host) return noHostWarningItems();
   const finalStep = `
     <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('qr-scan')}"></div><b>Отсканируй QR в приложении</b></div>
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-accent" style="${pulseDelay('qr-scan')}"></div><b>Отсканируй QR в приложении</b></div>
       <div class="name-row">
         <input type="text" id="streamName" value="${escapeHtml(currentStreamName)}" placeholder="имя стрима" />
         <button type="button" class="dice-btn" id="regenName" title="Сгенерировать другое имя">🎲</button>
@@ -765,7 +771,7 @@ function otherAppFlowBody() {
       );
   const finalStep = `
     <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('choose-app')}"></div><b>Выбери приложение</b></div>
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-accent" style="${pulseDelay('choose-app')}"></div><b>Выбери приложение</b></div>
       ${appSeg}
       ${addrRows}
       ${liveOrWaitingHtml(currentStreamName, isPrism ? host.playFlv : host.playSrt)}
@@ -794,7 +800,7 @@ function inviteFlowBody() {
   }
   const finalStep = `
     <div class="flow-step flow-step-final">
-      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-red" style="${pulseDelay('obs-friend-data')}"></div><b>Данные для OBS друга</b></div>
+      <div class="flow-step-final-head"><div class="flow-step-dot dot-live-accent" style="${pulseDelay('obs-friend-data')}"></div><b>Данные для OBS друга</b></div>
       ${addrRow('Сервер', host.obsSrtUrl, 'В OBS: Настройки → Трансляция → Служба «Настраиваемый» → поле "Сервер".')}
       <div class="name-row">
         <input type="text" id="inviteName" value="${escapeHtml(host.obsSrtStreamId)}" readonly style="font-family:'SF Mono',Consolas,monospace" />
@@ -1019,7 +1025,7 @@ const sceneSwitcherErrorEl = document.getElementById('sceneSwitcherError');
 // её в другом сценарии" — стример уже здесь, на вкладке "Функции", незачем
 // заставлять его переключаться на "Старт и подключение" за тем же текстом.
 function showSceneSwitcherError(message, extraHtml = '') {
-  // .flow-warn красит весь свой текст в акцентный красный (это ок для самой
+  // .flow-warn красит весь свой текст в красный цвет ошибки (это ок для самой
   // ошибки) — инструкцию внутри extraHtml возвращаем к обычному цвету текста,
   // иначе шаги "как включить WebSocket" тоже стали бы красными.
   const extra = extraHtml ? `<div style="color:var(--text)">${extraHtml}</div>` : '';

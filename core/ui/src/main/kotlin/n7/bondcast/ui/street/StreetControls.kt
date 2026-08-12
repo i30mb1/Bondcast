@@ -77,7 +77,7 @@ public fun StreetChip(
         style = streetLabel,
         color = when {
             !enabled -> DiscordColors.textMuted
-            selected -> Color.White
+            selected -> DiscordColors.onAccent
             else -> DiscordColors.textSecondary
         },
         textAlign = TextAlign.Center,

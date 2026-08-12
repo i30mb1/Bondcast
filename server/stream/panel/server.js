@@ -410,11 +410,12 @@ function isPrivateIp(ip) {
 // включён и при старте контейнера (когда HOST_IPS зафиксировал внешний IP), и сейчас, оба замера
 // совпадают, расхождения не видно, и проверка молчала про VPN, хотя адрес им и остаётся.
 //
-// hosting — отдельным полем: ip-api помечает proxy:true почти для ЛЮБОГО IP дата-центра/VPS,
-// даже если это просто чей-то сервер, а не прокси/VPN-выход как таковой. У Bondcast сервер
-// сам по себе часто и есть такой VPS (см. CLAUDE.md — self-hosted srtla_rec) — для него
-// "похоже, включён VPN, выключи его" бессмысленный совет (выключать нечего), вводит в
-// заблуждение. Возвращаем оба флага — hintFor() в app.js выбирает подходящий текст сама.
+// hosting — отдельным полем, но НЕ как признак "это VPS, а не VPN": замеры по ip-api
+// показывают, что обычным адресам дата-центров (Hetzner, DigitalOcean, Scaleway, Google)
+// ставится proxy:false + hosting:true, а реальному VPN-выходу — proxy:true + hosting:true.
+// То есть proxy:true и есть признак VPN/прокси, а hosting лишь уточняет "адрес дата-центра"
+// (у Bondcast сервер сам может быть таким VPS, см. CLAUDE.md — self-hosted srtla_rec).
+// Возвращаем оба флага — hintFor() в app.js формулирует текст сама.
 async function ipReputation(ip) {
   try {
     const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=proxy,hosting`);

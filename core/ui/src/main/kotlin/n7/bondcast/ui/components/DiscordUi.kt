@@ -390,7 +390,7 @@ public fun DiscordSegmentedRow(
                 ) {
                     Text(
                         text = option,
-                        color = if (selected) Color.White else DiscordColors.textSecondary,
+                        color = if (selected) DiscordColors.onAccent else DiscordColors.textSecondary,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     )
@@ -427,7 +427,7 @@ public fun DiscordSwitchRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = DiscordColors.onAccent,
                 checkedTrackColor = DiscordColors.blurple,
                 checkedBorderColor = DiscordColors.blurple,
                 uncheckedThumbColor = DiscordColors.textSecondary,

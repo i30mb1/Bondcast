@@ -9,7 +9,9 @@
   :root {
     --bg: #0e0e0e; --elevated: #232323; --input-bg: #161616; --divider: #2a2a2a;
     --text: #eeeeee; --muted: #999999; --muted2: #666666;
-    --green: #2fbf5b; --amber: #fbbf24; --accent: #ff3c3c; --accent-pressed: #d42f2f;
+    --green: #2fbf5b; --amber: #fbbf24; --danger: #ff3c3c;
+    /* Белое на акценте даёт 3.7:1, тёмное — 5.2:1, поэтому текст на заливках тёмный. */
+    --accent: #3b82f6; --accent-pressed: #2563eb; --on-accent: #04121c;
   }
   * { box-sizing: border-box; }
   body {
@@ -47,7 +49,7 @@
   }
 
   .cta {
-    display: block; text-align: center; background: var(--accent); color: #fff;
+    display: block; text-align: center; background: var(--accent); color: var(--on-accent);
     text-decoration: none; font-size: 17px; font-weight: 700; padding: 16px 20px;
     border-radius: 12px; margin: 8px 0 6px;
   }
@@ -63,7 +65,7 @@
   .netcheck { display: flex; align-items: center; gap: 10px; font-size: 14px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; }
   .dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .dot.bad { background: var(--accent); }
+  .dot.bad { background: var(--danger); }
   code.ip { background: var(--input-bg); border-radius: 6px; padding: 3px 8px; font-family: "SF Mono", Consolas, monospace; }
 
   a.dev-link {

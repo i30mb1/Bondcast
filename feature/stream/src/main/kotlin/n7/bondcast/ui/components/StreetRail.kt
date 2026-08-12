@@ -121,7 +121,7 @@ private fun AttentionGlow(level: AttentionLevel, modifier: Modifier = Modifier) 
     Box(
         modifier
             .blur(11.dp, BlurredEdgeTreatment.Unbounded)
-            .background(DiscordColors.accent.copy(alpha = glow), RailButtonShape),
+            .background(DiscordColors.danger.copy(alpha = glow), RailButtonShape),
     )
 }
 
@@ -264,7 +264,7 @@ internal fun GoLiveButton(
         ) {
             Text(
                 text = stringResource(if (streaming) R.string.stream_golive_stop else R.string.stream_golive_start).upper(),
-                color = Color.White,
+                color = DiscordColors.onAccent,
                 style = streetButton,
             )
         }

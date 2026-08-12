@@ -10,8 +10,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 private val White = Color(0xFFFFFFFF)
-private val Accent = Color(0xFFFF3C3C)
-private val AccentPressed = Color(0xFFD42F2F)
+private val Accent = Color(0xFF3B82F6)
+private val AccentPressed = Color(0xFF2563EB)
+
+/**
+ * Тёмный текст/иконки поверх акцента: белое на #3B82F6 даёт всего 3.7:1,
+ * тёмное — 5.2:1, поэтому onPrimary тут не White.
+ */
+private val OnAccent = Color(0xFF04121C)
 private val Green = Color(0xFF2FBF5B)
 private val Red = Color(0xFFFF3C3C)
 private val IconBorder = Color(0xFF4A4A4A)
@@ -23,14 +29,14 @@ private val InputBackground = Color(0xFF161616)
 private val TextPrimary = Color(0xFFEEEEEE)
 private val TextSecondary = Color(0xFFAAAAAA)
 private val TextMuted = Color(0xFF666666)
-private val Link = Color(0xFFFF6B6B)
+private val Link = Color(0xFF8AB4F8)
 private val Divider = Color(0xFF2A2A2A)
 private val Sticker = Color(0xFFFFFFFF)
 private val Stripe = Color(0xFF161616)
 
 private val ColorScheme = darkColorScheme(
     primary = Accent,
-    onPrimary = White,
+    onPrimary = OnAccent,
     primaryContainer = AccentPressed,
     secondary = Elevated,
     onSecondary = TextPrimary,
@@ -63,6 +69,7 @@ public object DiscordColors {
     val danger = Red
     val yellow = Yellow
     val accent = Accent
+    val onAccent = OnAccent
     val iconBorder = IconBorder
     val plate = Elevated
     val panel = Background

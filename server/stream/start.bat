@@ -28,8 +28,11 @@ if not "%HOST_IP_OVERRIDE%"=="" (
 ) else (
   set "HOST_IPS="
   for /f "delims=" %%a in ('curl -s --max-time 5 https://api.ipify.org') do set "HOST_IPS=%%a"
-  :: Отмечаем, что это именно публичный IP, а не LAN-фолбэк ниже - проверка
-  :: статичности имеет смысл только для него.
+  rem Отмечаем, что это именно публичный IP, а не LAN-фолбэк ниже - проверка
+  rem статичности имеет смысл только для него.
+  rem ВНИМАНИЕ: внутри скобочных блоков комментарий пишется через rem, а не "::".
+  rem Две подряд строки "::" внутри ( ) заставляют cmd.exe печатать
+  rem "Системе не удается найти указанный диск." - по одной ошибке на пару строк.
   set "PUBLIC_IP_OK=0"
   if not "!HOST_IPS!"=="" set "PUBLIC_IP_OK=1"
   if "!HOST_IPS!"=="" (
@@ -37,13 +40,13 @@ if not "%HOST_IP_OVERRIDE%"=="" (
   )
 
   if not "!HOST_IPS!"=="" (
-    :: If a VPN is active right now, the address curl just detected above is the
-    :: VPN's exit IP, not this router's real public IP - no port forwarding will
-    :: ever match it, so the phone won't reach this machine over the internet
-    :: however it's configured. Ask ip-api.com's free "proxy" flag whether this
-    :: specific IP is a known VPN/proxy/Tor exit address - far more reliable than
-    :: guessing from local VPN-client adapter names, which missed real VPN clients
-    :: it didn't recognize.
+    rem If a VPN is active right now, the address curl just detected above is the
+    rem VPN's exit IP, not this router's real public IP - no port forwarding will
+    rem ever match it, so the phone won't reach this machine over the internet
+    rem however it's configured. Ask ip-api.com's free "proxy" flag whether this
+    rem specific IP is a known VPN/proxy/Tor exit address - far more reliable than
+    rem guessing from local VPN-client adapter names, which missed real VPN clients
+    rem it didn't recognize.
     for /f "delims=" %%a in ('curl -s --max-time 5 "http://ip-api.com/line/!HOST_IPS!?fields=proxy"') do set "VPN_DETECTED=%%a"
     if /i "!VPN_DETECTED!"=="true" (
       echo.
@@ -54,10 +57,11 @@ if not "%HOST_IP_OVERRIDE%"=="" (
       echo Disable the VPN, then run the desktop shortcut again to pick up your real public IP.
       echo.
     ) else if "!PUBLIC_IP_OK!"=="1" (
-      :: Провайдер не сообщает "статичный/динамический" никаким API - смотрим
-      :: PTR-запись публичного IP, многие ISP сами кодируют это в hostname
-      :: (см. check-static-ip.ps1). Нет надёжного маркера - не значит "точно
-      :: динамический", поэтому статус unknown ничего не печатает.
+      rem Провайдер не сообщает "статичный/динамический" никаким API - смотрим
+      rem PTR-запись публичного IP, многие ISP сами кодируют это в hostname,
+      rem см. check-static-ip.ps1. Нет надёжного маркера - не значит "точно
+      rem динамический", поэтому статус unknown ничего не печатает.
+      rem Скобок в тексте rem внутри блока быть не должно: ")" закроет блок.
       set "IP_TYPE="
       for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0check-static-ip.ps1" -Ip "!HOST_IPS!"') do set "IP_TYPE=%%a"
       for /f "tokens=1,2 delims=|" %%a in ("!IP_TYPE!") do (
