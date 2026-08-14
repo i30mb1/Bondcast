@@ -7,5 +7,4 @@ public interface OverlayCompositor {
     public fun drawAll(frame: OverlayFrame)
 }
 
-public fun overlayCompositor(): OverlayCompositor =
-    OverlayCompositorWithOrientation(OverlayCompositorImpl())
+public fun overlayCompositor(): OverlayCompositor = OverlayCompositorWithOrientation(OverlayCompositorImpl())

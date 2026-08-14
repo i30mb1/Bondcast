@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -271,14 +272,26 @@ public fun StreamScreen(
                 }
             }
             surfaceRequest?.let { request ->
-                CameraXViewfinder(
-                    surfaceRequest = request,
+                // Кадр вписан в соотношение эфира, а не растянут на весь экран: экран телефона в
+                // ландшафте шире 16:9 (2800x1260 ≈ 2.22:1), и fillMaxSize обрезал кадр по бокам —
+                // стример видел не то, что уходило зрителям, а оверлеи уезжали за границу кадра.
+                // Соотношение берём из настроек, чтобы не разъехаться при смене разрешения.
+                val streamAspect = settings
+                    ?.let { it.width.toFloat() / it.height.toFloat() }
+                    ?: DEFAULT_STREAM_ASPECT
+                Box(
                     modifier = Modifier.fillMaxSize(),
-                    // встроенные жесты вьюфайндера (camera-compose 1.7) — учитывают sensor-to-buffer
-                    // трансформ (crop/поворот/зеркало), в отличие от нашей прежней ручной обвязки
-                    isTapToFocusEnabled = true,
-                    isPinchToZoomEnabled = true,
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CameraXViewfinder(
+                        surfaceRequest = request,
+                        modifier = Modifier.aspectRatio(streamAspect),
+                        // встроенные жесты вьюфайндера (camera-compose 1.7) — учитывают sensor-to-buffer
+                        // трансформ (crop/поворот/зеркало), в отличие от нашей прежней ручной обвязки
+                        isTapToFocusEnabled = true,
+                        isPinchToZoomEnabled = true,
+                    )
+                }
             }
         }
 
@@ -517,6 +530,9 @@ public fun StreamScreen(
 }
 
 private fun glyphColor(active: Boolean): Color = if (active) DiscordColors.onAccent else DiscordColors.textSecondary
+
+/** Соотношение кадра эфира, пока настройки не загрузились. */
+private const val DEFAULT_STREAM_ASPECT = 16f / 9f
 
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"
