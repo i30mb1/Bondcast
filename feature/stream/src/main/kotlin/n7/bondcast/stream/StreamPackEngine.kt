@@ -31,6 +31,9 @@ import n7.bondcast.settings.VideoCodec
 import n7.bondcast.uvc.UvcVideoSourceFactory
 import kotlin.math.roundToInt
 
+/** Интервал I-кадров, секунды. См. комментарий на месте использования. */
+private const val GOP_DURATION_S = 2f
+
 internal class StreamPackEngine(
     private val context: Context,
     private val overlayCompositor: OverlayCompositor,
@@ -87,6 +90,12 @@ internal class StreamPackEngine(
                 startBitrate = settings.videoBitrateKbps * 1000,
                 resolution = Size(settings.width, settings.height),
                 fps = settings.fps,
+                // I-кадр раз в 2 с вместо дефолтной 1 с: I весит в разы больше P, и при GOP=1s
+                // ~3% кадров съедали заметную долю битрейта. Освободившиеся биты уходят в
+                // детализацию — качество кадра растёт при той же сетевой нагрузке.
+                // Расплата: артефакт после потери живёт дольше до следующего I. Для SRT с ARQ
+                // приемлемо; Twitch RTMP — тоже (их рекомендация как раз 2 с).
+                gopDurationInS = GOP_DURATION_S,
             ),
         )
         appliedSettings = settings

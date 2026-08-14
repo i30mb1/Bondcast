@@ -10,8 +10,7 @@ import android.os.Looper
 import android.util.Log
 import android.util.Range
 import android.view.Surface
-import androidx.camera.camera2.interop.Camera2CameraInfo
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraInfo
@@ -131,12 +130,7 @@ internal class CameraXVideoSource(
                 val cameraProvider = runCatching { future.get() }.getOrNull() ?: return@addListener
                 this.cameraProvider = cameraProvider
                 val cameraSelector = selectorFor(cameraId)
-                val resolutionSelector = ResolutionSelector.Builder()
-                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
-                    .setResolutionStrategy(
-                        ResolutionStrategy(size, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
-                    )
-                    .build()
+                val resolutionSelector = resolutionSelectorFor(size)
 
                 val cameraInfo = runCatching { cameraProvider.getCameraInfo(cameraSelector) }.getOrNull()
 
@@ -152,7 +146,6 @@ internal class CameraXVideoSource(
 
                 val encoderPreview = Preview.Builder()
                     .setResolutionSelector(resolutionSelector)
-                    .apply { if (nrSwitchable) setNoiseReductionMode(nrMode) }
                     .build()
                 encoderPreview.setSurfaceProvider(mainExecutor) { request ->
                     Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
@@ -187,21 +180,15 @@ internal class CameraXVideoSource(
                 } else {
                     emptyList()
                 }
-                // frameRateRange без дефолта-null — если камера не подтвердила диапазон, не передаём его вовсе
-                val sessionConfig = if (frameRateRange != null) {
-                    SessionConfig(
-                        useCases = useCases,
-                        effects = effects,
-                        frameRateRange = frameRateRange,
-                        preferredFeatureGroup = preferredFeatures,
-                    )
-                } else {
-                    SessionConfig(
-                        useCases = useCases,
-                        effects = effects,
-                        preferredFeatureGroup = preferredFeatures,
-                    )
-                }
+                val sessionConfig = SessionConfig.Builder(useCases)
+                    .apply {
+                        effects.forEach { addEffect(it) }
+                        setPreferredFeatureGroup(*preferredFeatures.toTypedArray())
+                        // frameRateRange без дефолта-null — если камера не подтвердила диапазон, не ставим его вовсе
+                        if (frameRateRange != null) setFrameRateRange(frameRateRange)
+                        if (nrSwitchable) setNoiseReductionMode(nrMode)
+                    }
+                    .build()
                 // предпочтительная фича — CameraX сам решит, влезла ли стабилизация в комбинацию
                 sessionConfig.setFeatureSelectionListener(mainExecutor) { selected ->
                     CameraControlBus.publishStabilizationActive(this, selected.contains(GroupableFeature.PREVIEW_STABILIZATION))
@@ -251,8 +238,9 @@ internal class CameraXVideoSource(
         effect.setOnDrawListener { frame ->
             val canvas = frame.overlayCanvas
             canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            val info = _infoProviderFlow.value
-            compositor.drawAll(OverlayFrame(canvas, frame.size, info.rotationDegrees, info.isMirror))
+            // поворот/зеркало берём из самого кадра, а не из провайдера: провайдер сообщает
+            // ориентацию для StreamPack (там 0, кадр уже развёрнут), а эффекту нужна фактическая
+            compositor.drawAll(OverlayFrame(canvas, frame.size, frame.rotationDegrees, frame.isMirroring))
             true
         }
         overlayThread = thread
@@ -260,12 +248,7 @@ internal class CameraXVideoSource(
         return effect
     }
 
-    @OptIn(ExperimentalCamera2Interop::class)
-    private fun selectorFor(id: String): CameraSelector = CameraSelector.Builder()
-        .addCameraFilter { infos ->
-            infos.filter { runCatching { Camera2CameraInfo.from(it).cameraId == id }.getOrDefault(false) }
-        }
-        .build()
+    private fun selectorFor(id: String): CameraSelector = Camera2Interop.getCameraSelectorFromCameraId(id)
 
     private companion object {
         const val TAG = "CameraXSource"
