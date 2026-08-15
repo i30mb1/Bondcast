@@ -34,7 +34,8 @@ public fun CameraPanel(
     pipSupported: Boolean = false,
     pipEnabled: Boolean = false,
     onPipEnabled: (Boolean) -> Unit = {},
-    onPipSwap: () -> Unit = {},
+    // в PiP основная камера — фронтальная (вторая уходит во врезку)
+    pipMainIsFront: Boolean = false,
     stabilizationSupported: Boolean = false,
     stabilizationEnabled: Boolean = false,
     stabilizationActive: Boolean = false,
@@ -82,15 +83,7 @@ public fun CameraPanel(
                 StreetChip(onLabel, pipEnabled, Modifier.weight(1f)) { onPipEnabled(true) }
                 StreetChip(offLabel, !pipEnabled, Modifier.weight(1f)) { onPipEnabled(false) }
             }
-            if (pipEnabled) {
-                StreetChip(
-                    stringResource(R.string.camera_panel_pip_swap_button),
-                    false,
-                    Modifier.fillMaxWidth(),
-                    onClick = onPipSwap,
-                )
-                PanelHint(stringResource(R.string.camera_panel_pip_hint))
-            }
+            if (pipEnabled) PanelHint(stringResource(R.string.camera_panel_pip_hint))
         }
 
         if (cameraControlsAvailable && stabilizationSupported) {
