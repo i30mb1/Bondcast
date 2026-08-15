@@ -24,8 +24,17 @@ import androidx.camera.video.VideoOutput
  */
 internal class EncoderVideoOutput(private val surface: Surface) : VideoOutput {
 
-    // VideoCapture.createPipeline делает requireNonNull(getMediaSpec()), а дефолт интерфейса — null
-    private val mediaSpec: MediaSpec = MediaSpec.builder().build()
+    // VideoCapture.createPipeline делает requireNonNull(getMediaSpec()), а дефолт интерфейса — null.
+    //
+    // OUTPUT_FORMAT_WEBM, а не дефолтный MP4, и это не про контейнер (мы вообще не пишем файл, а
+    // отдаём сырую Surface в MPEG-TS). Дело в повороте:
+    //   isBufferRotationRequired = rotationDegrees != 0 && !canWriteOrientationMetadata(outputFormat)
+    // Для MP4 canWriteOrientationMetadata = true, поэтому VideoCapture НЕ доворачивает пиксели —
+    // он рассчитывает записать угол тегом в контейнер. У нас тега нет, и кадр уезжает на -90°.
+    // Для WEBM тег недоступен → CameraX доворачивает сам буфер, как это всегда делал Preview.
+    private val mediaSpec: MediaSpec = MediaSpec.builder()
+        .setOutputFormat(MediaSpec.OUTPUT_FORMAT_WEBM)
+        .build()
 
     override fun onSurfaceRequested(request: SurfaceRequest) {
         Log.i(TAG, "surfaceRequest ${request.resolution}")

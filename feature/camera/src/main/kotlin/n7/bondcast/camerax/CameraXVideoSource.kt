@@ -162,10 +162,16 @@ internal class CameraXVideoSource(
                 val encoderUseCase: UseCase = if (pip) {
                     VideoCapture.Builder(EncoderVideoOutput(encoder))
                         .setResolutionSelector(resolutionSelector)
+                        // фиксируем ROTATION_0: поворот считается относительно targetRotation, и без
+                        // фиксации он менялся бы вместе с ориентацией устройства. Эфир всегда
+                        // landscape (активити залочена sensorLandscape), поворот кадра «на лету» —
+                        // это как раз то, из-за чего картинка на сервере скачет
+                        .setTargetRotation(Surface.ROTATION_0)
                         .build()
                 } else {
                     Preview.Builder()
                         .setResolutionSelector(resolutionSelector)
+                        .setTargetRotation(Surface.ROTATION_0)
                         .build()
                         .apply {
                             setSurfaceProvider(mainExecutor) { request ->
