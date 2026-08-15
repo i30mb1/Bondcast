@@ -55,6 +55,19 @@
   .page-preview video {
     flex: 1; width: 100%; min-height: 320px; border-radius: 10px; background: #000; display: block;
   }
+  /* Свои кнопки вместо родных controls у <video>: родные всегда рисуют полосу
+     перемотки, а перематывать живой стрим бессмысленно — уехав назад, плеер
+     остаётся в прошлом навсегда (догонять живой край его никто не заставит).
+     Здесь только звук и полный экран, промотки нет в принципе. */
+  .page-preview-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .page-preview-bar button { padding: 6px 12px; }
+  .live-chip {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-muted);
+  }
+  .live-chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #555; }
+  .live-chip.is-live { color: #ff4d4d; }
+  .live-chip.is-live::before { background: #ff4d4d; }
   @media (max-width: 1180px) { .page.has-preview { max-width: 1280px; } .page-preview { flex-basis: 100%; } }
 
   /* --- Шапка --- */

@@ -411,6 +411,7 @@ const pageEl = document.querySelector('.page');
 const previewPanelEl = document.getElementById('previewPanel');
 let activePreviewPlayer = null;
 let currentPreviewName = null;
+let previewLiveTimer = null;
 
 function formatKbps(kbps) {
   if (kbps == null) return '—';
@@ -445,13 +446,22 @@ async function openPreview(name) {
     activePreviewPlayer.destroy();
     activePreviewPlayer = null;
   }
+  if (previewLiveTimer) {
+    clearInterval(previewLiveTimer); // старый тикер смотрел бы на уже удалённый <video>
+    previewLiveTimer = null;
+  }
   currentPreviewName = name;
   previewPanelEl.innerHTML = `
     <div class="page-preview-head">
       <b>Предпросмотр: ${escapeHtml(name)}</b>
       <button type="button" class="page-preview-close">✕</button>
     </div>
-    <video id="previewVideo" width="100%" autoplay muted controls playsinline></video>
+    <video id="previewVideo" width="100%" autoplay muted playsinline></video>
+    <div class="page-preview-bar">
+      <button type="button" id="previewMute">🔇 Включить звук</button>
+      <button type="button" id="previewFull">⛶ Во весь экран</button>
+      <span class="live-chip" id="previewLive">В ЭФИРЕ</span>
+    </div>
     <div class="row-meta" id="previewStatus" style="margin-top:8px">Подключаюсь…</div>
     <div class="row-meta" id="previewStats" style="margin-top:8px"></div>`;
   previewPanelEl.querySelector('.page-preview-close').onclick = closePreview;
@@ -461,7 +471,40 @@ async function openPreview(name) {
 
   const statusEl = document.getElementById('previewStatus');
   const video = document.getElementById('previewVideo');
+  const liveChip = document.getElementById('previewLive');
   video.addEventListener('playing', () => { statusEl.hidden = true; }, { once: true });
+
+  const muteBtn = document.getElementById('previewMute');
+  muteBtn.onclick = () => {
+    video.muted = !video.muted;
+    muteBtn.textContent = video.muted ? '🔇 Включить звук' : '🔊 Выключить звук';
+  };
+  document.getElementById('previewFull').onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else video.requestFullscreen?.();
+  };
+
+  // Держим воспроизведение на живом крае. Само по себе оно там не держится: любая
+  // микрозадержка (сеть, декодер, свёрнутая вкладка) оставляет плеер позади, и
+  // дальше он так и играет прошлое, накапливая отставание — а в предпросмотре
+  // нужны именно последние кадры. Раз в секунду смотрим, насколько currentTime
+  // отстал от конца буфера, и при отставании больше LIVE_MAX_LAG прыгаем к концу.
+  // Порог не нулевой: у HEVC с сервера метки времени идут неровно, и погоня за
+  // самым-самым краем превратилась бы в непрерывные рывки.
+  const LIVE_MAX_LAG = 1.5;   // с — при каком отставании догоняем
+  const LIVE_KEEP = 0.4;      // с — сколько буфера оставляем себе после прыжка
+  const jumpToLive = () => {
+    const b = video.buffered;
+    if (!b.length || video.readyState < 2) return;
+    const edge = b.end(b.length - 1);
+    const lag = edge - video.currentTime;
+    if (lag > LIVE_MAX_LAG) video.currentTime = Math.max(edge - LIVE_KEEP, b.start(b.length - 1));
+    if (liveChip) liveChip.classList.toggle('is-live', lag <= LIVE_MAX_LAG);
+  };
+  previewLiveTimer = setInterval(jumpToLive, 1000);
+  // Отдельно — на 'waiting': буфер опустел, ждать его заполнения нет смысла,
+  // прыгаем сразу, как только появятся новые данные.
+  video.addEventListener('waiting', () => setTimeout(jumpToLive, 200));
 
   try {
     const mpegts = await loadMpegts();
@@ -472,7 +515,19 @@ async function openPreview(name) {
     }
     activePreviewPlayer = mpegts.createPlayer({
       type: 'flv', url: directFlvUrl(name),
-      isLive: true, enableStashBuffer: false, liveSync: true,
+      isLive: true,
+      enableStashBuffer: false,
+      // Штатная догонялка mpegts.js. Раньше здесь стояло liveSync: true — такой
+      // опции в mpegts.js 1.7.3 нет вообще (её ключи начинаются на
+      // liveBufferLatency*), поэтому строка ничего не делала и задержка росла
+      // молча. Порог держим одинаковым с jumpToLive() выше, чтобы две догонялки
+      // не дёргали друг друга.
+      liveBufferLatencyChasing: true,
+      liveBufferLatencyMaxLatency: LIVE_MAX_LAG,
+      liveBufferLatencyMinRemain: LIVE_KEEP,
+      // Предпросмотр держат открытым часами — без чистки SourceBuffer растёт до
+      // упора, и Chrome начинает вычищать его сам, рывками.
+      autoCleanupSourceBuffer: true,
     });
     activePreviewPlayer.on(mpegts.Events.ERROR, (type, detail) => {
       statusEl.hidden = false;
@@ -491,6 +546,10 @@ function closePreview() {
   if (activePreviewPlayer) {
     activePreviewPlayer.destroy();
     activePreviewPlayer = null;
+  }
+  if (previewLiveTimer) {
+    clearInterval(previewLiveTimer);
+    previewLiveTimer = null;
   }
   currentPreviewName = null;
   previewPanelEl.hidden = true;
