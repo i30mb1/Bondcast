@@ -33,6 +33,7 @@ import androidx.lifecycle.LifecycleRegistry
 import io.github.thibaultbee.streampack.core.elements.processing.video.source.ISourceInfoProvider
 import io.github.thibaultbee.streampack.core.elements.sources.video.ISurfaceSourceInternal
 import io.github.thibaultbee.streampack.core.elements.sources.video.IVideoSourceInternal
+import io.github.thibaultbee.streampack.core.elements.utils.extensions.isNaturalToPortrait
 import io.github.thibaultbee.streampack.core.elements.sources.video.VideoSourceConfig
 import io.github.thibaultbee.streampack.core.elements.utils.time.Timebase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -159,19 +160,22 @@ internal class CameraXVideoSource(
                 // В PiP кадр энкодера забирает VideoCapture, а не Preview: composition-режим CameraX
                 // включает только для пары Preview + VideoCapture (см. EncoderVideoOutput). В обычном
                 // режиме остаётся Preview — он дешевле и не тянет MediaSpec/QualitySelector.
+                // Поворот фиксируем, чтобы кадр не крутился вслед за устройством, но фиксируем
+                // именно в landscape, а не в ROTATION_0: у телефона натуральная ориентация
+                // портретная, поэтому ROTATION_0 — это ПОРТРЕТ, и энкодерный кадр уезжал на 90°
+                // относительно эфира. Видно было по превью на экране: оно targetRotation не задаёт,
+                // берёт текущий поворот дисплея (ROTATION_90) и рисует правильно, а энкодер с
+                // ROTATION_0 — повёрнуто.
+                val landscapeRotation = landscapeRotation()
                 val encoderUseCase: UseCase = if (pip) {
                     VideoCapture.Builder(EncoderVideoOutput(encoder))
                         .setResolutionSelector(resolutionSelector)
-                        // фиксируем ROTATION_0: поворот считается относительно targetRotation, и без
-                        // фиксации он менялся бы вместе с ориентацией устройства. Эфир всегда
-                        // landscape (активити залочена sensorLandscape), поворот кадра «на лету» —
-                        // это как раз то, из-за чего картинка на сервере скачет
-                        .setTargetRotation(Surface.ROTATION_0)
+                        .setTargetRotation(landscapeRotation)
                         .build()
                 } else {
                     Preview.Builder()
                         .setResolutionSelector(resolutionSelector)
-                        .setTargetRotation(Surface.ROTATION_0)
+                        .setTargetRotation(landscapeRotation)
                         .build()
                         .apply {
                             setSurfaceProvider(mainExecutor) { request ->
@@ -192,7 +196,14 @@ internal class CameraXVideoSource(
 
                 val frameRateRange = fps?.let { cameraInfo?.pickFrameRateRange(it) }
                 val useCases = listOfNotNull(encoderUseCase, displayPreview)
-                val effects = if (compositor.hasOverlays()) listOf(overlayEffect()) else emptyList()
+                // Эффект ставим ВСЕГДА, даже когда рисовать нечего (а сейчас нечего: StreamOverlay
+                // никто не регистрирует, hasOverlays() всегда false). Дело не в оверлеях: его
+                // GL-проход — единственное место, где поворот из targetRotation реально применяется
+                // к пикселям. `Preview` пишет в нашу Surface сырой буфер сенсора и сообщает поворот
+                // отдельно, через SurfaceRequest.TransformationInfo, а мы в provideSurface() его не
+                // применяем. Проверено на A024 тремя прогонами: эффект без landscape-targetRotation
+                // — кадр на 90°; landscape-targetRotation без эффекта — кадр на 90°; вместе — ровно.
+                val effects = listOf(overlayEffect())
 
                 if (pip) {
                     bindPip(cameraProvider, concurrentCombo!!, useCases, effects, size)
@@ -371,6 +382,10 @@ internal class CameraXVideoSource(
         lifecycleOwner.pause()
         camera = null
     }
+
+    /** Поворот, при котором кадр горизонтальный. У планшетов натуральная ориентация уже landscape. */
+    private fun landscapeRotation(): Int =
+        if (context.isNaturalToPortrait) Surface.ROTATION_90 else Surface.ROTATION_0
 
     private fun overlayEffect(): OverlayEffect {
         overlayEffect?.let { return it }

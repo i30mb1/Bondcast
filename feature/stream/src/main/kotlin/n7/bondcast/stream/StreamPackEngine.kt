@@ -7,12 +7,14 @@ import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.util.Log
 import android.util.Size
+import android.view.Surface
 import io.github.thibaultbee.streampack.core.configuration.mediadescriptor.createDefaultTsServiceInfo
 import io.github.thibaultbee.streampack.core.elements.encoders.AudioCodecConfig
 import io.github.thibaultbee.streampack.core.elements.encoders.VideoCodecConfig
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.CompositeEndpointFactory
 import io.github.thibaultbee.streampack.core.elements.endpoints.composites.muxers.ts.TsMuxer
 import io.github.thibaultbee.streampack.core.elements.sources.video.IVideoSourceInternal
+import io.github.thibaultbee.streampack.core.elements.utils.extensions.isNaturalToPortrait
 import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.cameraSingleStreamer
 import io.github.thibaultbee.streampack.core.streamers.single.setConfig
@@ -71,7 +73,7 @@ internal class StreamPackEngine(
                     requireNotNull(newSink),
                 )
             }
-            cameraSingleStreamer(context, endpointFactory = factory).also {
+            cameraSingleStreamer(context, endpointFactory = factory, defaultRotation = landscapeRotation()).also {
                 streamer = it
                 sink = newSink
                 appliedTarget = settings.twitchDirectEnabled
@@ -197,6 +199,24 @@ internal class StreamPackEngine(
     } else {
         CameraXVideoSourceFactory(cameraId, overlayCompositor)
     }
+
+    /**
+     * Поворот, при котором StreamPack оставляет кадр горизонтальным.
+     *
+     * Библиотека не отдаёт в энкодер то разрешение, что мы задали: перед configure она гоняет его
+     * через [rotateFromNaturalOrientation] и, если targetRotation считается портретным, делает
+     * portraitize — наши 1920x1080 превращаются в 1080x1920, и в эфир уходит вертикальный кадр с
+     * другим соотношением сторон. По умолчанию targetRotation = displayRotation, то есть зависит от
+     * того, как физически лежал телефон в момент создания стримера (активити залочена в landscape,
+     * но displayRotation читает поворот дисплея, а не активити). Отсюда и «иногда горизонтально,
+     * иногда повёрнуто на 90».
+     *
+     * Фиксируем landscape навсегда. Не константой ROTATION_90: она горизонтальна только у устройств
+     * с портретной натуральной ориентацией (телефоны), а у планшетов натуральная — landscape, и там
+     * ROTATION_90 дал бы ровно обратный эффект.
+     */
+    private fun landscapeRotation(): Int =
+        if (context.isNaturalToPortrait) Surface.ROTATION_90 else Surface.ROTATION_0
 
     private fun cameraManager(): CameraManager? = context.getSystemService(CameraManager::class.java)
 
