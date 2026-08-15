@@ -15,10 +15,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,8 +31,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,20 +47,25 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Observer
 import n7.bondcast.DiscordColors
 import n7.bondcast.camerax.CameraControlBus
 import n7.bondcast.camerax.CameraXPreviewBus
+import n7.bondcast.camerax.PipLayout
 import n7.bondcast.camerax.setAeAwbLock
 import n7.bondcast.camerax.setLowLightBoost
 import n7.bondcast.chat.impl.ChatController
@@ -132,6 +142,9 @@ public fun StreamScreen(
 
     // управление CameraX (стабилизация/AE-AWB/LLB/зум) — недоступно для USB-камеры
     val camera by CameraControlBus.camera.collectAsState()
+    val pipSupported by CameraControlBus.pipSupported.collectAsState()
+    val pipWanted by CameraControlBus.pipWanted.collectAsState()
+    val pipLayout by CameraControlBus.pipLayout.collectAsState()
     val stabilizationWanted by CameraControlBus.stabilizationWanted.collectAsState()
     val stabilizationActive by CameraControlBus.stabilizationActive.collectAsState()
     val stabilizationSupported by CameraControlBus.stabilizationSupported.collectAsState()
@@ -283,14 +296,28 @@ public fun StreamScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CameraXViewfinder(
-                        surfaceRequest = request,
-                        modifier = Modifier.aspectRatio(streamAspect),
-                        // встроенные жесты вьюфайндера (camera-compose 1.7) — учитывают sensor-to-buffer
-                        // трансформ (crop/поворот/зеркало), в отличие от нашей прежней ручной обвязки
-                        isTapToFocusEnabled = true,
-                        isPinchToZoomEnabled = true,
-                    )
+                    Box(modifier = Modifier.aspectRatio(streamAspect)) {
+                        CameraXViewfinder(
+                            surfaceRequest = request,
+                            modifier = Modifier.fillMaxSize(),
+                            // встроенные жесты вьюфайндера (camera-compose 1.7) — учитывают sensor-to-buffer
+                            // трансформ (crop/поворот/зеркало), в отличие от нашей прежней ручной обвязки
+                            // в PiP таскаем врезку, поэтому фокус/зум по тапу отключаем — иначе жест
+                            // перехватывается вьюфайндером и врезка не двигается
+                            isTapToFocusEnabled = !pipWanted,
+                            isPinchToZoomEnabled = !pipWanted,
+                        )
+                        if (pipWanted) {
+                            // Врезка живёт в тех же долях кадра, что и CompositionSettings, а кадр
+                            // превью совпадает с эфирным — поэтому позиция получается 1:1 у стримера
+                            // и у зрителей без пересчёта под размер экрана.
+                            PipDragTarget(
+                                layout = pipLayout,
+                                onLayoutChange = { CameraControlBus.setPipLayout(it) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -447,13 +474,23 @@ public fun StreamScreen(
             CameraPanel(
                 cameras = cameras,
                 current = currentCamera,
-                onSelect = {
-                    controller.selectCamera(it)
+                onSelect = { cam ->
+                    // в PiP обе камеры уже открыты: выбор — это какая из них основная, а не смена
+                    // источника (пересоздавать его тут нельзя, USB в PiP не участвует)
+                    if (pipWanted && cam.id != USB_CAMERA_ID) {
+                        CameraControlBus.setPipMainIsBack(!cam.isFront)
+                    } else {
+                        controller.selectCamera(cam)
+                    }
                 },
+                pipMainIsFront = !pipLayout.mainIsBack,
                 previewEnabled = previewEnabled,
                 onPreviewEnabled = { mitigations.setPreviewEnabled(it) },
                 onClose = { panels.close(PANEL_CAMERAS) },
                 cameraControlsAvailable = cameraControlsAvailable,
+                pipSupported = pipSupported,
+                pipEnabled = pipWanted,
+                onPipEnabled = { CameraControlBus.setPipWanted(it) },
                 stabilizationSupported = stabilizationSupported,
                 stabilizationEnabled = stabilizationWanted,
                 stabilizationActive = stabilizationActive,
@@ -533,6 +570,60 @@ private fun glyphColor(active: Boolean): Color = if (active) DiscordColors.onAcc
 
 /** Соотношение кадра эфира, пока настройки не загрузились. */
 private const val DEFAULT_STREAM_ASPECT = 16f / 9f
+
+/**
+ * Прозрачная область поверх превью: ловит перетаскивание врезки второй камеры.
+ *
+ * Саму картинку врезки рисует CameraX (композиция двух камер идёт в один поток), поэтому здесь
+ * только рамка-хват и жест. Координаты — доли кадра: превью вписано в соотношение эфира, так что
+ * доля на экране равна доле в эфире, и врезка встаёт у зрителей ровно туда же.
+ */
+@Composable
+private fun PipDragTarget(
+    layout: PipLayout,
+    onLayoutChange: (PipLayout) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val frameWidth = constraints.maxWidth.toFloat()
+        val frameHeight = constraints.maxHeight.toFloat()
+        if (frameWidth <= 0f || frameHeight <= 0f) return@BoxWithConstraints
+
+        val density = LocalDensity.current
+        val current by rememberUpdatedState(layout)
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (layout.offsetX * frameWidth).roundToInt(),
+                        (layout.offsetY * frameHeight).roundToInt(),
+                    )
+                }
+                .size(
+                    width = with(density) { (layout.scale * frameWidth).toDp() },
+                    height = with(density) { (layout.scale * frameHeight).toDp() },
+                )
+                .pointerInput(frameWidth, frameHeight) {
+                    // current, а не layout: pointerInput перезапускается только по своим ключам, и
+                    // захваченный layout остался бы позицией на момент начала жеста — врезка
+                    // дёргалась бы обратно на каждом событии вместо накопления сдвига
+                    detectDragGestures { change, drag ->
+                        change.consume()
+                        val now = current
+                        onLayoutChange(
+                            now.copy(
+                                offsetX = now.offsetX + drag.x / frameWidth,
+                                offsetY = now.offsetY + drag.y / frameHeight,
+                            ).coerced(),
+                        )
+                    }
+                },
+            // без .border: обводку врезки рисует сам CameraX (setBorderWidthRatio/setBorderColor
+            // в CompositionSettings), поэтому её видят и зрители. Свою рамку рисовать нельзя —
+            // она была бы только на экране стримера и разъезжалась бы с эфиром.
+        )
+    }
+}
 
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"

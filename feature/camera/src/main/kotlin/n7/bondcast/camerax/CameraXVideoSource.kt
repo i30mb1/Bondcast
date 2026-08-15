@@ -9,21 +9,23 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import android.util.Range
+import android.util.Size
 import android.view.Surface
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CompositionSettings
+import androidx.camera.core.ConcurrentCamera
 import androidx.camera.core.Preview
 import androidx.camera.core.SessionConfig
 import androidx.camera.core.UseCase
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.featuregroup.GroupableFeature
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.effects.OverlayEffect
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.VideoCapture
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -58,6 +60,9 @@ internal class CameraXVideoSource(
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
 
+    // держим только для setCompositionSettings: перетаскивание врезки без ребинда
+    private var concurrentCamera: ConcurrentCamera? = null
+
     // свои use-cases: teardown снимает ТОЛЬКО их, а не unbindAll() — иначе старый источник при
     // switchCamera убивает привязку нового (делят один ProcessCameraProvider), камера гаснет
     private var boundUseCases: List<UseCase> = emptyList()
@@ -81,6 +86,8 @@ internal class CameraXVideoSource(
         CameraControlBus.claim(this)
         CameraControlBus.onStabilizationChanged = { mainHandler.post { bind() } }
         CameraControlBus.onNoiseReductionChanged = { mainHandler.post { bind() } }
+        // вкл/выкл PiP и смена местами меняют набор камер — нужен полный ребинд
+        CameraControlBus.onPipChanged = { mainHandler.post { bind() } }
         bind()
     }
 
@@ -144,12 +151,28 @@ internal class CameraXVideoSource(
                     CaptureRequest.NOISE_REDUCTION_MODE_OFF
                 }
 
-                val encoderPreview = Preview.Builder()
-                    .setResolutionSelector(resolutionSelector)
-                    .build()
-                encoderPreview.setSurfaceProvider(mainExecutor) { request ->
-                    Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
-                    request.provideSurface(encoder, mainExecutor) { }
+                // умеет ли устройство две камеры разом — до бинда, чтобы UI знал, показывать ли тумблер
+                val concurrentCombo = cameraProvider.pipCombo()
+                CameraControlBus.publishPipSupported(this, concurrentCombo != null)
+                val pip = concurrentCombo != null && CameraControlBus.pipWanted.value
+
+                // В PiP кадр энкодера забирает VideoCapture, а не Preview: composition-режим CameraX
+                // включает только для пары Preview + VideoCapture (см. EncoderVideoOutput). В обычном
+                // режиме остаётся Preview — он дешевле и не тянет MediaSpec/QualitySelector.
+                val encoderUseCase: UseCase = if (pip) {
+                    VideoCapture.Builder(EncoderVideoOutput(encoder))
+                        .setResolutionSelector(resolutionSelector)
+                        .build()
+                } else {
+                    Preview.Builder()
+                        .setResolutionSelector(resolutionSelector)
+                        .build()
+                        .apply {
+                            setSurfaceProvider(mainExecutor) { request ->
+                                Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
+                                request.provideSurface(encoder, mainExecutor) { }
+                            }
+                        }
                 }
 
                 val displayPreview = if (CameraXPreviewBus.wantPreview) {
@@ -162,8 +185,13 @@ internal class CameraXVideoSource(
                 }
 
                 val frameRateRange = fps?.let { cameraInfo?.pickFrameRateRange(it) }
-                val useCases = listOfNotNull(encoderPreview, displayPreview)
+                val useCases = listOfNotNull(encoderUseCase, displayPreview)
                 val effects = if (compositor.hasOverlays()) listOf(overlayEffect()) else emptyList()
+
+                if (pip) {
+                    bindPip(cameraProvider, concurrentCombo!!, useCases, effects, size)
+                    return@addListener
+                }
 
                 // умеет ли камера в принципе (напр. фронталка часто не умеет) — до бинда, чтобы UI мог скрыть тумблер
                 val stabilizationSupported = cameraInfo?.let { info ->
@@ -201,12 +229,117 @@ internal class CameraXVideoSource(
                     lifecycleOwner.resume()
                     val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, sessionConfig)
                     this.camera = camera
+                    // вышли из PiP — дальше unbind() снова работает точечно
+                    concurrentCamera = null
+                    CameraControlBus.onPipLayoutChanged = null
                     boundUseCases = useCases
                     CameraControlBus.publishCamera(this, camera)
                     Log.i(TAG, "bound cameraId=$cameraId size=$size preview=${displayPreview != null} fps=$frameRateRange")
                 }.onFailure { Log.w(TAG, "bind failed: $it") }
             }, mainExecutor)
         }
+    }
+
+    /**
+     * Комбинация «тыл + фронт», если устройство её разрешает. Берём ту, где есть обе линзы: на A024
+     * доступна ровно одна такая комбинация.
+     */
+    private fun ProcessCameraProvider.pipCombo(): List<CameraInfo>? = runCatching { availableConcurrentCameraInfos }.getOrNull()
+        ?.firstOrNull { combo ->
+            combo.size == 2 && combo.map { it.lensFacing }.toSet() ==
+                setOf(CameraSelector.LENS_FACING_BACK, CameraSelector.LENS_FACING_FRONT)
+        }
+
+    /**
+     * Бинд двух камер разом: CameraX сам сшивает их по [CompositionSettings].
+     *
+     * Ограничения concurrent-режима, проверенные на A024 и на минимальном стенде:
+     * - в группе должно быть РОВНО два use-case'а: Preview + VideoCapture. Иначе CameraX молча (без
+     *   единой строчки в лог) уходит в non-composition ветку: обе камеры биндятся независимо,
+     *   CompositionSettings игнорируются, врезки нет. Именно поэтому кадр энкодера здесь отдаёт
+     *   VideoCapture, а не второй Preview — см. [EncoderVideoOutput];
+     * - конфиги обязаны иметь одинаковые lifecycleOwner, viewPort и effects, иначе
+     *   IllegalArgumentException («Two camera configs need to have the same...»);
+     * - селекторы только через requireLensFacing: bindToLifecycle сравнивает getLensFacing(), и при
+     *   null считает камеры одной («dual selfie») → «Camera is already running»;
+     * - use-case'ы обеих групп объединяются в один LegacySessionConfig, поэтому fps, стабилизация и
+     *   шумодав (они живут в SessionConfig) в этом режиме недоступны — их отдаёт только одиночный бинд.
+     */
+    private fun bindPip(
+        provider: ProcessCameraProvider,
+        combo: List<CameraInfo>,
+        useCases: List<UseCase>,
+        effects: List<CameraEffect>,
+        size: Size,
+    ) {
+        val layout = CameraControlBus.pipLayout.value.coerced()
+        val mainLens = if (layout.mainIsBack) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
+
+        // ОДИН UseCaseGroup на обе камеры: CameraX сшивает их потоки в его выход через StreamSharing,
+        // и composition-режим включается только когда есть и вторая камера, и шаринг (проверка
+        // mSecondaryCameraInternal != null && mStreamSharing != null в CameraUseCaseAdapter). Если
+        // дать врезке отдельный Preview, композиции не будет: бинд пройдёт, но setCompositionSettings
+        // упадёт с «The camera is not in concurrent camera composition mode», а врезка не появится.
+        val group = UseCaseGroup.Builder()
+            .apply {
+                useCases.forEach { addUseCase(it) }
+                effects.forEach { addEffect(it) }
+            }
+            .build()
+
+        val configs = combo
+            .sortedByDescending { it.lensFacing == mainLens }
+            .mapIndexed { index, info ->
+                val isMain = index == 0
+                val composition = if (isMain) CompositionSettings.DEFAULT else layout.insetComposition()
+                ConcurrentCamera.SingleCameraConfig(
+                    CameraSelector.Builder().requireLensFacing(info.lensFacing).build(),
+                    group,
+                    composition,
+                    lifecycleOwner,
+                )
+            }
+
+        runCatching {
+            provider.unbindAll()
+            lifecycleOwner.resume()
+            val concurrent = provider.bindToLifecycle(configs)
+            concurrentCamera = concurrent
+            camera = concurrent.cameras.firstOrNull()
+            boundUseCases = useCases
+            CameraControlBus.publishCamera(this, camera)
+            // перетаскивание меняет только композицию — без ребинда, иначе камера мигала бы на жесте
+            CameraControlBus.onPipLayoutChanged = { updated -> applyPipComposition(updated) }
+            Log.i(TAG, "bound PiP main=$mainLens size=$size layout=$layout")
+        }.onFailure {
+            Log.w(TAG, "PiP bind failed, откат на одиночную камеру", it)
+            concurrentCamera = null
+            CameraControlBus.setPipWanted(false)
+        }
+    }
+
+    /**
+     * Врезка в терминах CameraX. Единственное место перевода наших долей кадра в NDC —
+     * [CompositionSettings] считает от центра кадра (-1..1, Y вверх), а [PipLayout] от левого
+     * верхнего угла (0..1, Y вниз); без пересчёта врезка уезжает мимо рамки-хвата в превью.
+     */
+    private fun PipLayout.insetComposition(): CompositionSettings = CompositionSettings.Builder()
+        .setOffset(ndcCenterX(), ndcCenterY())
+        .setScale(scale, scale)
+        .setZOrder(1)
+        // скругление и рамку рисует сам CameraX — они попадают в эфир, а не только на экран
+        .setRoundedCornerRatio(INSET_CORNER_RATIO)
+        .setBorderWidthRatio(INSET_BORDER_RATIO)
+        .setBorderColor(INSET_BORDER_COLOR)
+        .build()
+
+    /** Применяет раскладку к живой сессии — без ребинда камеры. */
+    private fun applyPipComposition(layout: PipLayout) {
+        val concurrent = concurrentCamera ?: return
+        val safe = layout.coerced()
+        runCatching {
+            concurrent.setCompositionSettings(listOf(CompositionSettings.DEFAULT, safe.insetComposition()))
+        }.onFailure { Log.w(TAG, "setCompositionSettings failed: $it") }
     }
 
     /** Подбирает диапазон, реально поддерживаемый камерой, под целевой fps энкодера. */
@@ -217,10 +350,17 @@ internal class CameraXVideoSource(
     }
 
     private fun unbind() {
-        // хирургически: снимаем только свои use-cases. unbindAll() убил бы привязку нового источника
-        // при switchCamera (StreamPack биндит новый ДО release() старого — см. CameraControlBus)
         val toUnbind = boundUseCases
-        if (toUnbind.isNotEmpty()) runCatching { cameraProvider?.unbind(*toUnbind.toTypedArray()) }
+        if (concurrentCamera != null) {
+            // в concurrent-режиме точечный unbind запрещён («Unbind UseCase is not supported in
+            // concurrent camera mode, call unbindAll() first») — только целиком
+            runCatching { cameraProvider?.unbindAll() }
+            concurrentCamera = null
+        } else if (toUnbind.isNotEmpty()) {
+            // хирургически: снимаем только свои use-cases. unbindAll() убил бы привязку нового источника
+            // при switchCamera (StreamPack биндит новый ДО release() старого — см. CameraControlBus)
+            runCatching { cameraProvider?.unbind(*toUnbind.toTypedArray()) }
+        }
         boundUseCases = emptyList()
         lifecycleOwner.pause()
         camera = null
@@ -229,8 +369,11 @@ internal class CameraXVideoSource(
     private fun overlayEffect(): OverlayEffect {
         overlayEffect?.let { return it }
         val thread = HandlerThread("camerax-overlay").apply { start() }
+        // PREVIEW|VIDEO_CAPTURE, а не только PREVIEW: CameraX включает StreamSharing (а с ним и
+        // composition-режим двух камер) лишь когда у эффекта больше одного таргета — см.
+        // CameraUseCaseAdapter.isSharingEffect → TargetUtils.getNumberOfTargets > 1
         val effect = OverlayEffect(
-            CameraEffect.PREVIEW,
+            CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE,
             4,
             Handler(thread.looper),
             { Log.w(TAG, "overlay error: $it") },
@@ -252,6 +395,11 @@ internal class CameraXVideoSource(
 
     private companion object {
         const val TAG = "CameraXSource"
+
+        // доли от половины меньшей стороны врезки, а не пиксели — врезка масштабируется вместе с рамкой
+        const val INSET_CORNER_RATIO = 0.08f
+        const val INSET_BORDER_RATIO = 0.012f
+        const val INSET_BORDER_COLOR = Color.WHITE
     }
 }
 

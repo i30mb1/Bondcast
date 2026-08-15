@@ -31,6 +31,10 @@ public fun CameraPanel(
     modifier: Modifier = Modifier,
     // управление камерой (стаб/AE-AWB/LLB) доступно только для CameraX-источника, не для USB
     cameraControlsAvailable: Boolean = false,
+    pipSupported: Boolean = false,
+    pipEnabled: Boolean = false,
+    onPipEnabled: (Boolean) -> Unit = {},
+    onPipSwap: () -> Unit = {},
     stabilizationSupported: Boolean = false,
     stabilizationEnabled: Boolean = false,
     stabilizationActive: Boolean = false,
@@ -56,7 +60,10 @@ public fun CameraPanel(
     StreetPanelScaffold(title = stringResource(R.string.camera_panel_title), onClose = onClose, modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             cameras.forEach { cam ->
-                StreetChip(cam.label, cam == current, Modifier.fillMaxWidth()) { onSelect(cam) }
+                // в PiP открыты обе камеры, поэтому подсвечена не «выбранная», а основная —
+                // та, что на весь кадр; вторая в это время во врезке
+                val selected = if (pipEnabled) cam.isFront == pipMainIsFront else cam == current
+                StreetChip(cam.label, selected, Modifier.fillMaxWidth()) { onSelect(cam) }
             }
         }
 
@@ -64,6 +71,26 @@ public fun CameraPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StreetChip(onLabel, previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(true) }
             StreetChip(offLabel, !previewEnabled, Modifier.weight(1f)) { onPreviewEnabled(false) }
+        }
+
+        if (cameraControlsAvailable && pipSupported) {
+            PanelLabel(
+                stringResource(R.string.camera_panel_pip_label),
+                info = stringResource(R.string.camera_panel_pip_info),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StreetChip(onLabel, pipEnabled, Modifier.weight(1f)) { onPipEnabled(true) }
+                StreetChip(offLabel, !pipEnabled, Modifier.weight(1f)) { onPipEnabled(false) }
+            }
+            if (pipEnabled) {
+                StreetChip(
+                    stringResource(R.string.camera_panel_pip_swap_button),
+                    false,
+                    Modifier.fillMaxWidth(),
+                    onClick = onPipSwap,
+                )
+                PanelHint(stringResource(R.string.camera_panel_pip_hint))
+            }
         }
 
         if (cameraControlsAvailable && stabilizationSupported) {

@@ -16,4 +16,6 @@ dependencies {
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.effects)
+    // нужен только ради PiP: composition-режим двух камер CameraX включает лишь для Preview + VideoCapture
+    implementation(libs.camera.video)
 }

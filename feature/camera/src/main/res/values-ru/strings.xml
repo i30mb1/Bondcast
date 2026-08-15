@@ -9,6 +9,11 @@
     <string name="camera_panel_preview_label">"Превью на экране"</string>
     <string name="camera_panel_preview_info">"Картинка с камеры прямо на экране телефона. Зрителю всё равно — эфир идёт и без неё.\n\nКогда выключать:\n• телефон греется (экран жарит не хуже энкодера)\n• бережёшь батарею в долгом стриме"</string>
 
+    <string name="camera_panel_pip_label">"Вторая камера"</string>
+    <string name="camera_panel_pip_info">"Две камеры разом: одна на весь кадр, вторая — врезкой. Таскай врезку по превью — у зрителей она встанет ровно туда же.\n\nО чём помнить:\n• стабилизация, fps и шумодав в этом режиме недоступны\n• две камеры греют телефон заметно быстрее\n• только встроенные камеры, USB не участвует"</string>
+    <string name="camera_panel_pip_swap_button">"Поменять местами"</string>
+    <string name="camera_panel_pip_hint">"Врезку можно перетащить пальцем по превью."</string>
+
     <string name="camera_panel_stabilization_label">"Стабилизация"</string>
     <string name="camera_panel_stabilization_info">"Программно гасит тряску и дрожь рук — картинка плавнее на ходу.\n\nО чём помнить:\n• чуть подрезает края кадра\n• влезает не в любой режим (разрешение/fps)\n• на статичном штативе не нужна"</string>
     <string name="camera_panel_stabilization_unsupported_hint">"Не влезла в текущий режим съёмки (разрешение/fps)."</string>

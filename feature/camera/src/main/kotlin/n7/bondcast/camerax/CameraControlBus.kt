@@ -30,11 +30,53 @@ public object CameraControlBus {
     private val _noiseReductionWanted = MutableStateFlow(true)
     public val noiseReductionWanted: StateFlow<Boolean> = _noiseReductionWanted.asStateFlow()
 
+    // умеет ли устройство две камеры одновременно (одна разрешённая комбинация тыл+фронт на A024)
+    private val _pipSupported = MutableStateFlow(false)
+    public val pipSupported: StateFlow<Boolean> = _pipSupported.asStateFlow()
+
+    private val _pipWanted = MutableStateFlow(false)
+    public val pipWanted: StateFlow<Boolean> = _pipWanted.asStateFlow()
+
+    /** Позиция и размер врезки в долях кадра — общая для превью и эфира. */
+    private val _pipLayout = MutableStateFlow(PipLayout())
+    public val pipLayout: StateFlow<PipLayout> = _pipLayout.asStateFlow()
+
     @Volatile
     public var onStabilizationChanged: (() -> Unit)? = null
 
     @Volatile
     public var onNoiseReductionChanged: (() -> Unit)? = null
+
+    @Volatile
+    public var onPipChanged: (() -> Unit)? = null
+
+    /** Меняет только композицию — применяется без ребинда камеры (setCompositionSettings). */
+    @Volatile
+    public var onPipLayoutChanged: ((PipLayout) -> Unit)? = null
+
+    public fun setPipWanted(value: Boolean) {
+        if (_pipWanted.value == value) return
+        _pipWanted.value = value
+        onPipChanged?.invoke()
+    }
+
+    /** Перетаскивание/масштаб врезки: без ребинда, иначе камера мигала бы на каждый кадр жеста. */
+    public fun setPipLayout(layout: PipLayout) {
+        if (_pipLayout.value == layout) return
+        _pipLayout.value = layout
+        onPipLayoutChanged?.invoke(layout)
+    }
+
+    /**
+     * Какая камера основная (на весь кадр), вторая уходит во врезку. В PiP этим управляют обычные
+     * кнопки «Фронт»/«Осн» — отдельная «поменять местами» не нужна.
+     */
+    public fun setPipMainIsBack(value: Boolean) {
+        if (_pipLayout.value.mainIsBack == value) return
+        _pipLayout.value = _pipLayout.value.copy(mainIsBack = value)
+        // смена основной камеры меняет набор конфигов — нужен полный ребинд, не setCompositionSettings
+        onPipChanged?.invoke()
+    }
 
     // При смене камеры StreamPack создаёт новый CameraXVideoSource и биндит его РАНЬШЕ, чем
     // вызывает resetOutput()/release() у старого — без owner-гварда старый источник затирал
@@ -79,15 +121,25 @@ public object CameraControlBus {
         _noiseReductionSupported.value = supported
     }
 
+    public fun publishPipSupported(owner: Any, supported: Boolean) {
+        if (this.owner !== owner) return
+        _pipSupported.value = supported
+        // устройство не умеет — гасим тумблер, иначе UI обещает несуществующее
+        if (!supported) _pipWanted.value = false
+    }
+
     /** Отдаёт шину, только если её всё ещё держит именно этот источник (иначе — устаревший вызов, игнор). */
     public fun release(owner: Any) {
         if (this.owner !== owner) return
         this.owner = null
         onStabilizationChanged = null
         onNoiseReductionChanged = null
+        onPipChanged = null
+        onPipLayoutChanged = null
         _camera.value = null
         _stabilizationActive.value = false
         _stabilizationSupported.value = false
         _noiseReductionSupported.value = false
+        _pipSupported.value = false
     }
 }
