@@ -32,10 +32,24 @@
 
   /* --- Раскладка страницы: основной столбец + постоянный сайдбар "Стримы на
      сервере" справа (виден на обеих вкладках, не только "Старт и подключение"). --- */
-  .page-row { display: flex; gap: 16px; align-items: flex-start; }
-  .page-main { flex: 1 1 auto; min-width: 0; }
+  .page-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  /* container-type: inline-size — внутренние блоки перестраиваются по ширине САМОЙ
+     колонки, а не окна. Иначе при открытом превью (или узком окне вполовину экрана)
+     колонка ужимается до ~600px, а медиа-запросы по ширине окна ещё молчат — и
+     содержимое едет за края. Все перестроения внутри — через @container main-col.
+     flex-basis 640px — минимум, при котором три карточки «способ стрима» ещё стоят
+     в ряд: как только на всё места не хватает, .page-row (flex-wrap) уносит превью
+     на отдельную строку целиком, а не отжимает основную колонку. */
+  .page-main { flex: 1 1 640px; min-width: 0; container-type: inline-size; container-name: main-col; }
   .page-sidebar { flex: 0 0 260px; width: 260px; }
-  @media (max-width: 860px) { .page-row { flex-direction: column; } .page-sidebar { width: 100%; flex: 1 1 auto; } }
+  /* width: 100% у .page-main обязателен: в колоночном режиме при align-items:flex-start
+     ширину задаёт содержимое, а container-type: inline-size его как раз и отрезает —
+     без явной ширины колонка схлопывается в ноль. */
+  @media (max-width: 860px) {
+    .page-row { flex-direction: column; }
+    .page-main { width: 100%; flex: 1 1 auto; }
+    .page-sidebar { width: 100%; flex: 1 1 auto; }
+  }
 
   /* Предпросмотр стрима — раньше открывался в новой вкладке на весь плеер самого
      SRS (чужая debug-страница разработчика: вкладки SRS/LivePlayer/WHIP/WHEP, поле
@@ -59,16 +73,19 @@
      перемотки, а перематывать живой стрим бессмысленно — уехав назад, плеер
      остаётся в прошлом навсегда (догонять живой край его никто не заставит).
      Здесь только звук и полный экран, промотки нет в принципе. */
-  .page-preview-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .page-preview-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .page-preview-bar button { padding: 6px 12px; }
   .live-chip {
-    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
     font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-muted);
   }
   .live-chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #555; }
   .live-chip.is-live { color: #ff4d4d; }
   .live-chip.is-live::before { background: #ff4d4d; }
-  @media (max-width: 1180px) { .page.has-preview { max-width: 1280px; } .page-preview { flex-basis: 100%; } }
+  /* Превью не жмёт основную колонку: как только на всё три колонки в ряд места
+     не хватает (см. flex-basis у .page-main), .page-row переносит превью на
+     отдельную строку во всю ширину — раньше оно оставалось в ряду и выдавливало
+     содержимое основной колонки за края. */
 
   /* --- Шапка --- */
   .top-bar { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
@@ -133,6 +150,7 @@
   input[type=color]:focus, input[type=range]:focus { outline: none; }
 
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @container main-col (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } }
   /* Раньше голые input[type=color] висели прямо на фоне карточки без объединяющей
      рамки — читались как забытый debug-код, а не осознанный элемент интерфейса.
      Оборачиваем ряд в собственную панель того же языка, что flow-step/code — фон
@@ -195,7 +213,7 @@
   .connected-columns { display: flex; gap: 16px; align-items: flex-start; }
   .connected-columns-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
   .connected-columns-side { flex: 0 0 280px; width: 280px; }
-  @media (max-width: 860px) { .connected-columns { flex-direction: column; } .connected-columns-side { width: 100%; flex: 1 1 auto; } }
+  @container main-col (max-width: 720px) { .connected-columns { flex-direction: column; } .connected-columns-side { width: 100%; flex: 1 1 auto; } }
 
   .section-title { font: 700 11.5px -apple-system, sans-serif; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
 
@@ -210,6 +228,12 @@
     white-space: normal; word-break: break-all; align-self: center;
   }
   .addr-row button { flex-shrink: 0; }
+  /* В узкой колонке подпись (130px) + адрес + кнопка в один ряд не помещаются —
+     ставим подпись отдельной строкой сверху, адресу достаётся вся ширина. */
+  @container main-col (max-width: 480px) {
+    .addr-row { flex-wrap: wrap; }
+    .addr-row span.addr-label { width: 100%; padding-top: 0; }
+  }
 
   .voice-row { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--divider); }
   .voice-row:last-child { border-bottom: none; }
@@ -273,13 +297,18 @@
      только у одной панели снизу, и именно её плавно анимирует animateHeight() в
      app.js — сам переключатель всегда одной и той же высоты. */
   .flow-selector { display: flex; gap: 10px; }
-  @media (max-width: 640px) { .flow-selector { flex-direction: column; } }
+  /* Ширина САМОЙ колонки, а не окна: при открытом превью окно широкое, а колонка
+     узкая — по viewport-медиа три карточки оставались в ряд и текст в них ехал. */
+  @container main-col (max-width: 620px) { .flow-selector { flex-direction: column; } }
   @keyframes ringPulse {
     0%, 100% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-dim), 0 14px 32px -8px rgba(59,130,246,0.5); }
     50% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 7px rgba(59,130,246,0.08), 0 14px 40px -6px rgba(59,130,246,0.65); }
   }
+  /* white-space: normal обязательно — глобальное правило button {} ставит nowrap,
+     из-за него заголовок и подпись карточки не переносились и вылезали за рамку. */
   .flow-pill {
-    flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left;
+    flex: 1 1 0; min-width: 0; white-space: normal;
+    display: flex; align-items: center; gap: 12px; text-align: left;
     border-radius: 13px; padding: 13px; cursor: pointer;
     background: linear-gradient(180deg, #1a1a1a, #161616); border: 1px solid var(--divider);
     transition: border-color .18s ease, background .18s ease;
