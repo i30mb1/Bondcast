@@ -286,8 +286,12 @@ public class StreamController(
             AbrConfig(
                 minKbps = minKbps.coerceAtMost(maxKbps),
                 maxKbps = maxKbps,
-                sndBufHighMs = latencyMs / 2,
-                sndBufLowMs = latencyMs / 5,
+                // Пороги растут от latency, но снизу ограничены: буфер отправки всегда слегка
+                // дышит (джиттер линка, интерливинг муксера), и на коротких порогах ABR ловит это
+                // дыхание как перегрузку — битрейт начинает колбасить на ровном месте. При latency
+                // 1000 ограничитель не срабатывает (500/200), он страхует тех, кто выставил меньше.
+                sndBufHighMs = (latencyMs / 2).coerceAtLeast(300),
+                sndBufLowMs = (latencyMs / 5).coerceAtLeast(150),
                 // шаг подъёма растёт вместе с потолком, иначе от минимума до 20000 ползти минуту+
                 increaseStepKbps = max(500, maxKbps / 25),
             ),

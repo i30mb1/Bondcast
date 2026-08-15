@@ -46,7 +46,7 @@
     <string name="settings_passphrase_info">"The secret knock on the door — AES encryption for SRT.\n\nHow to pick:\n• empty — door wide open, fine for your own private server\n• set — the server needs to know the exact same secret\n\nGet it wrong and the server will act like it\'s never met you in its life."</string>
 
     <string name="settings_latency_label">"Latency, ms"</string>
-    <string name="settings_latency_info">"SRT\'s airbag: how much time a lost packet gets to be resent before we give up on it. More padding means a steadier picture, but your viewer watches further behind real time.\n\nWhat to set:\n• 2000 — the sweet spot, a couple seconds of delay with no glitches\n• higher — for a weak or long-distance network\n• under 500 — for adrenaline junkies only"</string>
+    <string name="settings_latency_info">"SRT\'s airbag: how much time a lost packet gets to be resent before we give up on it. More padding means a steadier picture, but your viewer watches further behind real time.\n\nWhat to set:\n• 1000 — the sweet spot: about a second of delay, still room for two or three resend attempts\n• 2000 and up — for a weak, long-distance or heavily bonded network\n• under 700 — only on one strong link; with bonding, a link switch will show"</string>
 
     <string name="settings_ingest_url_label">"Ingest URL"</string>
     <string name="settings_ingest_url_info">"Usually no need to touch this — live.twitch.tv auto-routes you to the nearest datacenter.\n\nWant a specific regional ingest for lower ping? Grab one from twitch.tv/ingest, format rtmp://&lt;host&gt;/app."</string>
