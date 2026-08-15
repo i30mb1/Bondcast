@@ -412,6 +412,26 @@ const previewPanelEl = document.getElementById('previewPanel');
 let activePreviewPlayer = null;
 let currentPreviewName = null;
 let previewLiveTimer = null;
+let previewRetryTimer = null;
+let previewWatchdogTimer = null;
+
+// Снос всего, что живёт вокруг <video>: сам плеер и три таймера. Вызывается и при
+// закрытии окна, и перед каждым перезапуском — иначе старые тикеры продолжали бы
+// дёргать уже удалённый элемент, а мёртвый плеер держал бы сокет.
+function teardownPreviewPlayer() {
+  if (activePreviewPlayer) {
+    // destroy() у mpegts.js кидается, если плеер уже помер сам (например, после
+    // NetworkError) — для нас это штатный путь, глушим
+    try { activePreviewPlayer.destroy(); } catch (e) { /* уже мёртв */ }
+    activePreviewPlayer = null;
+  }
+  clearInterval(previewLiveTimer);
+  clearInterval(previewWatchdogTimer);
+  clearTimeout(previewRetryTimer);
+  previewLiveTimer = null;
+  previewWatchdogTimer = null;
+  previewRetryTimer = null;
+}
 
 function formatKbps(kbps) {
   if (kbps == null) return '—';
@@ -442,14 +462,7 @@ function updatePreviewStats() {
 }
 
 async function openPreview(name) {
-  if (activePreviewPlayer) {
-    activePreviewPlayer.destroy();
-    activePreviewPlayer = null;
-  }
-  if (previewLiveTimer) {
-    clearInterval(previewLiveTimer); // старый тикер смотрел бы на уже удалённый <video>
-    previewLiveTimer = null;
-  }
+  teardownPreviewPlayer();
   currentPreviewName = name;
   previewPanelEl.innerHTML = `
     <div class="page-preview-head">
@@ -469,11 +482,7 @@ async function openPreview(name) {
   pageEl.classList.add('has-preview');
   updatePreviewStats();
 
-  const statusEl = document.getElementById('previewStatus');
   const video = document.getElementById('previewVideo');
-  const liveChip = document.getElementById('previewLive');
-  video.addEventListener('playing', () => { statusEl.hidden = true; }, { once: true });
-
   const muteBtn = document.getElementById('previewMute');
   muteBtn.onclick = () => {
     video.muted = !video.muted;
@@ -484,31 +493,95 @@ async function openPreview(name) {
     else video.requestFullscreen?.();
   };
 
-  // Держим воспроизведение на живом крае. Само по себе оно там не держится: любая
-  // микрозадержка (сеть, декодер, свёрнутая вкладка) оставляет плеер позади, и
-  // дальше он так и играет прошлое, накапливая отставание — а в предпросмотре
-  // нужны именно последние кадры. Раз в секунду смотрим, насколько currentTime
-  // отстал от конца буфера, и при отставании больше LIVE_MAX_LAG прыгаем к концу.
-  // Порог не нулевой: у HEVC с сервера метки времени идут неровно, и погоня за
-  // самым-самым краем превратилась бы в непрерывные рывки.
-  const LIVE_MAX_LAG = 1.5;   // с — при каком отставании догоняем
-  const LIVE_KEEP = 0.4;      // с — сколько буфера оставляем себе после прыжка
+  startPreviewPlayer(name);
+}
+
+// Подушка буфера. Первая версия догоняла край впритык (0.4 с) — плеер съедал буфер
+// досуха, вставал с readyState=2 и сам уже не оживал: картинка замирала каждые
+// ~15 секунд. Секунда запаса гасит и неровные метки в потоке, и то, что сервер
+// отдаёт данные пачками, а догоняем только когда отстали по-настоящему.
+const LIVE_MAX_LAG = 3.0;   // с — при каком отставании догоняем живой край
+const LIVE_KEEP = 1.0;      // с — сколько буфера оставляем себе после прыжка
+const NUDGE_AFTER_MS = 2500; // столько стоим на месте, прежде чем подтолкнуть плеер
+const STALL_LIMIT_MS = 8000; // ... и столько, прежде чем пересоздать его целиком
+const RETRY_MS = 2000;       // пауза между попытками переподключиться
+
+// Поднимает плеер поверх уже нарисованного окна. Отдельно от openPreview(), потому
+// что пересоздавать приходится часто: HTTP-FLV рвётся на каждой остановке
+// трансляции, и mpegts.js после NetworkError сам не восстанавливается — раньше окно
+// просто застывало на последнем кадре навсегда, даже когда эфир возвращался.
+async function startPreviewPlayer(name) {
+  const statusEl = document.getElementById('previewStatus');
+  const video = document.getElementById('previewVideo');
+  const liveChip = document.getElementById('previewLive');
+  if (!statusEl || !video) return; // окно закрыли
+  statusEl.hidden = false;
+
+  // Перезапуск, но только пока окно открыто и показывает ТОТ ЖЕ стрим: иначе после
+  // закрытия окна или переключения на соседний стрим таймер поднимал бы плеер заново.
+  const scheduleRetry = (why) => {
+    if (currentPreviewName !== name || !document.getElementById('previewVideo')) return;
+    teardownPreviewPlayer();
+    statusEl.hidden = false;
+    statusEl.textContent = `${why} Переподключаюсь…`;
+    if (liveChip) liveChip.classList.remove('is-live');
+    previewRetryTimer = setTimeout(() => startPreviewPlayer(name), RETRY_MS);
+  };
+
+  video.addEventListener('playing', () => { statusEl.hidden = true; }, { once: true });
+
+  // Догоняем живой край. Само оно там не держится: любая микрозадержка (сеть,
+  // декодер, свёрнутая вкладка) оставляет плеер позади, и дальше он играет прошлое.
+  // Порог не нулевой: метки времени в потоке идут неровно, и погоня за самым краем
+  // превратилась бы в непрерывные рывки.
   const jumpToLive = () => {
     const b = video.buffered;
-    if (!b.length || video.readyState < 2) return;
+    if (!b.length) return;
     const edge = b.end(b.length - 1);
     const lag = edge - video.currentTime;
-    if (lag > LIVE_MAX_LAG) video.currentTime = Math.max(edge - LIVE_KEEP, b.start(b.length - 1));
-    if (liveChip) liveChip.classList.toggle('is-live', lag <= LIVE_MAX_LAG);
+    // Прыгаем и когда просто отстали, и когда currentTime вывалился из буфера
+    // (после разрыва такое бывает) — во втором случае lag отрицательный.
+    if (lag > LIVE_MAX_LAG || lag < 0) {
+      video.currentTime = Math.max(edge - LIVE_KEEP, b.start(b.length - 1));
+    }
+    if (liveChip) liveChip.classList.toggle('is-live', lag >= 0 && lag <= LIVE_MAX_LAG);
   };
   previewLiveTimer = setInterval(jumpToLive, 1000);
-  // Отдельно — на 'waiting': буфер опустел, ждать его заполнения нет смысла,
-  // прыгаем сразу, как только появятся новые данные.
   video.addEventListener('waiting', () => setTimeout(jumpToLive, 200));
+
+  // Сторож на случай, когда ошибки нет, а картинка стоит: video.error пустой,
+  // paused=false, а currentTime не двигается. Проверять readyState тут нельзя —
+  // при заморозке он как раз и падает, и сторож ослеп бы ровно тогда, когда нужен.
+  //
+  // Две ступени, потому что причины разные. Чаще всего плеер просто упёрся в конец
+  // буфера и не возобновился сам, хотя данные уже подъехали — тогда хватает
+  // микроперемотки, она незаметна. И только если и это не помогло, пересоздаём
+  // плеер целиком: это дороже, с чёрным кадром и переподключением.
+  let lastCt = -1;
+  let stillSince = Date.now();
+  let nudged = false;
+  previewWatchdogTimer = setInterval(() => {
+    if (video.paused) { stillSince = Date.now(); return; }
+    if (Math.abs(video.currentTime - lastCt) > 0.01) {
+      lastCt = video.currentTime;
+      stillSince = Date.now();
+      nudged = false;
+      return;
+    }
+    const still = Date.now() - stillSince;
+    const b = video.buffered;
+    const ahead = b.length ? b.end(b.length - 1) - video.currentTime : 0;
+    if (still > STALL_LIMIT_MS) {
+      scheduleRetry('Картинка встала.');
+    } else if (still > NUDGE_AFTER_MS && !nudged && ahead > 0.1) {
+      nudged = true;
+      video.currentTime = video.currentTime + Math.min(ahead, 0.2);
+    }
+  }, 1000);
 
   try {
     const mpegts = await loadMpegts();
-    if (!document.getElementById('previewVideo')) return; // окно предпросмотра уже закрыли, пока грузился mpegts.js
+    if (currentPreviewName !== name || !document.getElementById('previewVideo')) return;
     if (!mpegts.getFeatureList().mseLivePlayback) {
       statusEl.textContent = 'Браузер не поддерживает воспроизведение через Media Source Extensions.';
       return;
@@ -529,29 +602,22 @@ async function openPreview(name) {
       // упора, и Chrome начинает вычищать его сам, рывками.
       autoCleanupSourceBuffer: true,
     });
+    // Любая ошибка = перезапуск. Самая частая — NetworkError/UnrecoverableEarlyEof:
+    // её отдаёт КАЖДАЯ остановка трансляции, потому что HTTP-FLV просто обрывается.
     activePreviewPlayer.on(mpegts.Events.ERROR, (type, detail) => {
-      statusEl.hidden = false;
-      statusEl.textContent = `Не удалось воспроизвести: ${type}${detail ? ' — ' + detail : ''}`;
+      scheduleRetry(`Поток прервался (${type}${detail ? ': ' + detail : ''}).`);
     });
     activePreviewPlayer.attachMediaElement(video);
     activePreviewPlayer.load();
     activePreviewPlayer.play();
   } catch (e) {
-    statusEl.hidden = false;
-    statusEl.textContent = `Не удалось запустить предпросмотр: ${e.message}`;
+    scheduleRetry(`Не удалось запустить предпросмотр: ${e.message}.`);
   }
 }
 
 function closePreview() {
-  if (activePreviewPlayer) {
-    activePreviewPlayer.destroy();
-    activePreviewPlayer = null;
-  }
-  if (previewLiveTimer) {
-    clearInterval(previewLiveTimer);
-    previewLiveTimer = null;
-  }
-  currentPreviewName = null;
+  currentPreviewName = null; // ПЕРВЫМ: по нему scheduleRetry() понимает, что перезапускать больше нечего
+  teardownPreviewPlayer();
   previewPanelEl.hidden = true;
   previewPanelEl.innerHTML = ''; // выгружаем видео, а не просто прячем — не гонять поток фоном впустую
   pageEl.classList.remove('has-preview');
