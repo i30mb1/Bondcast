@@ -157,33 +157,26 @@ internal class CameraXVideoSource(
                 CameraControlBus.publishPipSupported(this, concurrentCombo != null)
                 val pip = concurrentCombo != null && CameraControlBus.pipWanted.value
 
-                // В PiP кадр энкодера забирает VideoCapture, а не Preview: composition-режим CameraX
-                // включает только для пары Preview + VideoCapture (см. EncoderVideoOutput). В обычном
-                // режиме остаётся Preview — он дешевле и не тянет MediaSpec/QualitySelector.
-                // Поворот фиксируем, чтобы кадр не крутился вслед за устройством, но фиксируем
-                // именно в landscape, а не в ROTATION_0: у телефона натуральная ориентация
-                // портретная, поэтому ROTATION_0 — это ПОРТРЕТ, и энкодерный кадр уезжал на 90°
-                // относительно эфира. Видно было по превью на экране: оно targetRotation не задаёт,
-                // берёт текущий поворот дисплея (ROTATION_90) и рисует правильно, а энкодер с
-                // ROTATION_0 — повёрнуто.
+                // Кадр энкодера забирает VideoCapture (и в PiP, и в обычном режиме).
+                //
+                // Раньше в обычном режиме стоял Preview — дешевле, не тянет MediaSpec. Но Preview
+                // пишет в Surface СЫРОЙ буфер сенсора, а поворот сообщает отдельно, через
+                // SurfaceRequest.TransformationInfo: видоискатель на экране его применяет, а мы в
+                // provideSurface() нет — и в эфир уходил кадр, повёрнутый на SENSOR_ORIENTATION.
+                // VideoCapture разворачивает буфер сам, для того он и нужен.
+                //
+                // Разворачивать через GL-проход оверлейного эффекта (а он это умеет) НЕЛЬЗЯ:
+                // замерено на A024, лишний проход рушит равномерность кадров — шаг между ними
+                // размазывается с ровных 41-42 мс до 20/43/66/67, а браузерный плеер на таком
+                // спотыкается. Эффект остаётся только под реальные оверлеи.
+                //
+                // Поворот фиксируем в landscape, а не в ROTATION_0: у телефона натуральная
+                // ориентация портретная, поэтому ROTATION_0 — это ПОРТРЕТ.
                 val landscapeRotation = landscapeRotation()
-                val encoderUseCase: UseCase = if (pip) {
-                    VideoCapture.Builder(EncoderVideoOutput(encoder))
-                        .setResolutionSelector(resolutionSelector)
-                        .setTargetRotation(landscapeRotation)
-                        .build()
-                } else {
-                    Preview.Builder()
-                        .setResolutionSelector(resolutionSelector)
-                        .setTargetRotation(landscapeRotation)
-                        .build()
-                        .apply {
-                            setSurfaceProvider(mainExecutor) { request ->
-                                Log.i(TAG, "encoder surfaceRequest ${request.resolution} target=$size")
-                                request.provideSurface(encoder, mainExecutor) { }
-                            }
-                        }
-                }
+                val encoderUseCase: UseCase = VideoCapture.Builder(EncoderVideoOutput(encoder))
+                    .setResolutionSelector(resolutionSelector)
+                    .setTargetRotation(landscapeRotation)
+                    .build()
 
                 val displayPreview = if (CameraXPreviewBus.wantPreview) {
                     Preview.Builder().setResolutionSelector(resolutionSelector).build().apply {
@@ -203,7 +196,7 @@ internal class CameraXVideoSource(
                 // отдельно, через SurfaceRequest.TransformationInfo, а мы в provideSurface() его не
                 // применяем. Проверено на A024 тремя прогонами: эффект без landscape-targetRotation
                 // — кадр на 90°; landscape-targetRotation без эффекта — кадр на 90°; вместе — ровно.
-                val effects = listOf(overlayEffect())
+                val effects = if (compositor.hasOverlays()) listOf(overlayEffect()) else emptyList()
 
                 if (pip) {
                     bindPip(cameraProvider, concurrentCombo!!, useCases, effects, size)
