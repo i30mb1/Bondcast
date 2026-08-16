@@ -184,6 +184,104 @@ public fun StreetStatCard(
     }
 }
 
+/**
+ * Блок внутри окна: своя подложка, заголовок с иконкой и содержимое.
+ *
+ * Так одно окно собирается из независимых блоков — например, окно оверлеев, где у каждого оверлея
+ * свой блок с собственными кнопками. Новый оверлей = ещё одна [StreetSection] в том же окне.
+ */
+@Composable
+public fun StreetSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
+    info: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    Column(
+        modifier = modifier
+            .clip(StreetShape)
+            // не plate: на нём же сидят кнопки внутри, и на одинаковом фоне они бы пропали.
+            // Подложка чуть светлее окна, а контур добавляет блоку границу на глаз
+            .background(DiscordColors.inputBackground)
+            .border(1.dp, DiscordColors.divider, StreetShape)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (leading != null) {
+                leading()
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = title.upper(),
+                color = DiscordColors.accent,
+                style = streetLabel,
+                modifier = Modifier.weight(1f),
+            )
+            if (info != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(StreetShape)
+                        .clickable(interactionSource = interaction, indication = null) { expanded = !expanded }
+                        .padding(4.dp),
+                ) {
+                    InfoIcon(color = DiscordColors.accent, modifier = Modifier.size(InfoIconSize))
+                    if (expanded) {
+                        StreetTooltip(text = info, onDismissRequest = { expanded = false })
+                    }
+                }
+            }
+        }
+        content()
+    }
+}
+
+/**
+ * Кнопка-иконка в стиле [StreetChip]: та же подложка и то же поведение, но вместо подписи — глиф.
+ * Цвет глифа приходит в лямбду, чтобы иконка гасла и подсвечивалась заодно с фоном.
+ */
+@Composable
+public fun StreetIconChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: @Composable (Color) -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .pressBounce(interaction)
+            .clip(StreetShape)
+            .background(
+                when {
+                    selected && enabled -> DiscordColors.accent
+                    selected -> DiscordColors.accent.copy(alpha = 0.4f)
+                    else -> DiscordColors.plate
+                },
+            )
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
+            .padding(vertical = 7.dp, horizontal = 12.dp),
+    ) {
+        icon(
+            when {
+                !enabled -> DiscordColors.textMuted
+                selected -> DiscordColors.onAccent
+                else -> DiscordColors.textSecondary
+            },
+        )
+    }
+}
+
 /** Заголовок секции панели (акцентный текст) с опциональной подсказкой по тапу. */
 @Composable
 public fun StreetSectionLabel(
@@ -401,6 +499,9 @@ public fun StreetPanelScaffold(
     modifier: Modifier = Modifier,
     leading: (@Composable () -> Unit)? = null,
     info: String? = null,
+    // окно во всю высоту — норма для панелей с длинными списками; компактному окну (например,
+    // оверлеям) высота во весь экран ни к чему: пустая подложка под парой кнопок закрывает кадр
+    fillHeight: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -408,7 +509,7 @@ public fun StreetPanelScaffold(
     Column(
         modifier = modifier
             .width(300.dp)
-            .fillMaxHeight()
+            .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
             .shadow(20.dp, PanelShape, clip = false)
             .clip(PanelShape)
             .background(DiscordColors.panel)

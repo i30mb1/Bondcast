@@ -86,3 +86,4 @@ public fun srtlaClient(context: Context): SrtlaClient =
 
 - Комментарии в коде и доменные термины — на русском, как и коммиты (коротко, 2–10 слов).
 - USB-камера (ZV-E1 и подобные UVC) поддержана через вендоренный `:feature:camera:libuvccamera` (Java/NDK) с патчем MJPEG-декода; выбор камеры — только фронт/тыл + USB, отдельные тыловые линзы OEM скрывает.
+2

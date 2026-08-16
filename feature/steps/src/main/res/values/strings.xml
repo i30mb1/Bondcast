@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="steps_section_title">Steps</string>
+    <string name="steps_info_main">Burns the phone\'s step counter into the stream. The badge is drawn into the frame itself, so viewers see it on any platform — no browser source needed. The number comes from the pedometer sensor: it counts from the last reboot until you reset it.</string>
+
+    <string name="steps_no_sensor">This phone has no pedometer sensor — nothing to count.</string>
+
+    <string name="steps_burn_in_on">On</string>
+    <string name="steps_burn_in_off">Off</string>
+
+    <string name="steps_permission_hint">Physical activity access is needed to read the step counter.</string>
+    <string name="steps_drag_hint">Drag the badge across the preview to move it.</string>
+    <string name="steps_reset_confirm">Tap again to start the counter from zero.</string>
+</resources>

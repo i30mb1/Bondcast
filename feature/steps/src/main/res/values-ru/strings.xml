@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="steps_section_title">Шаги</string>
+    <string name="steps_info_main">Запекает счётчик шагов телефона прямо в кадр. Рамка рисуется в самой картинке, поэтому её видно на любой платформе — браузерный источник не нужен. Число берётся с шагомера: он считает с последней перезагрузки, пока не обнулишь.</string>
+
+    <string name="steps_no_sensor">В этом телефоне нет датчика шагов — считать нечем.</string>
+
+    <string name="steps_burn_in_on">Вкл</string>
+    <string name="steps_burn_in_off">Выкл</string>
+
+    <string name="steps_permission_hint">Чтобы читать шагомер, нужен доступ к данным о физической активности.</string>
+    <string name="steps_drag_hint">Перетащи рамку по превью, чтобы подвинуть.</string>
+    <string name="steps_reset_confirm">Ещё раз по кнопке — счётчик начнёт с нуля.</string>
+</resources>

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- OverlaysPanel.kt -->
+    <string name="overlays_panel_title">Overlays</string>
+    <string name="overlays_info_main">Everything burned into the frame itself. Baked-in overlays reach viewers on any platform and survive recording — no browser source on the receiving side.</string>
+
     <!-- StickerBadge / GoLiveButton (StreetRail.kt) -->
     <string name="stream_status_offline">"Offline"</string>
     <string name="stream_status_connecting">"Connecting…"</string>

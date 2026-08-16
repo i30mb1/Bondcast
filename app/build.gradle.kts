@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":feature:thermal"))
     implementation(project(":feature:obs"))
     implementation(project(":feature:overlay"))
+    implementation(project(":feature:steps"))
     implementation(project(":feature:stream"))
     implementation(project(":feature:chat:twitch"))
     implementation(project(":feature:chat:impl"))

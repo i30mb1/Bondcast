@@ -46,6 +46,17 @@ public data class StreamSettings(
     val chatFadeTopEnabled: Boolean = false,
     /** Стирать сообщения старше 30 секунд, независимо от лимита по количеству. */
     val chatAutoEraseEnabled: Boolean = false,
+    /** Шагомер, запекаемый в кадр. Позиция — доли кадра (левый верхний угол рамки). */
+    val stepsOverlayEnabled: Boolean = false,
+    val stepsOverlayX: Float = 0.04f,
+    val stepsOverlayY: Float = 0.78f,
+    /**
+     * База счётчика: показываем «сырое число с датчика минус база».
+     *
+     * 0 — показываем сырое число, то же, что в системном счётчике шагов; «Обнулить» записывает
+     * сюда текущее показание датчика.
+     */
+    val stepsBaseline: Int = 0,
     val onboardingCompleted: Boolean = false,
     /** Переключатель «Новичок/Эксперт» в настройках — показывать ли продвинутые поля. */
     val expertMode: Boolean = false,

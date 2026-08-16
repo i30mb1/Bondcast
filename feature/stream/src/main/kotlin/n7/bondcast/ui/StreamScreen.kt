@@ -15,7 +15,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -42,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -72,7 +72,14 @@ import n7.bondcast.chat.impl.ChatController
 import n7.bondcast.feature.stream.R
 import n7.bondcast.obs.ObsController
 import n7.bondcast.obs.ObsPhase
+import n7.bondcast.overlay.OverlayCompositor
+import n7.bondcast.overlay.OverlayLayout
+import n7.bondcast.overlay.OverlayPoint
 import n7.bondcast.settings.StreamSettings
+import n7.bondcast.steps.StepsBadge
+import n7.bondcast.steps.StepsCounter
+import n7.bondcast.steps.StepsMath
+import n7.bondcast.steps.StepsOverlay
 import n7.bondcast.stream.HealthLevel
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamPhase
@@ -92,10 +99,13 @@ import n7.bondcast.ui.components.GearIcon
 import n7.bondcast.ui.components.GoLiveButton
 import n7.bondcast.ui.components.ObsIcon
 import n7.bondcast.ui.components.ObsPanel
+import n7.bondcast.ui.components.OverlaysIcon
+import n7.bondcast.ui.components.OverlaysPanel
 import n7.bondcast.ui.components.RailButton
 import n7.bondcast.ui.components.RailFadeColumn
 import n7.bondcast.ui.components.StatsIcon
 import n7.bondcast.ui.components.StatusDot
+import n7.bondcast.ui.components.StepsOverlaySection
 import n7.bondcast.ui.components.StickerBadge
 import n7.bondcast.ui.components.ThermalPanel
 import n7.bondcast.ui.components.ViewersPanel
@@ -121,6 +131,9 @@ public fun StreamScreen(
     mitigations: ThermalMitigations,
     obsController: ObsController,
     chatController: ChatController,
+    overlayCompositor: OverlayCompositor,
+    stepsCounter: StepsCounter,
+    stepsOverlay: StepsOverlay,
     twitchStatus: String,
     twitchLoggedIn: Boolean,
     onTwitchLogin: () -> Unit,
@@ -197,6 +210,45 @@ public fun StreamScreen(
     DisposableEffect(chatController) { onDispose { chatController.setActive(false) } }
     val chatMessages by chatController.messages.collectAsState()
 
+    // шагомер — первый оверлей, который запекается в кадр. Датчик крутится, только пока оверлей
+    // включён: в выключенном виде счётчик никому не нужен, а пробуждения стоят батареи
+    val stepsOn = settings?.stepsOverlayEnabled == true
+    val rawSteps by stepsCounter.rawSteps.collectAsState()
+    val stepsBaseline = settings?.stepsBaseline ?: 0
+    val walkedSteps = StepsMath.displayed(rawSteps, stepsBaseline)
+    // пока палец ведёт рамку, позиция живёт в памяти, а в настройки уходит один раз — на отпускании.
+    // Писать каждое событие жеста в DataStore нельзя: он отвечает медленнее, чем идут события, и
+    // сдвиг считался бы от последней записанной позиции — почти все движения терялись бы
+    var stepsDrag by remember { mutableStateOf<OverlayPoint?>(null) }
+    val stepsPosition = stepsDrag ?: StepsBadge.migrated(
+        OverlayPoint(
+            settings?.stepsOverlayX ?: StepsBadge.DEFAULT_X,
+            settings?.stepsOverlayY ?: StepsBadge.DEFAULT_Y,
+        ),
+    )
+    DisposableEffect(stepsOn) {
+        if (stepsOn) stepsCounter.start()
+        onDispose { stepsCounter.stop() }
+    }
+    DisposableEffect(stepsOn, overlayCompositor) {
+        if (stepsOn) overlayCompositor.register(stepsOverlay)
+        onDispose { overlayCompositor.unregister(stepsOverlay) }
+    }
+    // телефон перезагружали — датчик начал счёт заново, и сохранённая база стала больше сырого
+    // числа. Оставить её нельзя: счётчик показывал бы прошлую сессию, а не эту
+    LaunchedEffect(rawSteps, stepsBaseline, settings) {
+        val current = settings ?: return@LaunchedEffect
+        if (rawSteps > 0 && StepsMath.baselineStale(rawSteps, stepsBaseline)) {
+            onUpdateSettings(current.copy(stepsBaseline = 0))
+        }
+    }
+    // оверлей рисуется на своём потоке и читает поля, а не состояние Compose — обновляем их
+    // после композиции, иначе это была бы запись в разделяемую память прямо из тела @Composable
+    SideEffect {
+        stepsOverlay.steps = walkedSteps
+        stepsOverlay.position = stepsPosition
+    }
+
     val context = LocalContext.current
     val window = remember(context) { context.findActivity()?.window }
     LaunchedEffect(brightness, window) {
@@ -252,6 +304,14 @@ public fun StreamScreen(
         else -> 0.25f
     }
 
+    // Кадр вписан в соотношение эфира, а не растянут на весь экран: экран телефона в ландшафте шире
+    // 16:9 (2800x1260 ≈ 2.22:1), и fillMaxSize обрезал кадр по бокам — стример видел не то, что
+    // уходило зрителям, а оверлеи уезжали за границу кадра. Соотношение берём из настроек, чтобы не
+    // разъехаться при смене разрешения.
+    val streamAspect = settings
+        ?.let { it.width.toFloat() / it.height.toFloat() }
+        ?: DEFAULT_STREAM_ASPECT
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -285,13 +345,6 @@ public fun StreamScreen(
                 }
             }
             surfaceRequest?.let { request ->
-                // Кадр вписан в соотношение эфира, а не растянут на весь экран: экран телефона в
-                // ландшафте шире 16:9 (2800x1260 ≈ 2.22:1), и fillMaxSize обрезал кадр по бокам —
-                // стример видел не то, что уходило зрителям, а оверлеи уезжали за границу кадра.
-                // Соотношение берём из настроек, чтобы не разъехаться при смене разрешения.
-                val streamAspect = settings
-                    ?.let { it.width.toFloat() / it.height.toFloat() }
-                    ?: DEFAULT_STREAM_ASPECT
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
@@ -307,16 +360,6 @@ public fun StreamScreen(
                             isTapToFocusEnabled = !pipWanted,
                             isPinchToZoomEnabled = !pipWanted,
                         )
-                        if (pipWanted) {
-                            // Врезка живёт в тех же долях кадра, что и CompositionSettings, а кадр
-                            // превью совпадает с эфирным — поэтому позиция получается 1:1 у стримера
-                            // и у зрителей без пересчёта под размер экрана.
-                            PipDragTarget(
-                                layout = pipLayout,
-                                onLayoutChange = { CameraControlBus.setPipLayout(it) },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
                     }
                 }
             }
@@ -357,6 +400,44 @@ public fun StreamScreen(
                     .width(400.dp)
                     .fillMaxHeight(),
             )
+        }
+
+        // Хваты перетаскиваемых оверлеев лежат ВЫШЕ чата. Полоса чата — 400dp во всю высоту поверх
+        // превью, и она забирает касания себе на всей своей площади, даже когда в ней нет ни одного
+        // сообщения. Пока хваты жили внутри превью (то есть под чатом), левую треть кадра нельзя было
+        // ни рамкой, ни врезкой зацепить — жест туда просто не доходил.
+        if (previewEnabled && currentCamera?.id != USB_CAMERA_ID) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(modifier = Modifier.aspectRatio(streamAspect)) {
+                    if (stepsOn) {
+                        // рамка живёт в тех же долях кадра, что и оверлей, а кадр превью совпадает с
+                        // эфирным — поэтому таскается она ровно там, где её увидят зрители
+                        StepsDragTarget(
+                            position = stepsPosition,
+                            onPositionChange = { moved -> stepsDrag = moved },
+                            onDragEnd = { moved ->
+                                settings?.let {
+                                    onUpdateSettings(it.copy(stepsOverlayX = moved.x, stepsOverlayY = moved.y))
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    if (pipWanted) {
+                        // Врезка живёт в тех же долях кадра, что и CompositionSettings, а кадр превью
+                        // совпадает с эфирным — поэтому позиция получается 1:1 у стримера и у зрителей
+                        // без пересчёта под размер экрана.
+                        PipDragTarget(
+                            layout = pipLayout,
+                            onLayoutChange = { CameraControlBus.setPipLayout(it) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
         }
 
         Column(
@@ -441,6 +522,14 @@ public fun StreamScreen(
             ) {
                 ChatIcon(color = glyphColor(chatMenuOpen))
             }
+            val overlaysActive = panels.isOpen(PANEL_OVERLAYS)
+            RailButton(
+                active = overlaysActive,
+                onClick = { panels.toggle(PANEL_OVERLAYS) },
+                appearDelay = index++ * 45L,
+            ) {
+                OverlaysIcon(color = glyphColor(overlaysActive))
+            }
             RailButton(
                 active = false,
                 onClick = onOpenSettings,
@@ -510,6 +599,19 @@ public fun StreamScreen(
                 onLlbEnabled = { llbEnabled = it },
                 nightModeSuggested = nightModeSuggested,
             )
+        }
+
+        PanelSlot(panels.isOpen(PANEL_OVERLAYS)) {
+            OverlaysPanel(onClose = { panels.close(PANEL_OVERLAYS) }) {
+                StepsOverlaySection(
+                    enabled = stepsOn,
+                    sensorAvailable = stepsCounter.available,
+                    onEnabled = { on -> settings?.let { onUpdateSettings(it.copy(stepsOverlayEnabled = on)) } },
+                    // база — сырое показание датчика на момент нажатия, дальше вычитаем её
+                    onReset = { settings?.let { onUpdateSettings(it.copy(stepsBaseline = rawSteps)) } },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
 
         PanelSlot(panels.isOpen(PANEL_VIEWERS)) {
@@ -625,11 +727,79 @@ private fun PipDragTarget(
     }
 }
 
+/**
+ * Прозрачная область поверх превью: ловит перетаскивание рамки шагомера.
+ *
+ * Саму рамку рисует [StepsOverlay] в кадр (её видно и в превью, потому что оверлей-эффект
+ * стоит на обоих выходах CameraX), здесь только хват под палец. Размер хвата считается по высоте
+ * кадра — тем же способом, что и размер рамки в эфире, иначе они разъехались бы на не-1080p.
+ */
+@Composable
+private fun StepsDragTarget(
+    position: OverlayPoint,
+    onPositionChange: (OverlayPoint) -> Unit,
+    onDragEnd: (OverlayPoint) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val frameWidth = constraints.maxWidth.toFloat()
+        val frameHeight = constraints.maxHeight.toFloat()
+        if (frameWidth <= 0f || frameHeight <= 0f) return@BoxWithConstraints
+
+        val density = LocalDensity.current
+        val scale = OverlayLayout.scale(frameHeight.roundToInt())
+        val current by rememberUpdatedState(position)
+        // хват не меньше 48dp: сама рамка ниже этого, а в неё ещё надо попасть пальцем на ходу.
+        // Лишнее раздаём поровну на обе стороны, чтобы хват остался по центру рамки
+        val minTouch = with(density) { 48.dp.toPx() }
+        val touchWidth = (StepsBadge.WIDTH * scale).coerceAtLeast(minTouch)
+        val touchHeight = (StepsBadge.HEIGHT * scale).coerceAtLeast(minTouch)
+        val padX = (touchWidth - StepsBadge.WIDTH * scale) / 2f
+        val padY = (touchHeight - StepsBadge.HEIGHT * scale) / 2f
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (position.x * frameWidth - padX).roundToInt(),
+                        (position.y * frameHeight - padY).roundToInt(),
+                    )
+                }
+                .size(
+                    width = with(density) { touchWidth.toDp() },
+                    height = with(density) { touchHeight.toDp() },
+                )
+                .pointerInput(frameWidth, frameHeight) {
+                    // current, а не position: pointerInput перезапускается только по своим ключам,
+                    // и захваченная позиция осталась бы той, что была в начале жеста
+                    detectDragGestures(
+                        // в настройки пишем только на отпускании: DataStore отвечает медленнее, чем
+                        // идут события жеста, и сдвиг считался бы от последней записанной позиции
+                        onDragEnd = { onDragEnd(current) },
+                        onDragCancel = { onDragEnd(current) },
+                    ) { change, drag ->
+                        change.consume()
+                        val now = current
+                        onPositionChange(
+                            StepsBadge.coerce(
+                                OverlayPoint(now.x + drag.x / frameWidth, now.y + drag.y / frameHeight),
+                                frameWidth,
+                                frameHeight,
+                            ),
+                        )
+                    }
+                },
+            // без .border: рамку рисует сам оверлей, и её видят зрители. Своя обводка была бы
+            // только на экране стримера и разъезжалась бы с эфиром — та же логика, что у врезки PiP
+        )
+    }
+}
+
 private const val PANEL_STATS = "stats"
 private const val PANEL_THERMAL = "thermal"
 private const val PANEL_CAMERAS = "cameras"
 private const val PANEL_OBS = "obs"
 private const val PANEL_VIEWERS = "viewers"
+private const val PANEL_OVERLAYS = "overlays"
 
 @Composable
 private fun StatsPanel(

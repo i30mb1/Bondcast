@@ -3,6 +3,7 @@ package n7.bondcast.settings
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -57,6 +58,10 @@ public class SettingsRepository(private val context: Context) {
             chatMessageLimit = preferences[CHAT_MESSAGE_LIMIT] ?: default.chatMessageLimit,
             chatFadeTopEnabled = preferences[CHAT_FADE_TOP_ENABLED] ?: default.chatFadeTopEnabled,
             chatAutoEraseEnabled = preferences[CHAT_AUTO_ERASE_ENABLED] ?: default.chatAutoEraseEnabled,
+            stepsOverlayEnabled = preferences[STEPS_OVERLAY_ENABLED] ?: default.stepsOverlayEnabled,
+            stepsOverlayX = preferences[STEPS_OVERLAY_X] ?: default.stepsOverlayX,
+            stepsOverlayY = preferences[STEPS_OVERLAY_Y] ?: default.stepsOverlayY,
+            stepsBaseline = preferences[STEPS_BASELINE] ?: default.stepsBaseline,
             onboardingCompleted = preferences[ONBOARDING_COMPLETED] ?: default.onboardingCompleted,
             twitchDirectEnabled = preferences[TWITCH_DIRECT_ENABLED] ?: default.twitchDirectEnabled,
             twitchStreamKey = preferences[TWITCH_STREAM_KEY] ?: default.twitchStreamKey,
@@ -96,6 +101,10 @@ public class SettingsRepository(private val context: Context) {
             preferences[CHAT_MESSAGE_LIMIT] = settings.chatMessageLimit
             preferences[CHAT_FADE_TOP_ENABLED] = settings.chatFadeTopEnabled
             preferences[CHAT_AUTO_ERASE_ENABLED] = settings.chatAutoEraseEnabled
+            preferences[STEPS_OVERLAY_ENABLED] = settings.stepsOverlayEnabled
+            preferences[STEPS_OVERLAY_X] = settings.stepsOverlayX
+            preferences[STEPS_OVERLAY_Y] = settings.stepsOverlayY
+            preferences[STEPS_BASELINE] = settings.stepsBaseline
             preferences[ONBOARDING_COMPLETED] = settings.onboardingCompleted
             preferences[TWITCH_DIRECT_ENABLED] = settings.twitchDirectEnabled
             preferences[TWITCH_STREAM_KEY] = settings.twitchStreamKey
@@ -134,6 +143,10 @@ public class SettingsRepository(private val context: Context) {
         val CHAT_MESSAGE_LIMIT = intPreferencesKey("chat_message_limit")
         val CHAT_FADE_TOP_ENABLED = booleanPreferencesKey("chat_fade_top_enabled")
         val CHAT_AUTO_ERASE_ENABLED = booleanPreferencesKey("chat_auto_erase_enabled")
+        val STEPS_OVERLAY_ENABLED = booleanPreferencesKey("steps_overlay_enabled")
+        val STEPS_OVERLAY_X = floatPreferencesKey("steps_overlay_x")
+        val STEPS_OVERLAY_Y = floatPreferencesKey("steps_overlay_y")
+        val STEPS_BASELINE = intPreferencesKey("steps_baseline")
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val TWITCH_DIRECT_ENABLED = booleanPreferencesKey("twitch_direct_enabled")
         val TWITCH_STREAM_KEY = stringPreferencesKey("twitch_stream_key")

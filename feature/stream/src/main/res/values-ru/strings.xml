@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- OverlaysPanel.kt -->
+    <string name="overlays_panel_title">Оверлеи</string>
+    <string name="overlays_info_main">Всё, что запекается прямо в кадр. Запечённое видно зрителям на любой платформе и остаётся в записи — браузерный источник на приёме не нужен.</string>
+
     <!-- StickerBadge / GoLiveButton (StreetRail.kt) -->
     <string name="stream_status_offline">"Не в эфире"</string>
     <string name="stream_status_connecting">"Подключение…"</string>

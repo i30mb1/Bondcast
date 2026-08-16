@@ -10,6 +10,8 @@ import n7.bondcast.obs.ObsController
 import n7.bondcast.overlay.overlayCompositor
 import n7.bondcast.service.StreamService
 import n7.bondcast.settings.SettingsRepository
+import n7.bondcast.steps.StepsOverlay
+import n7.bondcast.steps.stepsCounter
 import n7.bondcast.stream.StreamController
 import n7.bondcast.stream.StreamForeground
 import n7.bondcast.thermal.ThermalMitigations
@@ -21,6 +23,8 @@ internal class AppGraph(application: Application) {
     val thermalMitigations = ThermalMitigations()
     val obsController = ObsController(settingsRepository)
     val overlayCompositor = overlayCompositor()
+    val stepsCounter = stepsCounter(application)
+    val stepsOverlay = StepsOverlay()
     val twitchChat = twitchChat(application)
     val chatController = chatController(listOf(twitchChat.source), settingsRepository)
     val streamController =

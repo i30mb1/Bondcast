@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":feature:camera"))
     implementation(project(":feature:chat:impl"))
     api(project(":feature:overlay"))
+    implementation(project(":feature:steps"))
     implementation(project(":core:ui"))
     implementation(project(":feature:bonding:domain"))
 

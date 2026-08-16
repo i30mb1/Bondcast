@@ -88,6 +88,10 @@ public fun ChatOverlay(
         reverseLayout = true,
         verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom),
         contentPadding = PaddingValues(vertical = 4.dp),
+        // прокрутка пальцем выключена: список всё равно прыгает к новому сообщению сам, а включённая
+        // прокрутка съедала все касания на своей полосе (400dp во всю высоту поверх превью) — даже
+        // пустой чат делал левую часть кадра мёртвой, и оверлеи там было не ухватить
+        userScrollEnabled = false,
     ) {
         items(items = messages.asReversed(), key = { it.id }) { message ->
             ChatMessageRow(
