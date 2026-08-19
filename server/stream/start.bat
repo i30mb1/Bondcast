@@ -15,6 +15,21 @@ if "%PROJECT_ROOT:~-1%"=="\" set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
 :: Leave empty ("") to auto-detect. Example: "203.0.113.10"
 set "HOST_IP_OVERRIDE="
 
+:: LAN-адрес(а) этой машины - нужен панели ОТДЕЛЬНО от публичного адреса ниже:
+:: именно его вписывают в правило проброса портов на роутере, и по нему же панель
+:: понимает, что между этим компом и интернетом вообще есть роутер. Раньше панель
+:: видела только HOST_IPS, куда почти всегда попадает публичный адрес - и человеку
+:: за домашним роутером советовала "выключи антивирус" вместо проброса порта.
+:: Считаем всегда, независимо от того, узнается ли публичный адрес ниже.
+set "LAN_IPS="
+for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get-host-ips.ps1"') do set "LAN_IPS=%%a"
+
+:: Адрес роутера (шлюз по умолчанию) - панель даёт по нему прямую ссылку в веб-морду,
+:: где пробрасывают порты. Угадывать нельзя: у одного 192.168.1.1, у другого 192.168.0.1
+:: или 192.168.31.1. Панель сама его не видит - её шлюз это бридж Docker'а, не роутер.
+set "GATEWAY_IPS="
+for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get-gateway-ips.ps1"') do set "GATEWAY_IPS=%%a"
+
 :: The phone talks to this machine over the internet, so the address that
 :: actually matters is the public one, not a NIC's LAN address - ask a public
 :: IP-echo service instead of poking around this machine's network adapters.
@@ -35,9 +50,9 @@ if not "%HOST_IP_OVERRIDE%"=="" (
   rem "Системе не удается найти указанный диск." - по одной ошибке на пару строк.
   set "PUBLIC_IP_OK=0"
   if not "!HOST_IPS!"=="" set "PUBLIC_IP_OK=1"
-  if "!HOST_IPS!"=="" (
-    for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get-host-ips.ps1"') do set "HOST_IPS=%%a"
-  )
+  rem Публичный адрес не узнался - показываем хотя бы LAN-адрес, посчитанный выше
+  rem (повторно дёргать get-host-ips.ps1 незачем, ответ уже есть в LAN_IPS).
+  if "!HOST_IPS!"=="" set "HOST_IPS=!LAN_IPS!"
 
   if not "!HOST_IPS!"=="" (
     rem If a VPN is active right now, the address curl just detected above is the

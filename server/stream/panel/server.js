@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const net = require('net');
 const Docker = require('dockerode');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -352,28 +353,79 @@ app.get('/api/connections', async (req, res) => {
   res.json({ name, hosts });
 });
 
+// Одна страница разом проверяет до пяти портов, и все пять проверок спрашивают про
+// ОДИН и тот же внешний адрес — без кэша это пять одинаковых запросов к ipify/ip-api
+// на каждый цикл (а у бесплатного ip-api.com лимит 45 запросов в минуту с адреса, за
+// которым легко словить временный бан ровно в момент, когда пользователь разбирается,
+// почему у него порт закрыт). Кэшируем ПРОМИС, а не результат: пять проверок стартуют
+// одновременно, и кэш по готовому значению они все успевали бы промахнуть.
+function memoizeAsync(fn, ttlMs) {
+  const cache = new Map();
+  return (key = '') => {
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < ttlMs) return hit.promise;
+    const promise = Promise.resolve(fn(key))
+      // Неудачу не кэшируем — иначе один сетевой сбой замораживал бы "не знаю"
+      // на весь TTL, хотя следующая попытка через секунду отработала бы нормально.
+      .then((value) => {
+        if (value === null || value === undefined) cache.delete(key);
+        return value;
+      })
+      .catch((e) => {
+        cache.delete(key);
+        throw e;
+      });
+    cache.set(key, { at: Date.now(), promise });
+    return promise;
+  };
+}
+
 // Внешний IP этого компа — не вычислить локально (это WAN-адрес роутера), поэтому
 // спрашиваем публичный сервис (бесплатный, без ключа). Используется и в /api/connections
 // (для списка адресов), и в /api/reachability (для пометки про VPN).
-async function fetchPublicIp() {
+const fetchPublicIp = memoizeAsync(async () => {
   try {
     const res = await fetch('https://api.ipify.org?format=json');
     return (await res.json()).ip;
   } catch (e) {
     return null;
   }
+}, 30 * 1000);
+
+// check-host.net отдаёт по каждому узлу одну запись: {address,time} — TCP-коннект удался;
+// {address,timeout} — UDP, ответа не дождались; {error:"..."} — сырая строка ошибки сокета.
+// Раньше эта строка выбрасывалась (смотрели только "есть error или нет"), а в ней и лежит
+// самое полезное для диагноза:
+//   refused ("Connection refused") — пакет ДОШЁЛ, и на том конце ответили "тут никто не
+//     слушает" (TCP RST либо ICMP port unreachable на UDP). Значит путь снаружи внутрь
+//     работает, а проблема на приёмной стороне — сервис не поднят или правило проброса
+//     ведёт на машину, где его нет.
+//   timeout ("Connection timed out") — пакет молча утонул. Так выглядит и отсутствующий
+//     проброс, и фаервол с политикой drop, и серый IP провайдера.
+// Это два принципиально разных диагноза с разными действиями пользователя — см.
+// diagnoseClosed() в app.js. Живьём проверено, что check-host.net отдаёт ровно строку
+// "Connection timed out"; остальные варианты ловим по подстроке, формат у них тот же.
+function classifyProbeError(raw) {
+  const text = String(raw || '').toLowerCase();
+  if (text.includes('refus')) return 'refused';
+  if (text.includes('timed out') || text.includes('timeout')) return 'timeout';
+  if (text.includes('unreach') || text.includes('no route')) return 'unreachable';
+  return 'other';
 }
 
 // Проверка «виден ли порт снаружи» — своей внешней точки у нас нет, поэтому дёргаем
 // check-host.net (публичный, бесплатный, без ключа): он шлёт TCP/UDP-пробу со своих узлов
 // и смотрит, вернулся ли ICMP-unreachable/таймаут — не требует ответа от нашего сервиса.
-async function checkPortReachable(publicIp, port, proto) {
+async function probePortExternally(publicIp, port, proto) {
   const submitRes = await fetch(
     `https://check-host.net/check-${proto}?host=${publicIp}:${port}&max_nodes=3`,
     { headers: { Accept: 'application/json' } },
   );
   const submit = await submitRes.json();
-  if (!submit.ok) throw new Error('check-host.net отклонил запрос');
+  // Свою причину отказа check-host.net кладёт в error (например, упёрлись в лимит
+  // проверок с этого адреса) — раньше она терялась, и пользователь видел глухое
+  // "отклонил запрос", неотличимое от реальной проблемы с портом.
+  if (!submit.ok) throw new Error(`check-host.net отклонил запрос${submit.error ? `: ${submit.error}` : ''}`);
 
   // Узлы отвечают асинхронно — опрашиваем, пока все не отдадут результат (или не кончится время).
   let result = null;
@@ -393,9 +445,36 @@ async function checkPortReachable(publicIp, port, proto) {
   // .some() — по факту любой один "тихий" узел мог дать ложное "порт открыт", хотя
   // остальные узлы честно видели "Connection refused". Теперь верим порту открытым,
   // только если ни один опрошенный узел не сообщил об ошибке.
-  const perNode = Object.values(result || {}).filter((entries) => Array.isArray(entries) && entries[0]);
+  const perNode = Object.entries(result || {})
+    .filter(([, entries]) => Array.isArray(entries) && entries[0])
+    .map(([node, entries]) => ({ node, error: entries[0].error || null }));
   if (perNode.length === 0) throw new Error('check-host.net не ответил ни с одного узла');
-  return perNode.every((entries) => !entries[0].error);
+
+  const failures = perNode.filter((n) => n.error);
+  const reachable = failures.length === 0;
+  const kinds = [...new Set(failures.map((n) => classifyProbeError(n.error)))];
+  return {
+    reachable,
+    // open / refused / timeout / unreachable / other / mixed (последнее — узлы разошлись,
+    // и не в пользу какого-то одного вывода). "refused" перевешивает "timeout", даже если
+    // так ответил один узел из трёх: отказ — это положительное свидетельство (пакет дошёл,
+    // и на том конце ответили), а таймаут — отсутствие свидетельства (у конкретного узла
+    // мог не сложиться маршрут). Та же асимметрия, что и в правиле про "открыт" выше.
+    // Замерено вживую на порту 1935: два узла отдали "Connection refused", третий —
+    // "Connection timed out"; вывод тут делают первые два.
+    verdict: reachable ? 'open' : kinds.includes('refused') ? 'refused' : kinds.length === 1 ? kinds[0] : 'mixed',
+    // Замерено вживую: и открытый UDP-порт (8.8.8.8:53), и заведомо закрытый
+    // (8.8.8.8:12345) дают одинаковый ответ {address,timeout} без error. То есть
+    // "открыт" по UDP — это на самом деле "нам не прислали ICMP-ошибку", молчание
+    // фаервола выглядит ровно так же. Честно помечаем, насколько твёрдый вывод:
+    // "закрыт" по UDP доказателен (ICMP пришёл), "открыт" — нет.
+    conclusive: proto === 'tcp' || !reachable,
+    checkedNodes: perNode.length,
+    failedNodes: failures.length,
+    // Ссылка на человекочитаемый отчёт check-host.net с разбивкой по узлам —
+    // для случая "панель говорит закрыт, а я не верю".
+    reportUrl: submit.permanent_link || null,
+  };
 }
 
 // RFC1918 + loopback/link-local — если адрес из HOST_IPS такой, снаружи его не постучать
@@ -415,23 +494,152 @@ function isPrivateIp(ip) {
 // ставится proxy:false + hosting:true, а реальному VPN-выходу — proxy:true + hosting:true.
 // То есть proxy:true и есть признак VPN/прокси, а hosting лишь уточняет "адрес дата-центра"
 // (у Bondcast сервер сам может быть таким VPS, см. CLAUDE.md — self-hosted srtla_rec).
-// Возвращаем оба флага — hintFor() в app.js формулирует текст сама.
-async function ipReputation(ip) {
+//
+// mobile — тот самый флаг, который ставит крест на пробросе портов в принципе: у сотовых
+// операторов абонент почти всегда сидит за CGNAT провайдера, публичный адрес общий на
+// тысячи абонентов, и пробрасывать на роутере нечего (проверено на ip-api: AS31213
+// МегаФон → mobile:true). Раздача с телефона/4G-модем — самый частый случай, когда
+// "открыть порт" невозможно, сколько ни правь роутер.
+// Возвращаем сырые флаги — diagnoseClosed() в app.js формулирует текст сама.
+const ipReputation = memoizeAsync(async (ip) => {
   try {
-    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=proxy,hosting`);
+    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=proxy,hosting,mobile,isp,reverse`);
     const data = await res.json();
-    return { vpnLikely: Boolean(data.proxy), hostingLikely: Boolean(data.hosting) };
+    return {
+      vpnLikely: Boolean(data.proxy),
+      hostingLikely: Boolean(data.hosting),
+      mobileLikely: Boolean(data.mobile),
+      isp: data.isp || null,
+      reverse: data.reverse || null,
+    };
   } catch (e) {
-    return { vpnLikely: false, hostingLikely: false };
+    return null;
+  }
+}, 5 * 60 * 1000);
+
+// Какой из наших контейнеров обязан слушать этот порт. 4455 (управление OBS) сюда не
+// входит намеренно: OBS — обычная программа на хосте, а не наш контейнер, для него
+// локальную сторону проверяет hostPortListening() ниже.
+const PORT_OWNERS = {
+  5000: { container: 'srtla-rec', spec: '5000/udp' },
+  10080: { container: 'srs', spec: '10080/udp' },
+  1935: { container: 'srs', spec: '1935/tcp' },
+  8080: { container: 'srs', spec: '8080/tcp' },
+};
+
+// Локальная сторона вопроса «почему порт закрыт»: прежде чем отправлять человека
+// крутить роутер, стоит убедиться, что на этой машине вообще есть кому отвечать.
+// Самые частые причины закрытого порта не имеют к роутеру никакого отношения —
+// контейнер остановлен, удалён, крутится в рестарт-цикле или не смог занять порт
+// на хосте (его держит другая программа, либо он попал в зарезервированный
+// Windows/Hyper-V диапазон — как раз про 5000 это классика).
+async function containerPortState(port) {
+  const owner = PORT_OWNERS[port];
+  if (!owner) return null;
+  try {
+    const info = await docker.getContainer(owner.container).inspect();
+    const bindings = (info.HostConfig && info.HostConfig.PortBindings) || {};
+    return {
+      container: owner.container,
+      found: true,
+      running: Boolean(info.State.Running),
+      state: info.State.Status,
+      restartCount: info.RestartCount || 0,
+      exitCode: info.State.ExitCode,
+      // Сюда Docker кладёт причину, по которой контейнер не смог стартовать —
+      // в частности "Bind for 0.0.0.0:5000 failed: port is already allocated" и
+      // виндовое "An attempt was made to access a socket in a way forbidden by
+      // its access permissions" (порт попал в зарезервированный диапазон).
+      error: info.State.Error || '',
+      // Контейнер может быть жив и слушать порт у себя внутри, но не отдавать его
+      // наружу — так бывает после ручного docker run/старого контейнера, созданного
+      // без -p. Снаружи это неотличимо от закрытого роутера, а лечится совсем иначе.
+      published: Array.isArray(bindings[owner.spec]) && bindings[owner.spec].length > 0,
+    };
+  } catch (e) {
+    if (e.statusCode === 404) {
+      return { container: owner.container, found: false, running: false, published: false };
+    }
+    return { container: owner.container, dockerError: e.message };
   }
 }
 
+// Дозвон контейнер → хост на тот же порт. Отвечает на вопрос «сервис слушает на этой
+// машине?» отдельно от вопроса «пускают ли до него снаружи» — а именно на стыке этих
+// двух вопросов и живёт половина причин. host.docker.internal — тот же спецхост, через
+// который панель ходит в OBS (см. ensureObsConnected). Только TCP: UDP так не проверить,
+// на UDP-порт никто не обязан отвечать.
+const HOST_DIAL_CANDIDATES = ['host.docker.internal', '127.0.0.1'];
+
+function dialTcp(host, port, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(null)); // локальный коннект не должен «висеть» — считаем неизвестным
+    socket.once('error', (e) => finish(e.code === 'ECONNREFUSED' ? false : e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN' ? 'no-host' : null));
+    socket.connect(port, host);
+  });
+}
+
+// 127.0.0.1 указывает на хост, только когда мы НЕ в контейнере (панель запущена
+// прямо на Windows через `node server.js`, см. цикл разработки в CLAUDE.md). Внутри
+// контейнера это сам контейнер, и его ECONNREFUSED соврал бы «сервис не слушает» —
+// а это готовый неверный диагноз, который увёл бы человека чинить не то. Поэтому
+// на обычном Linux-движке Docker (где нет host.docker.internal) честно отвечаем
+// «не знаю», а не выдумываем.
+const INSIDE_CONTAINER = fs.existsSync('/.dockerenv');
+
+async function hostPortListening(port, proto) {
+  if (proto !== 'tcp') return null;
+  const candidates = INSIDE_CONTAINER ? HOST_DIAL_CANDIDATES.filter((h) => h !== '127.0.0.1') : HOST_DIAL_CANDIDATES;
+  for (const host of candidates) {
+    const result = await dialTcp(host, port);
+    // 'no-host' — этого имени тут просто нет: пробуем следующего кандидата.
+    // Осмысленный ответ (слушает / отказали) отдаём сразу.
+    if (result !== 'no-host') return result;
+  }
+  return null;
+}
+
+// Адрес роутера берём точный, с хоста (GATEWAY_IPS, см. get-gateway-ips.ps1): угадывать
+// его нельзя, у одного 192.168.1.1, у другого 192.168.0.1, 192.168.31.1 или 10.0.0.1.
+// Догадка «последний октет → 1» остаётся только фолбэком для старого start.bat, который
+// GATEWAY_IPS ещё не передаёт, и помечается флагом — чтобы в тексте не утверждать лишнего.
+function guessGatewayIp(lanIp) {
+  const m = /^(\d+\.\d+\.\d+)\.\d+$/.exec(lanIp || '');
+  return m ? `${m[1]}.1` : null;
+}
+
+// По какой схеме открывается веб-морда роутера: часть отдаёт только https, часть только
+// http, кто-то держит её на 8080. Дать заведомо мёртвую ссылку хуже, чем не дать никакой,
+// поэтому проверяем дозвоном — панель дотягивается до роутера через NAT хоста, так что
+// проверка честная. Таймаут короткий: роутер в одном сегменте, отвечает мгновенно.
+// Пустая строка (а не null) на «веб-морды не нашли» — намеренно: memoizeAsync не кэширует
+// null/undefined, и отрицательный результат переспрашивался бы на каждой проверке порта.
+const gatewayWebUrl = memoizeAsync(async (ip) => {
+  if (!ip) return '';
+  for (const [port, scheme] of [[80, 'http'], [443, 'https'], [8080, 'http']]) {
+    if ((await dialTcp(ip, port, 700)) === true) return `${scheme}://${ip}${port === 80 || port === 443 ? '' : `:${port}`}`;
+  }
+  return '';
+}, 60 * 1000);
+
+// --- Достижимость порта снаружи -------------------------------------------
 // Каждый запрос дёргает check-host.net и ждёт его до ~9с (6 опросов по 1.5с) —
 // нормальная страница разом шлёт максимум 3 (checkPort() по всем PORTS_TO_CHECK),
 // но ничего не мешает клиенту наспамить параллельных запросов и подвесить сервер
 // пачкой висящих промисов (или получить у check-host.net бан за flood). Лимит —
 // не по времени (это ломало бы штатный параллельный чек трёх портов), а по числу
 // одновременных проверок с одного IP.
+
 const reachabilityInFlight = new Map();
 const MAX_CONCURRENT_REACHABILITY_PER_IP = 6;
 
@@ -453,9 +661,33 @@ app.get('/api/reachability', async (req, res) => {
 
   const localIps = (process.env.HOST_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const localIp = localIps[0];
+  // LAN-адрес этой машины — отдельно от HOST_IPS (start.bat кладёт туда ПУБЛИЧНЫЙ адрес,
+  // если его удалось узнать, см. комментарий про natLikely ниже). Нужен и для вывода
+  // "между тобой и интернетом есть роутер", и для инструкции по пробросу: в правило
+  // роутера вписывается именно LAN-адрес, а не публичный.
+  const lanIps = (process.env.LAN_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (!localIp) {
     return res.status(502).json({ error: 'HOST_IPS не задан — запусти ярлык «Запустить трансляцию»' });
   }
+
+  // Для инструкции по роутеру нужен именно приватный адрес, поэтому он и предпочитается;
+  // но собственный адрес машины важен и тогда, когда он публичный (сервер на VPS) — по
+  // нему видно обратное: NAT'а нет вовсе, значит и пробрасывать нечего, вся оборона на
+  // самой машине. Поэтому lanIp — «свой адрес» вообще, а natLikely ниже смотрит, приватный ли он.
+  const lanIp = lanIps.find(isPrivateIp) || lanIps[0] || (isPrivateIp(localIp) ? localIp : null);
+  const gatewayIps = (process.env.GATEWAY_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const gatewayIp = gatewayIps[0] || guessGatewayIp(lanIp);
+  const gatewayGuessed = !gatewayIps[0] && Boolean(gatewayIp);
+
+  // Локальная сторона — считаем всегда, даже если внешняя проверка потом упадёт:
+  // "контейнер не запущен" видно и без check-host.net, и это готовый ответ на
+  // вопрос "почему закрыт", который не нужно искать в роутере.
+  const [container, hostListening, gatewayUrl] = await Promise.all([
+    containerPortState(port).catch((e) => ({ dockerError: e.message })),
+    hostPortListening(port, proto).catch(() => null),
+    gatewayWebUrl(gatewayIp).catch(() => ''),
+  ]);
+  const local = { ...(container || {}), hostListening };
 
   // Проверяем внешний (публичный) IP, а не localIp напрямую — если localIp приватный
   // (почти всегда, у любого домашнего роутера), проверка снаружи ВСЕГДА уходила бы в
@@ -470,19 +702,42 @@ app.get('/api/reachability', async (req, res) => {
   // ipify.org может отдать РАЗНЫЙ IP изнутри контейнера — тогда проверка молча уходила
   // не по тому адресу, что реально показан пользователю, и порт выглядел "закрытым"
   // просто потому что снаружи никто и не пробрасывал именно этот, никому не показанный IP.
-  const targetIp = isPrivateIp(localIp) ? await fetchPublicIp() : localIp;
+  const freshPublicIp = await fetchPublicIp();
+  const targetIp = isPrivateIp(localIp) ? freshPublicIp : localIp;
   if (!targetIp) {
-    return res.status(502).json({ localIp, localIps, error: 'Не удалось узнать внешний IP — проверь интернет' });
+    return res.status(502).json({ localIp, localIps, lanIps, local, error: 'Не удалось узнать внешний IP — проверь интернет' });
   }
 
-  const natLikely = isPrivateIp(localIp);
-  const { vpnLikely, hostingLikely } = await ipReputation(targetIp);
+  // HOST_IPS снимается ОДИН раз, при запуске ярлыка, и дальше живёт в переменной
+  // окружения контейнера. У бытового провайдера адрес динамический и меняется сам
+  // (переподключение сессии, перезагрузка роутера) — после этого панель продолжает
+  // показывать и проверять старый адрес, порт по нему честно "закрыт", а причина не
+  // в порте вообще. Сравниваем зафиксированный адрес с тем, что интернет видит сейчас.
+  const ipChanged = Boolean(freshPublicIp && localIp && !isPrivateIp(localIp) && freshPublicIp !== localIp);
+
+  // "Между этой машиной и интернетом есть NAT" — прежняя проверка isPrivateIp(localIp)
+  // в самом частом случае давала ЛОЖЬ: у домашнего пользователя start.bat кладёт в
+  // HOST_IPS публичный адрес (ipify спрашивается первым), приватным localIp не был
+  // почти никогда, natLikely молчал — и человеку за роутером панель советовала
+  // "выключи антивирус" вместо единственно нужного проброса порта. Теперь смотрим на
+  // реальный LAN-адрес: он приватный, а снаружи нас видно под другим — значит между
+  // нами и интернетом кто-то есть.
+  const natLikely = Boolean(lanIp) && isPrivateIp(lanIp) && lanIp !== targetIp;
+  const { vpnLikely = false, hostingLikely = false, mobileLikely = false, isp = null, reverse = null } =
+    (await ipReputation(targetIp)) || {};
+
+  const facts = {
+    targetIp, localIp, localIps, lanIp, lanIps, freshPublicIp, ipChanged,
+    gatewayIp, gatewayGuessed, gatewayUrl,
+    natLikely, vpnLikely, hostingLikely, mobileLikely, isp, reverse,
+    port, proto, local,
+  };
 
   try {
-    const reachable = await checkPortReachable(targetIp, port, proto);
-    res.json({ targetIp, localIp, localIps, natLikely, vpnLikely, hostingLikely, port, proto, reachable });
+    const probe = await probePortExternally(targetIp, port, proto);
+    res.json({ ...facts, ...probe });
   } catch (e) {
-    res.status(502).json({ targetIp, localIp, localIps, natLikely, vpnLikely, hostingLikely, port, proto, error: e.message });
+    res.status(502).json({ ...facts, error: e.message });
   }
 });
 

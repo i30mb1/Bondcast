@@ -8,7 +8,7 @@
 ; до кнопки скачивания, см. ../index.html).
 
 #define MyAppName "Bondcast Stream"
-#define MyAppVersion "1.3.2"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Bondcast"
 #define MyAppURL "https://github.com/i30mb1/Bondcast"
 
@@ -46,6 +46,7 @@ russian.WelcomeLabel2=Установим сервер для трансляци�
 Source: "..\docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\get-host-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\get-gateway-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\launch-obs.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\update.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\check-static-ip.ps1"; DestDir: "{app}"; Flags: ignoreversion

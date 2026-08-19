@@ -280,6 +280,22 @@
      цветом, который никак не вписывается в палитру страницы. */
   .recheck-ports { color: var(--accent); font-weight: 600; text-decoration: none; }
   .recheck-ports:hover { text-decoration: underline; }
+  /* Ссылка на сырой отчёт check-host.net рядом с «Проверить снова» — второстепенная,
+     поэтому приглушённая, но со своим цветом: без него браузер красит её дефолтным
+     тёмно-синим, который на тёмном фоне панели почти не читается. */
+  .report-link { color: var(--text-muted); text-decoration: underline; }
+  .report-link:hover { color: var(--text); }
+  /* Кнопка-ссылка в веб-морду роутера. Это именно <a> (открывается в новой вкладке,
+     работает средняя кнопка мыши), но выглядеть должна как кнопка — а button.primary
+     выше по тегу, на ссылку не распространяется. */
+  a.btn-link {
+    display: inline-block; background: var(--accent); color: var(--on-accent);
+    border-radius: 8px; padding: 8px 14px; font-size: 13px; text-decoration: none; white-space: nowrap;
+    /* .body у details.nested — флекс-колонка, и без этого ссылка растягивается
+       на всю ширину карточки, теряя вид кнопки. Вне флекса свойство игнорируется. */
+    align-self: flex-start;
+  }
+  a.btn-link:hover { background: var(--accent-pressed); }
   /* Ошибки и предупреждения — красным, а не акцентом: акцент теперь голубой
      и на роль тревожного цвета больше не годится. */
   .flow-warn { font-size: 12.5px; color: var(--danger); padding: 6px 0; }
