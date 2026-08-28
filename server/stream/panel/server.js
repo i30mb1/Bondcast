@@ -307,20 +307,42 @@ app.get('/api/connections', async (req, res) => {
   // это не тот адрес, на который телефон сможет достучаться снаружи. Свой внешний IP
   // комп тоже не знает сам (это адрес роутера на его WAN-стороне) — проще спросить
   // публичный сервис, чем выковыривать его локально. Тот же приём уже используется
-  // в /api/reachability. Само собой, работает только если на роутере настроен проброс
-  // портов на этот комп — панель это не проверяет, только показывает адрес.
+  // в /api/reachability. Сам по себе этот адрес отвечает, только если на роутере
+  // настроен проброс портов — панель это не проверяет, а лишь отдаёт оба варианта
+  // (см. scope ниже) и даёт человеку выбрать, откуда он будет стримить.
   const publicIp = await fetchPublicIp();
 
-  const entries = localAddresses.map((address) => ({ address, label: address, isPublic: !isPrivateIp(address) }));
-  if (publicIp && !localAddresses.includes(publicIp)) {
-    entries.push({ address: publicIp, label: `${publicIp} (внешний, нужен проброс портов)`, isPublic: true });
-  }
+  // LAN-адрес(а) этой машины — отдельно от HOST_IPS, куда start.bat кладёт ПУБЛИЧНЫЙ
+  // адрес. Нужны панели не только для диагностики: по ним работает режим «дома, по
+  // Wi-Fi» — телефон в той же сети достучится напрямую, без проброса портов на
+  // роутере. Это самый простой первый успех, и раньше его нельзя было даже показать:
+  // в QR всегда уходил внешний адрес, а он без проброса не отвечает.
+  const lanAddresses = (process.env.LAN_IPS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // scope — по нему панель выбирает адрес под выбранный режим ('lan' — телефон в той
+  // же Wi-Fi, 'internet' — телефон в мобильной сети). Один и тот же адрес может
+  // прийти и из LAN_IPS, и из HOST_IPS (когда ipify не ответил и start.bat упал на
+  // LAN) — дедуплицируем по адресу, первым выигрывает LAN.
+  const entries = [];
+  const seen = new Set();
+  const addEntry = (address, label) => {
+    if (!address || seen.has(address)) return;
+    seen.add(address);
+    const isPublic = !isPrivateIp(address);
+    entries.push({ address, label, isPublic, scope: isPublic ? 'internet' : 'lan' });
+  };
+  lanAddresses.forEach((address) => addEntry(address, address));
+  localAddresses.forEach((address) => addEntry(address, address));
+  addEntry(publicIp, publicIp);
 
   const rawName = String(req.query.name || 'livestream').trim() || 'livestream';
   const name = STREAM_NAME_RE.test(rawName) ? rawName : 'livestream';
 
   const hosts = await Promise.all(
-    entries.map(async ({ address, label, isPublic }) => {
+    entries.map(async ({ address, label, isPublic, scope }) => {
       // Формат зашит в мобильном парсере (QrPayloadParserImpl.parseBondcast).
       const bondcastUri =
         `bondcast://config?host=${encodeURIComponent(address)}` +
@@ -332,6 +354,9 @@ app.get('/api/connections', async (req, res) => {
       return {
         label,
         isPublic,
+        // 'lan' — адрес виден только внутри домашней сети (режим «дома, по Wi-Fi»),
+        // 'internet' — публичный адрес, до него нужен проброс порта на роутере.
+        scope,
         // Разбито на Сервер/Ключ так же, как это два отдельных поля в OBS (Custom → Server/Stream Key) -
         // без имени в конце, чтобы не заставлять пользователя вручную резать готовую ссылку.
         obsSrtUrl: `srt://${address}:10080`,

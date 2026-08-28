@@ -2,3 +2,7 @@ node_modules/
 __pycache__/
 *.pyc
 installer/dist/
+
+# Отчёт «порт занят» — генерируется check-ports.ps1 при каждом запуске start.bat
+# из шаблона ports-busy.html, машинно-специфичен (PID, пути к чужим программам).
+ports-busy.generated.html

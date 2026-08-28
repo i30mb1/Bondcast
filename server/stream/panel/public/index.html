@@ -228,6 +228,27 @@
     white-space: normal; word-break: break-all; align-self: center;
   }
   .addr-row button { flex-shrink: 0; }
+  /* Куда вставлять скопированное — видимой строкой, а не подсказкой под «?».
+     Вопрос возникает у каждого ровно один раз, и прятать ответ под наведение
+     мыши значит заставить его искать. */
+  .addr-where { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); margin: 0 0 6px; }
+  /* Путь до нужного экрана в приложении — один раз над всеми полями блока, а не
+     повторно под каждым. */
+  .addr-path { font-size: 12px; line-height: 1.45; color: var(--text-secondary); margin: 2px 0 4px; }
+
+  /* Чипсы — там, где выбор из нескольких коротких значений (стрим, сцена OBS).
+     Их обычно единицы, и прятать весь набор за раскрытием select незачем. */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: var(--input-bg); border: 1px solid var(--divider); border-radius: 999px;
+    padding: 7px 13px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
+    cursor: pointer; transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  /* Общее button:hover ниже по специфичности не перебивает эти два правила,
+     поэтому цвет выбранного чипса под курсором не подменяется серым. */
+  .chip:hover:not(.is-active) { background: #1f1f1f; border-color: rgba(255,255,255,0.2); color: var(--text); }
+  .chip.is-active, .chip.is-active:hover { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+  .flow-step-final .addr-where { margin-top: -2px; }
   /* В узкой колонке подпись (130px) + адрес + кнопка в один ряд не помещаются —
      ставим подпись отдельной строкой сверху, адресу достаётся вся ширина. */
   @container main-col (max-width: 480px) {
@@ -278,13 +299,15 @@
   .watch-link:hover { text-decoration: underline; }
   /* Раньше без явного цвета — браузер рисовал его дефолтным синим ссылочным
      цветом, который никак не вписывается в палитру страницы. */
-  .recheck-ports { color: var(--accent); font-weight: 600; text-decoration: none; }
-  .recheck-ports:hover { text-decoration: underline; }
-  /* Ссылка на сырой отчёт check-host.net рядом с «Проверить снова» — второстепенная,
-     поэтому приглушённая, но со своим цветом: без него браузер красит её дефолтным
-     тёмно-синим, который на тёмном фоне панели почти не читается. */
-  .report-link { color: var(--text-muted); text-decoration: underline; }
-  .report-link:hover { color: var(--text); }
+  /* Перепроверить порт — значок в правом углу шага, а не строка текста под ним.
+     margin-left:auto прижимает его к правому краю .flow-step (флекс-строка). */
+  .step-refresh {
+    margin-left: auto; flex-shrink: 0; align-self: flex-start;
+    width: 28px; height: 28px; padding: 0; border-radius: 8px; line-height: 1;
+    font-size: 15px; color: var(--text-muted); background: transparent;
+    border: 1px solid var(--divider);
+  }
+  button.step-refresh:hover:not(:disabled):not(.primary) { background: var(--elevated); color: var(--text); }
   /* Кнопка-ссылка в веб-морду роутера. Это именно <a> (открывается в новой вкладке,
      работает средняя кнопка мыши), но выглядеть должна как кнопка — а button.primary
      выше по тегу, на ссылку не распространяется. */
@@ -376,7 +399,10 @@
   .flow-step .flow-step-dot.bad { background: var(--danger); }
   .flow-step .flow-step-dot.dot-live-accent { background: var(--accent); }
   .flow-step .flow-step-dot.warn { background: rgba(255,255,255,0.25); }
-  .flow-step b { font-size: 12.5px; color: #fff; display: block; }
+  /* Только заголовок самого шага, не любой <b> внутри: display:block по всему
+     поддереву ломал инструкции в раскрывашках — «Меню», «Tools → WebSocket Server
+     Settings» и точка после неё вставали тремя отдельными строками. */
+  .flow-step > div > b { font-size: 12.5px; color: #fff; display: block; }
   .flow-step .flow-step-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: block; }
   .flow-step-final {
     flex-direction: column; align-items: stretch; gap: 12px; padding: 18px;
@@ -392,6 +418,11 @@
      финального шага сценария выкладываем label/код/кнопку в колонку вместо строки. */
   .flow-step-final .addr-row { flex-direction: column; align-items: stretch; gap: 4px; padding: 4px 0; }
   .flow-step-final .addr-row span.addr-label { width: auto; padding-top: 0; }
+  /* align-self:center из базового правила .addr-row code сжимал бокс до содержимого
+     и вешал его по центру колонки — адрес и кнопка «Копировать» повисали посередине.
+     В колонке адрес должен занимать всю ширину, а кнопка — стоять слева. */
+  .flow-step-final .addr-row code { align-self: stretch; }
+  .flow-step-final .addr-row button { align-self: flex-start; }
 
   /* "Сейчас на этом канале" под чек-листом сценария убрали — то же самое (кто
      живой, с каким статусом) теперь показывает сайдбар "Стримы на сервере"
@@ -533,13 +564,13 @@
   <div class="top-bar">
     <div>
       <h1>Bondcast</h1>
-      <p class="lead">Помощник для стрима с телефона</p>
+      <p class="lead">Принимает видео с телефона и отдаёт картинку в OBS — оттуда ты ведёшь эфир.</p>
     </div>
   </div>
 
   <div class="tabs-nav">
-    <button class="tab-btn" data-tab="quickstart">Старт и подключение</button>
-    <button class="tab-btn" data-tab="stream">Функции</button>
+    <button class="tab-btn" data-tab="quickstart">Начать стрим</button>
+    <button class="tab-btn" data-tab="stream">Настроить эфир</button>
   </div>
 
 <div class="page-row">
@@ -548,7 +579,7 @@
   <!-- ======================= Старт и подключение ======================= -->
   <div class="tab-panel" data-tab-panel="quickstart">
     <div class="card">
-      <div class="section-title" style="margin-bottom:12px">Выбери способ стрима</div>
+      <div class="section-title" style="margin-bottom:12px">Откуда идёт картинка?</div>
       <div class="flow-selector" id="flowSelector"></div>
       <div id="flowPanel"></div>
     </div>
@@ -563,8 +594,8 @@
         <div class="feature-card-head">
           <div class="feature-card-icon">💬</div>
           <div class="feature-card-title">
-            <b>Субтитры на стриме</b>
-            <div class="row-meta">Наложить ИИ-субтитры поверх уже идущего эфира</div>
+            <b>Субтитры</b>
+            <div class="row-meta">Распознаём речь и показываем текст поверх картинки</div>
           </div>
           <div class="feature-switch" id="subsSwitch"><div class="knob"></div></div>
         </div>
@@ -580,11 +611,11 @@
           <div id="capBuildStage">
             <div class="row">
               <div class="row-label">
-                <b>Нужно установить ПО для субтитров</b>
-                <span class="row-meta">Разовая загрузка (~10ГБ) — дальше не потребуется</span>
+                <b>Сначала скачаем распознавание речи</b>
+                <span class="row-meta">Один раз, около 10 ГБ. Дальше работает само, интернет для этого больше не нужен</span>
               </div>
               <div class="row-actions">
-                <button type="button" class="cap-build primary">Установить нужное ПО</button>
+                <button type="button" class="cap-build primary">Скачать</button>
               </div>
             </div>
           </div>
@@ -595,10 +626,10 @@
           <div id="capReadyStage" hidden>
             <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
               <div>
-                <label class="field-label">Распознавание <span class="info" tabindex="0">?<span class="bubble">Точнее — с пунктуацией, но чуть медленнее. Быстрее — без пунктуации, ниже нагрузка на GPU. Меняется при следующем «Подключить субтитры».</span></span></label>
+                <label class="field-label">Как распознавать <span class="info" tabindex="0">?<span class="bubble">«Точнее» — с запятыми и точками, но чуть медленнее. «Быстрее» — без знаков препинания, зато меньше грузит видеокарту. Поменяется при следующем включении субтитров.</span></span></label>
                 <div class="seg">
-                  <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрое</button>
-                  <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точное</button>
+                  <button type="button" id="qualityFastBtn" data-model="v3_e2e_ctc">Быстрее</button>
+                  <button type="button" id="qualityPreciseBtn" data-model="v3_e2e_rnnt">Точнее</button>
                 </div>
               </div>
             </div>
@@ -614,16 +645,16 @@
                   <div>
                     <div style="display:flex;align-items:center;gap:10px;cursor:pointer" id="overlayStyleToggle">
                       <div class="feature-switch" id="overlayStyleSwitch" style="transform:scale(0.75);transform-origin:left center"><div class="knob"></div></div>
-                      <b style="font-size:13px">🎨 Оформление оверлея</b>
+                      <b style="font-size:13px">🎨 Как выглядят субтитры</b>
                     </div>
                     <div id="overlaySection" hidden>
                       <div class="grid-2">
                         <div class="range-field">
-                          <div class="range-head"><span>Размер шрифта</span><output id="overlaySizeOut">34</output></div>
+                          <div class="range-head"><span>Размер букв</span><output id="overlaySizeOut">34</output></div>
                           <input type="range" id="overlaySize" min="16" max="72" />
                         </div>
                         <div class="range-field">
-                          <div class="range-head"><span>Строк на экране</span><output id="overlayLinesOut">3</output></div>
+                          <div class="range-head"><span>Сколько строк видно</span><output id="overlayLinesOut">3</output></div>
                           <input type="range" id="overlayLines" min="1" max="8" />
                         </div>
                       </div>
@@ -632,7 +663,7 @@
                         <div class="swatch-item"><input type="color" id="overlayGuestColor" /><span>Цвет «Кто-то»</span></div>
                         <div class="swatch-item">
                           <input type="color" id="overlayBgColor" />
-                          <span>Фон</span>
+                          <span>Подложка</span>
                           <input type="range" id="overlayBgOpacity" min="0" max="100" style="width:90px" />
                           <output id="overlayBgOpacityOut" style="font-family:'SF Mono',Consolas,monospace;font-size:12px;color:var(--text-secondary)">60%</output>
                         </div>
@@ -648,10 +679,10 @@
 
                 <div class="card connected-columns-side">
                   <div class="section-title" style="margin-bottom:12px">Голоса</div>
-                  <button type="button" id="addVoiceBtn" class="cap-enroll">🎙 Определить голос</button>
+                  <button type="button" id="addVoiceBtn" class="cap-enroll">🎙 Записать голос</button>
                   <label class="checkbox-row">
                     <input type="checkbox" id="showSpeakerToggle" checked />
-                    <span>Показывать, кто говорит</span>
+                    <span>Подписывать, кто говорит</span>
                   </label>
                   <div id="voicesList" style="margin-top:10px"></div>
                 </div>
@@ -660,7 +691,7 @@
           </div>
 
           <div class="card" id="capLogCard" hidden>
-            <div class="section-title" style="margin-bottom:8px">Лог субтитров — установка / запись голоса</div>
+            <div class="section-title" style="margin-bottom:8px">Что сейчас происходит</div>
             <pre id="capLog" class="log-box"></pre>
           </div>
 
@@ -672,8 +703,8 @@
         <div class="feature-card-head">
           <div class="feature-card-icon">🔀</div>
           <div class="feature-card-title">
-            <b>Умный переключатель сцен OBS</b>
-            <div class="row-meta">Сам переключит сцену в OBS, если сигнал со стрима пропал</div>
+            <b>Заглушка при обрыве</b>
+            <div class="row-meta">Пропала связь с телефоном — OBS сам покажет заставку, а потом вернёт эфир</div>
           </div>
           <div class="feature-switch" id="sceneSwitch"><div class="knob"></div></div>
         </div>
@@ -686,8 +717,8 @@
 
 </div>
 <div class="card page-sidebar">
-  <div class="section-title" style="margin-bottom:4px">Стримы на сервере</div>
-  <div class="row-meta" style="margin-bottom:14px">Кто сейчас подключён к этому каналу</div>
+  <div class="section-title" style="margin-bottom:4px">Сейчас в эфире</div>
+  <div class="row-meta" style="margin-bottom:14px">Кто прямо сейчас стримит на этот компьютер</div>
   <div id="serverStreams" style="display:flex;flex-direction:column;gap:10px"></div>
 </div>
 <div class="card page-preview" id="previewPanel" hidden></div>

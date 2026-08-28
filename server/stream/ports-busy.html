@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Порт занят — Stream Panel</title>
+<!--
+  Шаблон страницы «порт занят». Открывается из start.bat, когда предполётная проверка
+  (check-ports.ps1) нашла занятый порт и не дала compose упасть английской простынёй.
+
+  Как это работает: check-ports.ps1 подставляет JSON вместо плейсхолдера
+  "/*PORTS-DATA*/null" ниже и кладёт результат рядом как ports-busy.generated.html —
+  сам этот файл остаётся нетронутым шаблоном. Весь русский текст живёт здесь, скрипт
+  передаёт только машинные данные (порт, протокол, PID, имя процесса, путь): так в
+  .ps1 не нужны русские строки, а Windows PowerShell 5.1 к ним чувствителен по кодировке.
+
+  Формулировки намеренно совпадают с diagnoseClosed() в panel/public/app.js — диагноз
+  до старта и диагноз в панели не должны расходиться.
+-->
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36;
+    --text: #e6e8ec; --muted: #8b92a3; --red: #f87171; --amber: #fbbf24;
+    --accent: #3b82f6; --on-accent: #04121c;
+  }
+  body {
+    margin: 0; padding: 32px 16px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%; background: var(--red);
+    display: inline-block; margin-right: 8px; box-shadow: 0 0 8px var(--red);
+  }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  .lede { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 24px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 4px; }
+  .why { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .who {
+    font-size: 14px; line-height: 1.6; margin: 0 0 14px; padding: 10px 12px;
+    background: #0f1115; border: 1px solid var(--border); border-radius: 8px;
+  }
+  .who b { color: var(--text); }
+  .path { color: var(--muted); font-size: 12px; word-break: break-all; display: block; margin-top: 4px; }
+  ol, ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.7; color: var(--text); }
+  li + li { margin-top: 6px; }
+  code {
+    background: #0b0d11; border: 1px solid var(--border); border-radius: 5px;
+    padding: 1px 6px; font-size: 13px; color: #cbd5e1; word-break: break-all;
+  }
+  .tag {
+    float: right; font-size: 11px; color: var(--amber); border: 1px solid var(--amber);
+    border-radius: 999px; padding: 2px 8px; opacity: .8;
+  }
+  .footer { color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .footer b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="dot"></span><span id="title">Порт занят</span></h1>
+  <p class="lede" id="lede"></p>
+  <div id="list"></div>
+  <div class="card footer">
+    <p style="margin:0 0 10px"><b>Команды ниже нужно вводить в PowerShell от администратора.</b>
+      Пуск → набери «PowerShell» → правой кнопкой → «Запуск от имени администратора».</p>
+    <p style="margin:0">Когда порт освободится — просто нажми на ярлык
+      <b>«Запустить трансляцию»</b> на рабочем столе ещё раз. Эта страница создаётся заново
+      при каждом запуске, так что старые данные на ней не задержатся.</p>
+  </div>
+</div>
+
+<script>
+// Сюда check-ports.ps1 подставляет данные. Плейсхолдер оставлен валидным JS, чтобы
+// сам шаблон можно было открыть в браузере и увидеть, что страница не сломана.
+const BUSY = /*PORTS-DATA*/null;
+
+// Зачем нужен каждый порт — человеческим языком, без "SRT listener" и прочего.
+const PORT_INFO = {
+  5000: 'приём видео с телефона (бондинг нескольких сим-карт)',
+  10080: 'приём видео с телефона напрямую, без бондинга',
+  1935: 'приём видео от PRISM Live и других RTMP-программ',
+  1985: 'служебный порт видеосервера — из него панель берёт статистику эфира',
+  8080: 'картинка эфира: предпросмотр в панели и источник для OBS',
+  8081: 'сама панель управления — страница, которую открывает ярлык',
+  8082: 'оверлей субтитров для OBS',
+  8765: 'распознавание речи в субтитры',
+};
+
+const COMMON_CULPRITS = `Частые виновники: второй запущенный экземпляр этого же сервера,
+  свой srtla/SRS вне Docker, OBS с включённым сервером, NDI Tools, IIS, Unreal/Unity,
+  локальные веб-серверы разработчика (XAMPP, node, python -m http.server).`;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function whoBlock(item) {
+  if (item.kind === 'reserved') {
+    return `<div class="who">Порт никем не занят, но <b>Windows зарезервировала его под себя</b>
+      — Hyper-V и WSL забирают под свои нужды целые диапазоны портов, и обычной программе
+      их уже не отдают.</div>`;
+  }
+  const name = item.process ? `<b>${esc(item.process)}</b>` : '<b>неизвестная программа</b>';
+  const path = item.path ? `<span class="path">${esc(item.path)}</span>` : '';
+  return `<div class="who">Порт держит ${name} (номер процесса ${esc(item.pid)}).${path}</div>`;
+}
+
+function howto(item) {
+  const p = item.port;
+  const proto = String(item.proto).toUpperCase();
+  const psProto = String(item.proto).toLowerCase();
+
+  if (item.kind === 'reserved') {
+    return `<ol>
+      <li>Проверь, в какой диапазон попал порт:
+        <br><code>netsh int ipv4 show excludedportrange protocol=${psProto}</code></li>
+      <li>Сбрось резерв — Windows раздаст диапазоны заново, уже без нашего порта:
+        <br><code>net stop winnat</code> → <code>net start winnat</code></li>
+      <li>Резерв выдаётся при каждой загрузке, поэтому после перезагрузки порт может снова
+        уехать. Чтобы закрепить его за собой один раз и навсегда:
+        <br><code>netsh int ipv4 add excludedportrange protocol=${psProto} startport=${p} numberofports=1 store=persistent</code></li>
+    </ol>`;
+  }
+
+  if (item.kind === 'docker') {
+    return `<ol>
+      <li>Порт держит Docker, но контейнер не из нашего набора — скорее всего это другой
+        твой проект. Посмотри, кто именно:
+        <br><code>docker ps -a --filter publish=${p}</code></li>
+      <li>Останови этот контейнер, если он не нужен прямо сейчас:
+        <br><code>docker rm -f &lt;имя или ID из списка&gt;</code></li>
+      <li>Если контейнер нужен — поменяй порт у него (в его <code>docker-compose.yml</code>
+        или в <code>docker run -p</code>): наши порты поменять сложнее, они прописаны
+        в телефоне, в пробросе на роутере и в правилах брандмауэра.</li>
+    </ol>`;
+  }
+
+  if (item.kind === 'system') {
+    return `<ol>
+      <li>Порт занял системный процесс Windows. Чаще всего за этим стоит служба,
+        которая слушает порт через <code>http.sys</code> — посмотри, чья это регистрация:
+        <br><code>netsh http show urlacl | findstr :${p}</code></li>
+      <li>Второй частый случай — тот же резерв Hyper-V/WSL. Сбрось его:
+        <br><code>net stop winnat</code> → <code>net start winnat</code></li>
+      <li>Если порт занимает нужная служба (например, IIS или «Веб-развёртывание»),
+        останови её в «Службах» (<code>services.msc</code>) или отключи автозапуск.</li>
+    </ol>`;
+  }
+
+  return `<ol>
+    <li>Убедись, кто это: <code>Get-Process -Id ${esc(item.pid)}</code> — команда покажет
+      имя и путь к программе.</li>
+    <li>Закрой эту программу (или поменяй порт в её настройках) и запусти ярлык
+      «Запустить трансляцию» ещё раз.</li>
+    <li>Если программа нужна и порт у неё не меняется — придётся выбирать: она или
+      трансляция. ${COMMON_CULPRITS}</li>
+    <li>Проверить, освободился ли порт, можно так:
+      <br><code>${proto === 'UDP'
+        ? `Get-NetUDPEndpoint -LocalPort ${p}`
+        : `Get-NetTCPConnection -LocalPort ${p} -State Listen`}</code>
+      — пустой ответ значит «свободен».</li>
+  </ol>`;
+}
+
+function render() {
+  const list = document.getElementById('list');
+  if (!Array.isArray(BUSY) || BUSY.length === 0) {
+    document.getElementById('title').textContent = 'Все порты свободны';
+    document.getElementById('lede').textContent =
+      'Это шаблон страницы. Настоящий отчёт создаётся рядом, в ports-busy.generated.html, ' +
+      'когда ярлык «Запустить трансляцию» находит занятый порт.';
+    return;
+  }
+
+  const blocking = BUSY.filter((i) => i.severity !== 'warn');
+  document.getElementById('title').textContent =
+    BUSY.length === 1 ? 'Порт занят' : 'Порты заняты';
+  document.getElementById('lede').innerHTML = blocking.length
+    ? `Трансляция не запущена: ${blocking.length === 1 ? 'нужный ей порт занят' : 'нужные ей порты заняты'}
+       другой программой на этом компьютере. Роутер и интернет тут ни при чём — разбираться
+       нужно прямо здесь. Ниже написано, кто занял и что с этим делать.`
+    : `Трансляция запущена. Занят только порт, без которого можно обойтись — но часть
+       возможностей работать не будет.`;
+
+  list.innerHTML = BUSY.map((item) => `
+    <div class="card">
+      ${item.severity === 'warn' ? '<span class="tag">не мешает запуску</span>' : ''}
+      <h2>Порт ${esc(item.port)}/${esc(String(item.proto).toUpperCase())}</h2>
+      <p class="why">${esc(PORT_INFO[item.port] || 'нужен серверу трансляции')}</p>
+      ${whoBlock(item)}
+      ${howto(item)}
+    </div>`).join('');
+}
+
+render();
+</script>
+</body>
+</html>

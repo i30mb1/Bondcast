@@ -162,7 +162,39 @@ if not exist "%~dp0VERSION" echo dev> "%~dp0VERSION"
 :: container under these names would otherwise make "docker compose up" fail or
 :: silently reuse an outdated one instead of picking up the fresh build. "-f" removes
 :: it whether it is running or already stopped; missing names are silently ignored.
-docker rm -f srs srtla-rec stream-panel asr-worker >nul 2>nul
+:: "overlay" belongs in this list too - it publishes 8082 like the rest, and leaving it
+:: behind is exactly how the two-compose-projects clash described at the top of
+:: docker-compose.yml shows up in practice.
+docker rm -f srs srtla-rec stream-panel overlay asr-worker >nul 2>nul
+
+:: Preflight: is anything else already sitting on the ports we publish? Without this,
+:: "docker compose up" below just dies with an English wall of text ("Bind for
+:: 0.0.0.0:5000 failed: port is already allocated") and we still open the browser at
+:: localhost:8081 - which, when 8081 is the taken one, shows somebody else's app
+:: instead of the panel. The panel's own port diagnosis (diagnoseClosed in app.js)
+:: can't help there: it needs the panel to be up in the first place.
+:: 8765 (captions worker) is checked but marked "warn" - it isn't published on a plain
+:: start (profiles: captions), so a clash there must not stop the whole stack.
+:: Stale report from a previous run goes first, so a failing script can't make us open
+:: yesterday's page as if it were fresh.
+title Bondcast Stream - checking ports...
+echo Checking that the ports we need are free...
+del /q "%~dp0ports-busy.generated.html" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0check-ports.ps1" ^
+  -Ports "5000:udp,10080:udp,1935:tcp,1985:tcp,8080:tcp,8081:tcp,8082:tcp,8765:tcp:warn" ^
+  -FixDocker -Template "%~dp0ports-busy.html" -Out "%~dp0ports-busy.generated.html"
+if errorlevel 1 (
+  echo.
+  echo A port this server needs is taken by another program on this PC.
+  echo Opening the details in your browser...
+  if exist "%~dp0ports-busy.generated.html" (
+    start "" "%~dp0ports-busy.generated.html"
+  ) else (
+    start "" "%~dp0ports-busy.html"
+  )
+  pause
+  exit /b 1
+)
 
 title Bondcast Stream - building (first run takes a few minutes)...
 echo Setting up the streaming server - srs, srtla-rec, panel...

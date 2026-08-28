@@ -50,8 +50,12 @@ Source: "..\get-gateway-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\launch-obs.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\update.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\check-static-ip.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\check-ports.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-missing.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-not-running.html"; DestDir: "{app}"; Flags: ignoreversion
+; Шаблон отчёта "порт занят" - check-ports.ps1 подставляет в него данные и кладёт
+; результат рядом как ports-busy.generated.html (см. start.bat). Сам шаблон не меняется.
+Source: "..\ports-busy.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\srs\*"; DestDir: "{app}\srs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\srtla-rec\*"; DestDir: "{app}\srtla-rec"; Flags: ignoreversion recursesubdirs createallsubdirs
