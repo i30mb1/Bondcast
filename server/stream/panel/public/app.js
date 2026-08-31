@@ -72,6 +72,29 @@ function regenerateStreamName() {
   return name;
 }
 
+// --- Отправка ошибок страницы в лог панели ---------------------------------
+// Сломавшийся фронт молчит: пользователь видит белый экран и не может ничего
+// показать. Отправляем в тот же лог, что и всё остальное, — под именем "ui".
+function reportClientError(message, stack) {
+  try {
+    fetch('/api/logs/client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: String(message), stack: String(stack || ''), url: location.href }),
+    }).catch(() => {});
+  } catch (e) {
+    // Панель недоступна — сообщать всё равно некуда, молчим.
+  }
+}
+
+window.addEventListener('error', (e) => {
+  reportClientError(e.message, e.error && e.error.stack);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const reason = e.reason;
+  reportClientError(reason && reason.message ? reason.message : String(reason), reason && reason.stack);
+});
+
 // --- Вкладки ---------------------------------------------------------------
 // Раньше это были две отдельные страницы (index.html — быстрый старт,
 // dashboard.html — расширенная панель); теперь одна страница с вкладками,

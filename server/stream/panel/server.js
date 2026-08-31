@@ -878,6 +878,25 @@ app.get('/api/reachability', async (req, res) => {
   }
 });
 
+// Ошибки в браузере панели — единственный класс поломок, которого сейчас не видно
+// нигде: «у меня просто белая страница» не оставляет следа ни в docker logs, ни в
+// логе панели. Маршрут за общей авторизацией (app.use(auth) выше).
+let clientErrorsThisMinute = 0;
+setInterval(() => { clientErrorsThisMinute = 0; }, 60 * 1000).unref();
+
+app.post('/api/logs/client', (req, res) => {
+  // Зацикленная ошибка в браузере (ошибка в обработчике ошибок) залила бы файл
+  // за секунды — ограничиваем и по частоте, и по длине.
+  if (clientErrorsThisMinute >= 20) return res.json({ ok: true, dropped: true });
+  clientErrorsThisMinute += 1;
+  const body = req.body || {};
+  const message = String(body.message || '').slice(0, 2000).replace(/\s+/g, ' ');
+  const where = String(body.url || '').slice(0, 200);
+  const stack = String(body.stack || '').slice(0, 2000).replace(/\s+/g, ' ');
+  if (message) logger.log('ui', 'error', `${message}${where ? ` @ ${where}` : ''}${stack ? ` | ${stack}` : ''}`);
+  res.json({ ok: true });
+});
+
 app.get('/api/status', async (req, res) => {
   const results = await Promise.all(
     ALLOWED.map(async (name) => {
