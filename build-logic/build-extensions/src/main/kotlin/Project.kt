@@ -26,7 +26,7 @@ fun Project.getVersionName(): String {
 
 fun Project.isCI(): Boolean {
     val properties = Properties()
-    val file = File("local.properties")
+    val file = File(rootDir, "local.properties")
     if (file.isFile) {
         InputStreamReader(FileInputStream(file), Charsets.UTF_8).use { reader ->
             properties.load(reader)
@@ -47,7 +47,8 @@ val Project.catalog get() = the<VersionCatalogsExtension>().named("libs")
 fun Project.getProperties(fileName: String): Properties {
     val properties = Properties()
 
-    val file = File(fileName)
+    // путь только от корня проекта: у демона Gradle рабочая папка своя, а не корень репозитория
+    val file = File(rootDir, fileName)
     if (!file.exists()) {
         logger.error("File $rootDir/$fileName not found!")
         return properties
