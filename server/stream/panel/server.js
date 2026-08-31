@@ -272,6 +272,7 @@ app.get('/api/captions/overlay-style', (req, res) => {
 // GET выше) — публично, до auth. GET ниже панель опрашивает обычным способом,
 // уже за auth, как всё остальное.
 let updateProgress = { status: 'idle', percent: 0, message: '' };
+let lastLoggedUpdateStatus = null;
 app.post('/api/update/progress', (req, res) => {
   const body = req.body || {};
   updateProgress = {
@@ -279,6 +280,12 @@ app.post('/api/update/progress', (req, res) => {
     percent: Math.min(100, Math.max(0, Number(body.percent) || 0)),
     message: String(body.message || ''),
   };
+  // Установщик шлёт прогресс часто; в лог кладём только смену статуса, иначе
+  // получим сотню строк «идёт загрузка, 37%».
+  if (updateProgress.status !== lastLoggedUpdateStatus) {
+    lastLoggedUpdateStatus = updateProgress.status;
+    logger.log('panel', 'info', `обновление: ${updateProgress.status} ${updateProgress.message}`.trim());
+  }
   res.json({ ok: true });
 });
 
@@ -859,8 +866,14 @@ app.get('/api/reachability', async (req, res) => {
 
   try {
     const probe = await probePortExternally(targetIp, port, proto);
+    // probePortExternally отдаёт { reachable, verdict, ... } — verdict уже сведён
+    // к одному слову (open/refused/timeout/unreachable/mixed), его и кладём в лог.
+    logger.log('panel', 'info',
+      `проверка порта ${port}/${proto} на ${targetIp}: ${probe.verdict}` +
+      `${natLikely ? ', похоже на NAT' : ''}${vpnLikely ? ', похоже на VPN' : ''}`);
     res.json({ ...facts, ...probe });
   } catch (e) {
+    logger.log('panel', 'warn', `проверка порта ${port}/${proto} на ${targetIp} не удалась: ${e.message}`);
     res.status(502).json({ ...facts, error: e.message });
   }
 });
@@ -888,8 +901,10 @@ app.get('/api/status', async (req, res) => {
 app.post('/api/containers/:name/start', checkAllowed, async (req, res) => {
   try {
     await docker.getContainer(req.params.name).start();
+    logger.log('panel', 'info', `запуск контейнера ${req.params.name}: ок`);
     res.json({ ok: true });
   } catch (e) {
+    logger.log('panel', 'error', `запуск контейнера ${req.params.name}: ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
@@ -897,6 +912,7 @@ app.post('/api/containers/:name/start', checkAllowed, async (req, res) => {
 app.post('/api/containers/:name/recreate', checkAllowed, async (req, res) => {
   const name = req.params.name;
   if (!PROJECT_ROOT) {
+    logger.log('panel', 'error', 'пересоздание невозможно: PROJECT_ROOT не задан');
     return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
   }
   try {
@@ -910,8 +926,10 @@ app.post('/api/containers/:name/recreate', checkAllowed, async (req, res) => {
     await ensureNetwork();
     const container = await docker.createContainer(SPECS[name]);
     await container.start();
+    logger.log('panel', 'info', `пересоздание контейнера ${name}: ок`);
     res.json({ ok: true });
   } catch (e) {
+    logger.log('panel', 'error', `пересоздание контейнера ${name}: ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
@@ -919,8 +937,10 @@ app.post('/api/containers/:name/recreate', checkAllowed, async (req, res) => {
 app.post('/api/containers/:name/stop', checkAllowed, async (req, res) => {
   try {
     await docker.getContainer(req.params.name).stop();
+    logger.log('panel', 'info', `остановка контейнера ${req.params.name}: ок`);
     res.json({ ok: true });
   } catch (e) {
+    logger.log('panel', 'error', `остановка контейнера ${req.params.name}: ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1127,12 +1147,20 @@ async function monitorTick() {
     return; // сеть/SRS моргнули — не считаем это "стрим пропал", просто пропускаем тик
   }
 
+  // monitorTick крутится раз в 2 секунды — логируем только переходы, а не каждый тик.
   const liveNames = new Set(streams.map((s) => s.name));
   for (const name of liveNames) {
-    if (!streamFirstSeenAt.has(name)) streamFirstSeenAt.set(name, Date.now());
+    if (!streamFirstSeenAt.has(name)) {
+      streamFirstSeenAt.set(name, Date.now());
+      logger.log('panel', 'info', `в эфире появился поток "${name}"`);
+    }
   }
   for (const name of [...streamFirstSeenAt.keys()]) {
-    if (!liveNames.has(name)) streamFirstSeenAt.delete(name);
+    if (!liveNames.has(name)) {
+      const sec = Math.round((Date.now() - streamFirstSeenAt.get(name)) / 1000);
+      streamFirstSeenAt.delete(name);
+      logger.log('panel', 'warn', `поток "${name}" пропал, был в эфире ${sec} с`);
+    }
   }
 
   if (!sceneSwitcher.enabled || !sceneSwitcher.watchStreamName || !sceneSwitcher.fallbackScene) return;
@@ -1404,6 +1432,7 @@ app.post('/api/captions/build', async (req, res) => {
   buildStatus = 'building';
   buildError = null;
   buildLog = [];
+  logger.log('panel', 'info', 'началась сборка образа субтитров');
 
   try {
     const stream = await docker.buildImage(
@@ -1536,8 +1565,10 @@ app.post('/api/captions/connect', async (req, res) => {
     const container = await docker.createContainer(captionsSpec(name, asrModel));
     await container.start();
     watchCaptionsReadiness(container); // не await — следит в фоне, ответ не блокирует
+    logger.log('panel', 'info', `субтитры подключены к потоку "${name}", модель ${asrModel}`);
     res.json({ ok: true, streamName: name });
   } catch (e) {
+    logger.log('panel', 'error', `субтитры не подключились к "${name}": ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1546,9 +1577,11 @@ app.post('/api/captions/disconnect', async (req, res) => {
   try {
     await docker.getContainer(CAPTIONS_CONTAINER).remove({ force: true });
     captionsReady = false;
+    logger.log('panel', 'info', 'субтитры отключены');
     res.json({ ok: true });
   } catch (e) {
     if (e.statusCode === 404) return res.json({ ok: true });
+    logger.log('panel', 'error', `субтитры не отключились: ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1565,6 +1598,7 @@ app.post('/api/captions/enroll', async (req, res) => {
   if (!STREAM_NAME_RE.test(streamName)) {
     return res.status(400).json({ error: 'некорректное имя стрима' });
   }
+  logger.log('panel', 'info', `запись эталона голоса, ${ENROLL_DURATION_SEC} с`);
   const voices = readVoices();
   let voiceId;
   let isNewVoice;
@@ -1720,6 +1754,16 @@ app.patch('/api/captions/overlay-style', (req, res) => {
 
   writeOverlayStyleAtomic(next);
   res.json({ ok: true, style: next });
+});
+
+// Обработчик ошибок express должен стоять после всех маршрутов, иначе он их не увидит.
+// Ловит то, что не поймали сами обработчики — необработанные исключения в async-роутах
+// express 4 сюда не попадают, поэтому это именно сеть безопасности, а не единственный
+// источник записей об ошибках.
+app.use((err, req, res, next) => {
+  logger.log('panel', 'error', `${req.method} ${req.path}: ${err.message}`);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: err.message });
 });
 
 const port = process.env.PORT || 8081;
