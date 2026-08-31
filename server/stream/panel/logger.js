@@ -34,6 +34,36 @@ function formatLine(ms, tzOffsetMin, service, level, message) {
   return `${formatTime(ms, tzOffsetMin)}  ${level.toUpperCase().padEnd(5)}  ${String(service).padEnd(10)} ${message}`;
 }
 
+// Строки, которые не несут информации при расследовании. Каждая — с причиной:
+// без неё через полгода никто не рискнёт тронуть регулярку.
+const NOISE = [
+  // SRS: телеметрия процесса каждые 5 секунд, идёт даже когда эфира нет вообще.
+  // Это главный источник мусора в логе — десятки тысяч строк в сутки на пустом стеке.
+  /Hybrid cpu=/,
+  // SRS: та же периодичность, но статистика по одному соединению.
+  /<- (CPB|PLA|SRT) time=/,
+  // srtla_rec: подтверждение живости от каждого соединения, несколько раз в секунду.
+  /keepalive/i,
+  // nginx оверлея: успешная отдача статики. Ошибки (4xx/5xx) под это не подпадают.
+  /"(GET|HEAD) [^"]*" (200|204|304) /,
+];
+
+function isNoise(message) {
+  return NOISE.some((re) => re.test(message));
+}
+
+// Повтор — это «то же самое сообщение с другими числами»: счётчики пакетов,
+// номера соединений и таймстемпы внутри строки меняются, смысл нет.
+function normalize(message) {
+  return message.replace(/\d+/g, '#');
+}
+
+function humanDuration(ms) {
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}с`;
+  return `${Math.floor(sec / 60)}м${String(sec % 60).padStart(2, '0')}с`;
+}
+
 function createLogger(options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const now = opts.now || Date.now;
@@ -45,6 +75,9 @@ function createLogger(options = {}) {
   const subscribers = new Set();
   let size = 0;
   let fileBroken = false; // ругаемся в stdout один раз, дальше молча живём без файла
+  // Накопитель повторов: первую строку пишем сразу (ошибку надо видеть немедленно),
+  // а её повторы копим и выдаём одной сводкой.
+  let pending = null; // { key, service, level, firstMs, lastMs, count }
 
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -100,9 +133,39 @@ function createLogger(options = {}) {
     writeLine(formatLine(ms, opts.tzOffsetMin, service, level, message));
   }
 
+  function flushPending() {
+    if (!pending || pending.count === 0) {
+      pending = null;
+      return;
+    }
+    emit(
+      pending.lastMs,
+      pending.service,
+      pending.level,
+      `↑ повторилось ещё ×${pending.count} за ${humanDuration(pending.lastMs - pending.firstMs)}`
+    );
+    pending = null;
+  }
+
   function log(service, level, message) {
     if ((LEVELS[level] || LEVELS.info) < threshold) return;
-    emit(now(), service, level, String(message).replace(/\s+$/, ''));
+    const text = String(message).replace(/\s+$/, '');
+    if (!text || isNoise(text)) return;
+
+    const ms = now();
+    const key = `${service} ${normalize(text)}`;
+
+    if (pending && pending.key === key) {
+      pending.count += 1;
+      pending.lastMs = ms;
+      // Окно истекло — не держим сводку до бесконечности, если строка сыплется часами.
+      if (ms - pending.firstMs >= opts.collapseMs) flushPending();
+      return;
+    }
+
+    flushPending();
+    emit(ms, service, level, text);
+    pending = { key, service, level, firstMs: ms, lastMs: ms, count: 0 };
   }
 
   function readFiles() {
@@ -121,6 +184,15 @@ function createLogger(options = {}) {
     return out;
   }
 
+  // Без таймера сводка про повторы висела бы в памяти до следующей ДРУГОЙ строки —
+  // а её может не быть часами, и как раз в этот момент человек скачивает лог.
+  if (!opts.now) {
+    const ticker = setInterval(() => {
+      if (pending && pending.count > 0 && Date.now() - pending.firstMs >= opts.collapseMs) flushPending();
+    }, 5000);
+    ticker.unref(); // таймер не должен держать процесс живым сам по себе
+  }
+
   return {
     filePath,
     log,
@@ -128,8 +200,8 @@ function createLogger(options = {}) {
     subscribe: (fn) => subscribers.add(fn),
     unsubscribe: (fn) => subscribers.delete(fn),
     readFiles,
-    flush: () => {}, // наполняется в Task 2 (схлопывание повторов)
+    flush: flushPending,
   };
 }
 
-module.exports = { createLogger, formatLine, LEVELS };
+module.exports = { createLogger, formatLine, isNoise, normalize, LEVELS };
