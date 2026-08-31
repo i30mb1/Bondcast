@@ -1,9 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="qr_scanner_title_label">Scan QR</string>
+    <string name="qr_scanner_aim_label">Point at a QR code</string>
     <string name="qr_scanner_hint_label">Point at a QR code — OBS details or Bondcast settings</string>
-    <string name="qr_scanner_camera_open_error">Couldn\'t open the camera</string>
-    <string name="qr_scanner_camera_busy_error">Camera\'s busy — stop the stream first</string>
-    <string name="qr_scanner_landing_label">Ready-made self-deploying infrastructure for the best experience →</string>
+    <string name="qr_scanner_scheme_obs" translatable="false">obsws://</string>
+    <string name="qr_scanner_scheme_bondcast" translatable="false">bondcast://</string>
+
+    <string name="qr_scanner_found_label">Code recognised</string>
+    <string name="qr_scanner_source_obs_label">OBS remote</string>
+    <string name="qr_scanner_source_config_label">Bondcast settings</string>
+    <string name="qr_scanner_apply_note_obs">Fills host, port and password in settings</string>
+    <string name="qr_scanner_apply_note_config">Replaces the server settings</string>
+    <string name="qr_scanner_password_masked">password ••••••••••</string>
+    <string name="qr_scanner_password_none">no password</string>
+    <string name="qr_scanner_stream_name_label">stream %1$s</string>
+    <string name="qr_scanner_apply_button">Apply</string>
+    <string name="qr_scanner_retry_button">Scan again</string>
+
+    <string name="qr_scanner_unknown_label">Not a code I know</string>
+    <string name="qr_scanner_unknown_hint">Use the OBS connect info or Bondcast settings</string>
+
+    <string name="qr_scanner_camera_open_title">Couldn\'t open the camera</string>
+    <string name="qr_scanner_camera_open_hint">Check the camera permission in system settings</string>
+    <string name="qr_scanner_camera_busy_title">Camera\'s busy</string>
+    <string name="qr_scanner_camera_busy_hint">Stop the stream — the scanner and the stream can\'t share the camera</string>
+    <string name="qr_scanner_to_settings_button">Back to settings</string>
+
+    <string name="qr_scanner_landing_label">Turnkey server</string>
     <string name="qr_scanner_landing_url" translatable="false">https://i30mb1.github.io/bondcast/</string>
 </resources>

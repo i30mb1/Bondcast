@@ -1,9 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="qr_scanner_title_label">Сканировать QR</string>
+    <string name="qr_scanner_aim_label">Наведи на QR</string>
     <string name="qr_scanner_hint_label">Наведи на QR: сведения OBS или настройки Bondcast</string>
-    <string name="qr_scanner_camera_open_error">Не удалось открыть камеру</string>
-    <string name="qr_scanner_camera_busy_error">Камера занята — останови эфир</string>
-    <string name="qr_scanner_landing_label">Готовая саморазвёртываемая инфраструктура для лучшей работы →</string>
-    <string name="qr_scanner_landing_url" translatable="false">https://i30mb1.github.io/bondcast/</string>
+
+    <string name="qr_scanner_found_label">Код распознан</string>
+    <string name="qr_scanner_source_obs_label">Пульт OBS</string>
+    <string name="qr_scanner_source_config_label">Настройки Bondcast</string>
+    <string name="qr_scanner_apply_note_obs">Заполнит хост, порт и пароль в настройках</string>
+    <string name="qr_scanner_apply_note_config">Заменит настройки сервера</string>
+    <string name="qr_scanner_password_masked">пароль ••••••••••</string>
+    <string name="qr_scanner_password_none">без пароля</string>
+    <string name="qr_scanner_stream_name_label">поток %1$s</string>
+    <string name="qr_scanner_apply_button">Применить</string>
+    <string name="qr_scanner_retry_button">Ещё раз</string>
+
+    <string name="qr_scanner_unknown_label">Не узнал код</string>
+    <string name="qr_scanner_unknown_hint">Подойдут сведения OBS или настройки Bondcast</string>
+
+    <string name="qr_scanner_camera_open_title">Не удалось открыть камеру</string>
+    <string name="qr_scanner_camera_open_hint">Проверь разрешение на камеру в настройках системы</string>
+    <string name="qr_scanner_camera_busy_title">Камера занята</string>
+    <string name="qr_scanner_camera_busy_hint">Останови эфир — сканер и стрим не делят камеру</string>
+    <string name="qr_scanner_to_settings_button">К настройкам</string>
+
+    <string name="qr_scanner_landing_label">Готовый сервер под ключ</string>
 </resources>
