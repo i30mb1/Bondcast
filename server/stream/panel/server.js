@@ -10,6 +10,16 @@ const { EventEmitter } = require('events');
 const QRCode = require('qrcode');
 const { WebSocketServer } = require('ws');
 const { OBSWebSocket } = require('obs-websocket-js');
+const { createLogger } = require('./logger');
+
+// Единый логгер стека: сюда пишет и сама панель, и коллектор докеровских логов
+// (см. attachCollector ниже). Папка /logs bind-монтирована с хоста — файл оттуда
+// человек пересылает как есть, когда просят разобраться, почему не работает.
+const logger = createLogger({
+  dir: process.env.LOGS_DIR || '/logs',
+  level: process.env.LOG_LEVEL || 'info',
+  tzOffsetMin: Number(process.env.TZ_OFFSET_MIN) || 0,
+});
 
 // Внутри Linux-контейнера (Dockerfile) сокет всегда /var/run/docker.sock.
 // При локальном запуске на Windows (без контейнера) dockerode сам находит named pipe Docker Desktop.
@@ -1644,4 +1654,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
 });
 
-server.listen(port, () => console.log(`stream-panel listening on :${port}`));
+server.listen(port, () => {
+  console.log(`stream-panel listening on :${port}`);
+  logger.log('panel', 'info', `панель запущена на :${port}, лог: ${logger.filePath}`);
+});

@@ -30,6 +30,11 @@ for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%
 set "GATEWAY_IPS="
 for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get-gateway-ips.ps1"') do set "GATEWAY_IPS=%%a"
 
+:: Смещение местного времени в минутах - панель живёт в контейнере с UTC-часами,
+:: без этого время в логах не сойдётся с тем, когда человек реально стримил.
+set "TZ_OFFSET_MIN=0"
+for /f "delims=" %%a in ('powershell -NoProfile -Command "[int][System.TimeZoneInfo]::Local.GetUtcOffset((Get-Date)).TotalMinutes"') do set "TZ_OFFSET_MIN=%%a"
+
 :: The phone talks to this machine over the internet, so the address that
 :: actually matters is the public one, not a NIC's LAN address - ask a public
 :: IP-echo service instead of poking around this machine's network adapters.
