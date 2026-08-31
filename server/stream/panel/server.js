@@ -303,6 +303,95 @@ function checkLoggable(req, res, next) {
   next();
 }
 
+// --- Сбор логов сервисов ---------------------------------------------------
+// Панель — единственное место, где логи всех контейнеров сходятся в одну
+// хронологию. Именно она нужна при расследовании: «телефон отвалился → что в
+// этот момент сказал srtla-rec → что SRS». Через docker logs по отдельности
+// такую картину не собрать.
+const COLLECTED = ['srs', 'srtla-rec', 'overlay', CAPTIONS_CONTAINER];
+const collectorStreams = new Map(); // имя контейнера -> активный лог-стрим
+
+// Сервисы пишут в свободной форме, уровня в машинном виде у них нет — достаём
+// его из текста, иначе фильтр по уровню во вкладке «Диагностика» бесполезен.
+function levelOfServiceLine(line) {
+  if (/\b(error|fatal|traceback|panic)\b/i.test(line)) return 'error';
+  if (/\bwarn(ing)?\b/i.test(line)) return 'warn';
+  return 'info';
+}
+
+function attachCollector(name) {
+  if (collectorStreams.has(name)) return;
+  const container = docker.getContainer(name);
+  // tail: 0 — только новое. С ненулевым хвостом после каждого рестарта контейнера
+  // в файл заново падал бы кусок уже собранных строк.
+  container.logs({ follow: true, stdout: true, stderr: true, tail: 0 }, (err, stream) => {
+    if (err || !stream) {
+      // Контейнер может ещё не существовать (asr-worker поднимается лениво) —
+      // это штатно, подписка случится по docker-событию start.
+      logger.log('panel', 'debug', `нет подписки на лог ${name}: ${err ? err.message : 'нет потока'}`);
+      return;
+    }
+    collectorStreams.set(name, stream);
+
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    docker.modem.demuxStream(stream, stdout, stderr);
+
+    // Чанк докера рвётся по границе буфера, а не по строке — без склейки
+    // длинные сообщения (стектрейсы asr-worker) попадали бы в лог кусками.
+    let buffer = '';
+    const onData = (chunk) => {
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop();
+      for (const line of lines) {
+        const text = line.trim();
+        if (text) logger.log(name, levelOfServiceLine(text), text);
+      }
+    };
+    stdout.on('data', onData);
+    stderr.on('data', onData);
+
+    const done = () => {
+      if (buffer.trim()) logger.log(name, levelOfServiceLine(buffer), buffer.trim());
+      buffer = '';
+      collectorStreams.delete(name);
+    };
+    stream.on('end', done);
+    stream.on('error', done);
+  });
+}
+
+function startCollectors() {
+  for (const name of COLLECTED) attachCollector(name);
+
+  // Контейнер могли перезапустить, пересоздать кнопкой в панели или поднять
+  // лениво (asr-worker) — старый стрим при этом умирает. Без переподписки лог
+  // сервиса замолкал бы навсегда до рестарта самой панели.
+  docker.getEvents({ filters: { type: ['container'], event: ['start'] } }, (err, stream) => {
+    if (err || !stream) {
+      logger.log('panel', 'warn', `не подписаться на события docker: ${err ? err.message : 'нет потока'}`);
+      return;
+    }
+    stream.on('data', (chunk) => {
+      let event;
+      try {
+        event = JSON.parse(chunk.toString('utf8'));
+      } catch (e) {
+        return; // в одном чанке может приехать несколько событий — пропускаем битые
+      }
+      const name = event && event.Actor && event.Actor.Attributes && event.Actor.Attributes.name;
+      if (!COLLECTED.includes(name)) return;
+      logger.log('panel', 'info', `контейнер ${name} запустился — подписываюсь на его лог`);
+      collectorStreams.delete(name);
+      attachCollector(name);
+    });
+    stream.on('error', (e) => logger.log('panel', 'warn', `поток событий docker оборвался: ${e.message}`));
+  });
+}
+
+startCollectors();
+
 app.get('/api/connections', async (req, res) => {
   // os.networkInterfaces() тут бесполезен — панель сама сидит в Docker-сети и видит
   // только свой внутренний bridge-IP, а не реальный LAN-адрес хоста. Поэтому список
