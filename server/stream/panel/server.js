@@ -897,6 +897,100 @@ app.post('/api/logs/client', (req, res) => {
   res.json({ ok: true });
 });
 
+// Выгрузка всего, что нужно постороннему человеку, чтобы понять, почему у
+// пользователя не работает. Один .txt, а не zip: не нужна новая зависимость,
+// а текстовый файл проще переслать в мессенджер и открыть чем угодно.
+const BUNDLE_SERVICES = ['srs', 'srtla-rec', 'panel', 'overlay', CAPTIONS_CONTAINER];
+
+// Пароль панели и токен статистики в выгрузку попасть не должны — файл пересылают
+// посторонним. Показываем только сам факт, что значение задано.
+const shown = (value) => (value ? '(задан)' : '(пусто)');
+
+// Без follow докер отдаёт лог одним буфером, а не потоком, и demuxStream к нему
+// не применить. Кадры при этом те же: 8 байт заголовка (номер потока + длина),
+// затем данные. Без разбора заголовков в текст лезут управляющие символы.
+function demuxDockerBuffer(buf) {
+  const out = [];
+  let i = 0;
+  while (i + 8 <= buf.length) {
+    const len = buf.readUInt32BE(i + 4);
+    if (len <= 0 || i + 8 + len > buf.length) break;
+    out.push(buf.slice(i + 8, i + 8 + len).toString('utf8'));
+    i += 8 + len;
+  }
+  // Контейнер, запущенный с TTY, отдаёт поток вообще без заголовков — тогда как есть.
+  return out.length ? out.join('') : buf.toString('utf8');
+}
+
+async function bundleHeader() {
+  const lines = [];
+  lines.push('=== Bondcast — выгрузка логов ===');
+  lines.push(`Собрано: ${new Date(Date.now() + (Number(process.env.TZ_OFFSET_MIN) || 0) * 60000).toISOString().replace('T', ' ').slice(0, 19)} (местное время хоста)`);
+  try {
+    lines.push(`Версия установки: ${fs.readFileSync('/build-context/VERSION', 'utf8').trim()}`);
+  } catch (e) {
+    lines.push('Версия установки: неизвестна (файл VERSION не смонтирован)');
+  }
+  try {
+    const v = await docker.version();
+    lines.push(`Docker: ${v.Version} (API ${v.ApiVersion}, ${v.Os}/${v.Arch})`);
+  } catch (e) {
+    lines.push(`Docker: недоступен — ${e.message}`);
+  }
+  lines.push(`HOST_IPS: ${process.env.HOST_IPS || '(пусто)'}`);
+  lines.push(`LAN_IPS: ${process.env.LAN_IPS || '(пусто)'}`);
+  lines.push(`GATEWAY_IPS: ${process.env.GATEWAY_IPS || '(пусто)'}`);
+  lines.push(`PANEL_USER: ${shown(process.env.PANEL_USER)}  PANEL_PASS: ${shown(process.env.PANEL_PASS)}  NOALBS_STATS_TOKEN: ${shown(process.env.NOALBS_STATS_TOKEN)}`);
+  lines.push('');
+  lines.push('--- Контейнеры ---');
+  for (const name of BUNDLE_SERVICES) {
+    try {
+      const info = await docker.getContainer(name).inspect();
+      lines.push(`${name}: ${info.State.Status}, запущен ${info.State.StartedAt}, перезапусков ${info.RestartCount}`);
+    } catch (e) {
+      lines.push(`${name}: не найден`);
+    }
+  }
+  return lines.join('\n');
+}
+
+app.get('/api/logs/bundle', async (req, res) => {
+  // Сводку про накопленные повторы выталкиваем прямо сейчас, иначе последние
+  // события эфира не попадут в файл, который человек скачивает именно из-за них.
+  logger.flush();
+
+  const parts = [];
+  try {
+    parts.push(await bundleHeader());
+  } catch (e) {
+    parts.push(`=== Bondcast — выгрузка логов ===\nШапку собрать не удалось: ${e.message}`);
+  }
+
+  for (const file of logger.readFiles()) {
+    parts.push(`\n\n=== ${file.name} ===\n${file.content}`);
+  }
+
+  // Хвосты напрямую из docker — страховка: панель могла стартовать позже сервисов
+  // или коллектор мог отвалиться, и тогда в нашем файле нужных строк просто нет.
+  for (const name of BUNDLE_SERVICES) {
+    try {
+      const raw = await docker.getContainer(name).logs({ stdout: true, stderr: true, tail: 500, timestamps: false });
+      parts.push(`\n\n=== docker logs ${name} (последние 500 строк) ===\n${demuxDockerBuffer(raw)}`);
+    } catch (e) {
+      parts.push(`\n\n=== docker logs ${name} ===\nнедоступно: ${e.message}`);
+    }
+  }
+
+  const stamp = new Date(Date.now() + (Number(process.env.TZ_OFFSET_MIN) || 0) * 60000)
+    .toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  // Имя файла латиницей: русские буквы в Content-Disposition требуют RFC 5987,
+  // и часть мессенджеров всё равно ломает такое имя при пересылке.
+  res.set('Content-Disposition', `attachment; filename="bondcast-logs-${stamp}.txt"`);
+  res.send(parts.join(''));
+  logger.log('panel', 'info', 'логи выгружены в файл');
+});
+
 app.get('/api/status', async (req, res) => {
   const results = await Promise.all(
     ALLOWED.map(async (name) => {

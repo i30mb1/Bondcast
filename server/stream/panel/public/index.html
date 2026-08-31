@@ -716,10 +716,17 @@
   </div>
 
 </div>
-<div class="card page-sidebar">
-  <div class="section-title" style="margin-bottom:4px">Сейчас в эфире</div>
-  <div class="row-meta" style="margin-bottom:14px">Кто прямо сейчас стримит на этот компьютер</div>
-  <div id="serverStreams" style="display:flex;flex-direction:column;gap:10px"></div>
+<div class="page-sidebar" style="display:flex;flex-direction:column;gap:16px">
+  <div class="card">
+    <div class="section-title" style="margin-bottom:4px">Сейчас в эфире</div>
+    <div class="row-meta" style="margin-bottom:14px">Кто прямо сейчас стримит на этот компьютер</div>
+    <div id="serverStreams" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+  <div class="card">
+    <div class="section-title" style="margin-bottom:4px">Что-то не работает?</div>
+    <div class="row-meta" style="margin-bottom:12px">Скачай файл с логами и пришли его — по нему видно, что именно сломалось</div>
+    <a class="btn-link" href="/api/logs/bundle" download>Скачать логи</a>
+  </div>
 </div>
 <div class="card page-preview" id="previewPanel" hidden></div>
 </div>
