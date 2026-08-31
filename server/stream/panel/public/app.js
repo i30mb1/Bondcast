@@ -95,43 +95,145 @@ window.addEventListener('unhandledrejection', (e) => {
   reportClientError(reason && reason.message ? reason.message : String(reason), reason && reason.stack);
 });
 
-// --- Вкладки ---------------------------------------------------------------
-// Раньше это были две отдельные страницы (index.html — быстрый старт,
-// dashboard.html — расширенная панель); теперь одна страница с вкладками,
-// выбор которых переживает перезагрузку так же, как остальные настройки
-// панели (localStorage), а не сбрасывается на дефолт.
-const TAB_KEY = 'bondcast_tab';
-// Диагностика — скрытая вкладка: адрес с #debug включает её насовсем (запоминаем
-// в localStorage), чтобы не приходилось дописывать якорь при каждой перезагрузке.
+// --- Карта разделов слева ---------------------------------------------------
+// Раньше это были две вкладки: «Начать стрим» и «Настроить эфир». Вторая и была
+// источником «кнопок из ниоткуда»: субтитры и заглушку при обрыве видел человек,
+// который ещё ни одного стрима не запустил — и не понимал ни что это, ни почему
+// оно ему сейчас показывается. Теперь постоянный список разделов слева: пункт
+// никогда не появляется и не исчезает, он снимает замок, и у каждого замка
+// написана причина обычными словами. Выбранный раздел переживает перезагрузку
+// (localStorage), как и остальные настройки панели.
+const SECTION_KEY = 'bondcast_section';
+// Живой лог — по-прежнему за адресом с #debug (запоминаем насовсем): сам пункт
+// «Логи и диагностика» доступен всегда, но внутри рядовому стримеру хватает
+// кнопки «Скачать логи», а простыня строк его только пугает.
 const DEBUG_KEY = 'bondcast_debug';
 if (location.hash === '#debug') localStorage.setItem(DEBUG_KEY, '1');
 const debugEnabled = localStorage.getItem(DEBUG_KEY) === '1';
-const TABS = debugEnabled ? ['quickstart', 'stream', 'diagnostics'] : ['quickstart', 'stream'];
 
-const uiState = {
-  tab: TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'quickstart',
+// Значки рисуем сами, а не эмодзи: эмодзи на разных системах выглядят по-разному
+// и не красятся в цвет состояния (серый под замком, акцент у активного пункта).
+const NAV_SVG = {
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.6h2"/>',
+  monitor: '<rect x="2.8" y="5" width="18.4" height="12" rx="2.5"/><path d="M8 20h8"/>',
+  captions: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.2 10.6a2.4 2.4 0 1 0 0 2.8"/><path d="M17.2 10.6a2.4 2.4 0 1 0 0 2.8"/>',
+  scene: '<path d="M3 7h4l10 10h4"/><path d="M17.5 4.5L21 8l-3.5 3.5"/><path d="M3 17h4"/><path d="M17.5 13.5L21 17l-3.5 3.5"/>',
+  logs: '<path d="M12 4v11"/><path d="M7.5 11.5L12 16l4.5-4.5"/><path d="M4.5 19.5h15"/>',
+  lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
 };
 
-function setTab(tab) {
-  if (!TABS.includes(tab)) return;
-  uiState.tab = tab;
-  localStorage.setItem(TAB_KEY, tab);
-  applyUiState();
+function navIcon(name, cls) {
+  return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${NAV_SVG[name]}</svg>`;
 }
 
-function applyUiState() {
-  const diagBtn = document.getElementById('diagnosticsTabBtn');
-  if (diagBtn) diagBtn.hidden = !debugEnabled;
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === uiState.tab);
-  });
-  document.querySelectorAll('.tab-panel').forEach((panel) => {
-    panel.classList.toggle('active', panel.dataset.tabPanel === uiState.tab);
-  });
+// group — заголовок группы перед пунктом, sep — разделительная линия перед ним.
+const SECTIONS = [
+  { id: 'connect', icon: 'phone', title: 'Подключить телефон', group: 'Что делаем' },
+  { id: 'obs', icon: 'monitor', title: 'Картинка в OBS', needsStream: 'после подключения' },
+  { id: 'subs', icon: 'captions', title: 'Субтитры', needsStream: 'нужен живой эфир', sep: true, group: 'Во время эфира' },
+  { id: 'scene', icon: 'scene', title: 'Заглушка при обрыве', needsStream: 'нужен живой эфир' },
+  { id: 'logs', icon: 'logs', title: 'Логи и диагностика', sep: true },
+];
+
+// Один раз увиденный эфир держит разделы открытыми до конца сессии. Обрыв связи —
+// не начало заново: если бы замки возвращались, у человека посреди эфира пропадал
+// бы из-под рук раздел, в котором он как раз и разбирается, почему всё встало.
+// Включённая фича тоже держит: она пережила перезагрузку страницы и работает.
+let everLive = false;
+// applySceneSwitch()/applyCaptionsStage() зовут renderSectionNav() и сами вызываются
+// ещё при разборе файла — а latestStreams/captionsState объявлены ниже через let и до
+// конца разбора лежат в мёртвой зоне. Пока флаг не поднят, левую колонку не трогаем;
+// поднимается он в самом низу app.js, там же идёт первый показ.
+let navReady = false;
+
+function hasLiveStream() {
+  return latestStreams.length > 0;
 }
 
-document.querySelectorAll('.tab-btn').forEach((btn) => { btn.onclick = () => setTab(btn.dataset.tab); });
-applyUiState();
+function streamingUnlocked() {
+  return everLive || hasLiveStream() || captionsState.connected || sceneSwitcherState.enabled;
+}
+
+// null — раздел открыт, строка — причина замка, её же показываем в списке.
+function sectionLock(section) {
+  if (section.needsStream && !streamingUnlocked()) return section.needsStream;
+  return null;
+}
+
+const uiState = {
+  section: SECTIONS.some((s) => s.id === localStorage.getItem(SECTION_KEY))
+    ? localStorage.getItem(SECTION_KEY)
+    : 'connect',
+};
+
+function setSection(id) {
+  const section = SECTIONS.find((s) => s.id === id);
+  if (!section || sectionLock(section)) return;
+  uiState.section = id;
+  localStorage.setItem(SECTION_KEY, id);
+  applySections();
+  renderSectionNav();
+}
+
+function applySections() {
+  if (!navReady) return;
+  const diagCard = document.getElementById('diagCard');
+  if (diagCard) diagCard.hidden = !debugEnabled;
+  // Раздел под замком не открываем, но и не выкидываем из него человека, если он
+  // уже внутри (см. everLive выше) — sectionLock() к этому моменту уже честно
+  // отвечает «открыт», пока эфир был хоть раз.
+  const active = SECTIONS.find((s) => s.id === uiState.section) || SECTIONS[0];
+  if (sectionLock(active)) uiState.section = 'connect';
+  document.querySelectorAll('.section-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.sectionPanel === uiState.section);
+  });
+  if (uiState.section === 'obs') renderObsSourceCard();
+}
+
+// Правый край строки: тумблер у фич (видно, включено ли, не открывая раздел),
+// точка у пройденных шагов, замок у закрытых.
+function navStatusHtml(section, locked) {
+  if (locked) return navIcon('lock', 'nav-lock');
+  if (section.id === 'connect' || section.id === 'obs') {
+    if (hasLiveStream()) return '<span class="nav-dot"></span>';
+    if (everLive) return '<span class="nav-dot warn"></span>';
+    return '';
+  }
+  if (section.id === 'subs') return `<span class="feature-switch${captionsState.connected ? ' on' : ''}"><span class="knob"></span></span>`;
+  if (section.id === 'scene') return `<span class="feature-switch${sceneSwitcherState.enabled ? ' on' : ''}"><span class="knob"></span></span>`;
+  return '';
+}
+
+function navWhyText(section, locked) {
+  if (locked) return locked;
+  if (section.id === 'connect' && everLive && !hasLiveStream()) return 'нет сигнала';
+  if (section.id === 'subs' && captionsState.buildStatus === 'building') return 'скачиваю распознавание';
+  if (section.id === 'subs' && captionsState.connected && !captionsState.ready) return 'готовлюсь';
+  if (section.id === 'scene' && sceneSwitcherState.state === 'switched') return 'сейчас показываю заглушку';
+  return '';
+}
+
+const sectionNavEl = document.getElementById('sectionNav');
+
+function renderSectionNav() {
+  if (!navReady) return;
+  sectionNavEl.innerHTML = SECTIONS.map((section) => {
+    const locked = sectionLock(section);
+    const why = navWhyText(section, locked);
+    return [
+      section.sep ? '<div class="nav-sep"></div>' : '',
+      section.group ? `<div class="nav-group">${escapeHtml(section.group)}</div>` : '',
+      `<button type="button" class="nav-item${uiState.section === section.id ? ' active' : ''}${locked ? ' locked' : ''}" data-section="${section.id}"${locked ? ' disabled' : ''}>`,
+      navIcon(section.icon, 'nav-ico'),
+      `<span class="nav-txt"><b>${escapeHtml(section.title)}</b>${why ? `<span class="nav-why">${escapeHtml(why)}</span>` : ''}</span>`,
+      navStatusHtml(section, locked),
+      '</button>',
+    ].join('');
+  }).join('');
+  sectionNavEl.querySelectorAll('.nav-item').forEach((btn) => {
+    btn.onclick = () => setSection(btn.dataset.section);
+  });
+}
 
 // --- Достижимость портов снаружи (баннер + карточка) -----------------------
 // Проверяем три порта: 5000/UDP (бондинг, srtla-rec), 10080/UDP (прямой SRT в
@@ -189,12 +291,9 @@ const OBS_WEBSOCKET_HOWTO = `
         <li>Запусти OBS Studio.</li>
         <li>Меню <b>Tools → WebSocket Server Settings</b>.</li>
         <li>Поставь галку <b>Enable WebSocket server</b>. Порт по умолчанию — <code>4455</code>, менять не нужно.</li>
-        <li><b>Enable Authentication</b> можно оставить выключенным — если управляешь OBS из той же
-          локальной сети, что и телефон, пароль не нужен, поле пароля в настройках Bondcast оставь пустым.
-          Включай его, только если пробрасываешь этот порт наружу (управляешь не из локальной сети) — иначе
-          к твоему OBS сможет подключиться кто угодно из интернета.</li>
-        <li>OK — настройка запоминается между запусками OBS, включать заново не нужно. Но сам OBS должен
-          быть запущен, чтобы порт был виден снаружи.</li>
+        <li><b>Enable Authentication</b> оставь выключенным, а поле пароля в Bondcast — пустым.
+          Включай, только если пробрасываешь порт 4455 наружу.</li>
+        <li>OK. Настройка запоминается, но сам OBS должен быть запущен.</li>
       </ol>
     </div>
   </details>`;
@@ -221,6 +320,13 @@ function portStepHtml({ port, proto, label, optional, note }) {
   const recheckBtn = rechecking
     ? '<span class="spinner step-refresh"></span>'
     : `<button type="button" class="step-refresh recheck-ports" data-port="${port}" title="Проверить снова">↻</button>`;
+  // Заголовок шага говорит, ЧТО это за порт, подпись под ним — что делать. Раньше
+  // между ними жила третья строка вида «Приём с телефона — из интернета не дойдёт
+  // (45.61.187.8). Дома, по своей Wi-Fi, стрим всё равно пойдёт»: первую половину уже
+  // говорит красная точка, вторая не к месту — порты показываются только в режиме
+  // «через интернет», который человек выбрал сам. Ниже неё шла ЕЩЁ одна строка, с
+  // разбором причины, — она и осталась единственной подписью.
+  const title = `${escapeHtml(label)} · порт ${port}/${protoLabel}`;
   if (data.error) {
     // Проверка не удалась — это НЕ «порт закрыт»: check-host.net мог не ответить или
     // упереться в свой лимит проверок. Но причины на этой машине (сервис не запущен,
@@ -233,7 +339,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
       <div class="flow-step">
         <div class="flow-step-dot bad"></div>
         <div>
-          <b>Порт ${port}/${protoLabel}: ${localDx ? 'закрыт' : 'не получилось проверить'}</b><span class="flow-step-meta">${escapeHtml(localDx ? localDx.hint : `${data.error} — это не значит, что порт закрыт, попробуй ещё раз`)}</span>${obsExtras}
+          <b>${title}</b><span class="flow-step-meta">${escapeHtml(localDx ? localDx.hint : `${data.error} — попробуй ещё раз кнопкой ↻`)}</span>${obsExtras}
           ${localDx ? (localDx.actions || '') + (localDx.howto || '') : ''}
         </div>
         ${recheckBtn}
@@ -243,7 +349,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
     return `
       <div class="flow-step">
         <div class="flow-step-dot dot-live" style="${pulseDelay('port-' + port)}"></div>
-        <div><b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${escapeHtml(label)} — из интернета дойдёт (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span></div>
+        <div><b>${title}</b><span class="flow-step-meta">Из интернета дойдёт (${escapeHtml(data.targetIp)})${escapeHtml(noteText)}</span></div>
         ${recheckBtn}
       </div>`;
   }
@@ -256,8 +362,7 @@ function portStepHtml({ port, proto, label, optional, note }) {
     <div class="flow-step">
       <div class="flow-step-dot ${optional ? 'warn' : 'bad'}"></div>
       <div>
-        <b>Порт ${port}/${protoLabel}</b><span class="flow-step-meta">${optional ? `${escapeHtml(label)} — не отвечает${escapeHtml(noteText)}` : `${escapeHtml(label)} — из интернета не дойдёт${data.targetIp ? ` (${escapeHtml(data.targetIp)})` : ''}. Дома, по своей Wi-Fi, стрим всё равно пойдёт`}</span>${obsExtras}
-        ${showDx ? `<div class="row-meta" style="margin-top:6px">${escapeHtml(dx.hint)}</div>` : ''}
+        <b>${title}</b><span class="flow-step-meta">${showDx ? escapeHtml(dx.hint) : `Не отвечает${escapeHtml(noteText)}`}</span>${obsExtras}
         ${showDx ? (dx.actions || '') + (dx.howto || '') : ''}
       </div>
       ${recheckBtn}
@@ -341,10 +446,9 @@ const ROUTER_LOGIN_HOWTO = `
           <code>admin</code> и пустой пароль.</li>
         <li>Если пароль меняли при настройке — спроси того, кто настраивал. Если роутер выдал
           провайдер, пароль знает их поддержка — и часто она может пробросить порт сама, по заявке:
-          так и скажи, «нужно пробросить порт 5000 UDP на компьютер».</li>
-        <li>Кнопка Reset на корпусе (зажать секунд на 10) вернёт заводской пароль, но заодно сбросит
-          имя и пароль Wi-Fi и настройки подключения к провайдеру — переподключать придётся все
-          устройства в доме. Это крайняя мера, не первый шаг.</li>
+          так и скажи: «нужно пробросить порт на компьютер», и назови номер из строки выше.</li>
+        <li>Reset на корпусе вернёт заводской пароль, но заодно сбросит Wi-Fi и настройки
+          провайдера — переподключать придётся весь дом. Крайняя мера.</li>
       </ul>
     </div>
   </details>`;
@@ -463,24 +567,16 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (local.dockerError) {
     return {
       scope: 'local',
-      hint: `Панель не смогла спросить Docker про сервис ${svc || ''} (${local.dockerError}) — пока Docker не отвечает, порт ${port} слушать некому.`,
-      howto: detailsHtml('Что делать', `
-        <ol>
-          <li>Открой Docker Desktop и дождись, пока значок кита перестанет мигать.</li>
-          <li>Запусти ярлык «Запустить трансляцию» ещё раз — он поднимет сервисы заново.</li>
-        </ol>`),
+      hint: 'Docker не отвечает — открой Docker Desktop, дождись, пока кит перестанет мигать, и запусти ярлык «Запустить трансляцию» заново.',
     };
   }
 
   if (svc && local.found === false) {
     return {
       scope: 'local',
-      hint: `Контейнер ${svc} удалён — порт ${port} на этой машине никто не слушает, роутер тут ни при чём.`,
+      hint: `Контейнер ${svc} удалён — создай его заново кнопкой ниже.`,
       actions: serviceFixButton(`Создать и запустить ${svc}`, svc, 'recreate', port),
-      howto: detailsHtml('Если кнопка не сработала', `
-        <p>Кнопке нужен путь к папке сервера, который задаёт ярлык. Если панель запускали
-        не ярлыком, а <code>docker compose</code> вручную — просто запусти ярлык
-        «Запустить трансляцию»: он пересоздаёт все контейнеры с нуля.</p>`),
+      howto: detailsHtml('Если кнопка не сработала', '<p>Запусти ярлык «Запустить трансляцию» — он пересоздаёт все контейнеры с нуля.</p>'),
     };
   }
 
@@ -492,7 +588,7 @@ function diagnoseClosed({ port, proto }, data, results) {
     if (/already allocated|address already in use|bind for/i.test(err)) {
       return {
         scope: 'local',
-        hint: `Порт ${port} на этой машине уже занят другой программой — поэтому ${svc} не смог запуститься.`,
+        hint: `Порт ${port} занят другой программой — найди её командой ниже, закрой и запусти ярлык «Запустить трансляцию» заново.`,
         howto: detailsHtml('Как найти и освободить порт', `
           <ol>
             <li>В PowerShell: <code>Get-NetUDPEndpoint -LocalPort ${port}</code> для UDP или
@@ -501,8 +597,6 @@ function diagnoseClosed({ port, proto }, data, results) {
             <li>Кто это: <code>Get-Process -Id &lt;номер&gt;</code>.</li>
             <li>Частые виновники: второй запущенный экземпляр этого же сервера, свой
               srtla/SRS вне Docker, OBS с включённым сервером, NDI Tools, IIS.</li>
-            <li>Закрой программу (или поменяй порт у неё) и запусти ярлык
-              «Запустить трансляцию» заново.</li>
           </ol>
           <p style="opacity:.75">Ошибка Docker: <code>${escapeHtml(err.slice(0, 200))}</code></p>`),
       };
@@ -510,7 +604,7 @@ function diagnoseClosed({ port, proto }, data, results) {
     if (/forbidden by its access permissions|access permissions|excluded port/i.test(err)) {
       return {
         scope: 'local',
-        hint: `Windows зарезервировал порт ${port} под себя, и ${svc} не смог его занять — это известная особенность Hyper-V/WSL, а не проблема сети.`,
+        hint: `Windows зарезервировал порт ${port} под себя — сбрось резерв командами ниже.`,
         howto: detailsHtml('Как вернуть порт себе', `
           <ol>
             <li>Проверь, попал ли порт в резерв (PowerShell от администратора):
@@ -528,17 +622,13 @@ function diagnoseClosed({ port, proto }, data, results) {
     if (local.state === 'restarting' || local.restartCount > 3) {
       return {
         scope: 'local',
-        hint: `Сервис ${svc} падает и перезапускается по кругу (перезапусков: ${local.restartCount || '?'}) — порт ${port} успевает закрыться раньше, чем до него достучатся.`,
-        howto: detailsHtml('Что делать', `
-          <p>Нажми «Скачать логи» в блоке «Что-то не работает?» справа — там будет строка,
-          на которой сервис падает. Чаще всего это занятый порт или испорченный
-          <code>srs.conf</code>. Ярлык «Запустить трансляцию» пересобирает контейнеры
-          с нуля и лечит второй случай.</p>`),
+        hint: `Сервис ${svc} падает и перезапускается по кругу — скачай логи в разделе «Логи и диагностика» и посмотри, на чём он падает.`,
+        howto: detailsHtml('Частые причины', '<p>Занятый порт или испорченный <code>srs.conf</code> — второе лечится ярлыком «Запустить трансляцию», он пересобирает контейнеры с нуля.</p>'),
       };
     }
     return {
       scope: 'local',
-      hint: `Сервис ${svc} остановлен — порт ${port} на этой машине никто не слушает.`,
+      hint: `Сервис ${svc} остановлен — запусти его кнопкой ниже.`,
       actions: serviceFixButton(`Запустить ${svc}`, svc, 'start', port),
       howto: err ? detailsHtml('Что говорит Docker', `<p><code>${escapeHtml(err.slice(0, 300))}</code></p>`) : '',
     };
@@ -547,11 +637,7 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (svc && local.running && local.published === false) {
     return {
       scope: 'local',
-      hint: `Сервис ${svc} работает, но порт ${port} не отдан из контейнера наружу — снаружи до него не достучаться никаким пробросом.`,
-      howto: detailsHtml('Что делать', `
-        <p>Так бывает, если контейнер когда-то создали руками, без публикации порта.
-        Запусти ярлык «Запустить трансляцию» — он удаляет старые контейнеры и создаёт
-        их заново по <code>docker-compose.yml</code>, уже с портами.</p>`),
+      hint: `Порт ${port} не отдан из контейнера наружу — запусти ярлык «Запустить трансляцию», он пересоздаст контейнеры с портами.`,
     };
   }
 
@@ -562,11 +648,8 @@ function diagnoseClosed({ port, proto }, data, results) {
     return {
       scope: 'local',
       hint: port === 4455
-        ? 'OBS на этой машине не слушает порт 4455 — либо OBS не запущен, либо в нём выключен WebSocket-сервер.'
-        : `Порт ${port} не отвечает даже на самой этой машине — значит дело не в роутере, а в том, что его никто не занял.`,
-      howto: port === 4455 ? '' : detailsHtml('Что делать', `
-        <p>Запусти ярлык «Запустить трансляцию» заново и посмотри, не ругается ли окно
-        на занятый порт.</p>`),
+        ? 'OBS не слушает порт 4455 — запусти OBS и включи в нём WebSocket-сервер (как — ниже).'
+        : `Порт ${port} не занят даже на самой этой машине — запусти ярлык «Запустить трансляцию» заново.`,
     };
   }
 
@@ -574,19 +657,8 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (data.ipChanged) {
     return {
       scope: 'address',
-      hint: `Панель проверяет адрес ${data.localIp} (он снят один раз, при запуске ярлыка), а сейчас интернет видит этот компьютер как ${data.freshPublicIp} — проверяется не тот адрес.`,
-      howto: detailsHtml('Что делать', `
-        <ol>
-          <li>Скорее всего провайдер сменил адрес — так бывает у динамического IP после
-            переподключения. Запусти ярлык «Запустить трансляцию» заново: панель подхватит
-            новый адрес, и его же нужно будет заново отдать телефону (QR).</li>
-          <li>Если адрес меняется постоянно, договорись с провайдером о статическом IP или
-            настрой DDNS — иначе телефон будет терять сервер после каждой смены.</li>
-          <li>Реже бывает наоборот: адрес верный, просто у Docker свой путь в интернет и
-            изнутри контейнера видно другой выход. Проверь на самом компьютере (любой сайт
-            «мой IP»): если он показывает ${escapeHtml(String(data.localIp))} — адрес верный,
-            причина в чём-то другом, жми «Проверить снова» и смотри следующий диагноз.</li>
-        </ol>`),
+      hint: `Адрес компьютера сменился на ${data.freshPublicIp} — запусти ярлык «Запустить трансляцию» заново и покажи телефону новый код.`,
+      howto: detailsHtml('Если это повторяется каждый раз', '<p>Провайдер выдаёт динамический адрес: закажи статический IP или настрой DDNS — иначе телефон будет терять сервер после каждой смены.</p>'),
     };
   }
 
@@ -595,21 +667,14 @@ function diagnoseClosed({ port, proto }, data, results) {
   // Hetzner/DigitalOcean/Scaleway/Google — proxy:false + hosting:true, а реальный
   // VPN-выход (FranTech) — proxy:true + hosting:true. То есть proxy:true сам по себе
   // и есть признак VPN/прокси, а hosting лишь говорит "адрес дата-центра".
+  // Одна строка с действием вместо разбора всех «а если». Человеку с включённым
+  // VPN нужно ровно одно — выключить его; остальные ветки (проброс к VPN-адресу
+  // бесполезен, метка может быть ложной на своём VPS) он читать не будет, а экран
+  // они забивают. Не помогло — «Проверить снова» приведёт к следующему диагнозу.
   if (data.vpnLikely) {
     return {
       scope: 'address',
-      hint: `Адрес ${data.targetIp} помечен как известный VPN/прокси-выход — похоже, на этой машине включён VPN, и проверяется его адрес, а не твой настоящий.`,
-      howto: detailsHtml('Что делать', `
-        <ol>
-          <li>Выключи VPN (клиент целиком, не только «отключить в браузере») и запусти ярлык
-            «Запустить трансляцию» заново — панель определит настоящий публичный адрес.</li>
-          <li>Проброс портов на роутере к VPN-адресу не относится вообще: трафик приходит на
-            чужой сервер, до тебя он не дойдёт, как правило ни настраивай.</li>
-          ${data.hostingLikely ? `<li>Если VPN не включён и это твой собственный сервер на VPS —
-            метка «прокси» ложная. Тогда причина внутри машины: проверь, что сервис слушает
-            <code>0.0.0.0</code>, а не только localhost, и что порт ${port}/${protoLabel} открыт
-            в фаерволе машины и в панели хостинга (security group).</li>` : ''}
-        </ol>`),
+      hint: 'Похоже, включён VPN — выключи его целиком и запусти ярлык «Запустить трансляцию» заново.',
     };
   }
 
@@ -619,15 +684,12 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (data.mobileLikely) {
     return {
       scope: 'network',
-      hint: `Адрес ${data.targetIp} принадлежит мобильному оператору${data.isp ? ` (${data.isp})` : ''} — там абоненты сидят за общим NAT оператора, и проброс порта невозможен в принципе.`,
-      howto: detailsHtml('Варианты', `
-        <ol>
-          <li>Подключить сервер к проводному интернету (домашний провайдер) — самый простой путь.</li>
-          <li>Заказать у оператора услугу «белый / публичный IP» — у большинства она есть,
-            обычно платная и включается в личном кабинете.</li>
-          <li>Не держать приёмник дома вообще: арендовать сервер (VPS) с белым адресом и поднять
-            приём бондинга там, а домой уже забирать готовый поток.</li>
-        </ol>`),
+      hint: `Этот компьютер сидит в мобильном интернете${data.isp ? ` (${data.isp})` : ''} — проброс порта там невозможен, подключи его к проводному интернету.`,
+      howto: detailsHtml('Если проводного нет', `
+        <ul>
+          <li>Заказать у оператора «белый / публичный IP» — обычно платная услуга в личном кабинете.</li>
+          <li>Поднять приём бондинга на арендованном сервере (VPS), а домой забирать готовый поток.</li>
+        </ul>`),
     };
   }
 
@@ -639,7 +701,7 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (data.verdict === 'refused') {
     return {
       scope: 'network',
-      hint: `Проба снаружи дошла до ${data.targetIp} и получила отказ — путь работает, но порт ${port}/${protoLabel} на том конце никто не слушает.`,
+      hint: `Пакет дошёл до ${data.targetIp}, но порт ${port}/${protoLabel} там никто не слушает — проверь, на ту ли машину ведёт правило в роутере.`,
       howto: detailsHtml('Что проверить', `
         <ol>
           <li>Если правило проброса на роутере есть — оно ведёт не на ту машину.
@@ -660,7 +722,7 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (data.lanIp && !data.natLikely) {
     return {
       scope: 'network',
-      hint: `У этой машины публичный адрес напрямую, роутера между ней и интернетом нет — значит порт ${port}/${protoLabel} режет фаервол самой машины или фаервол хостинга.`,
+      hint: `Роутера между этой машиной и интернетом нет — порт ${port}/${protoLabel} режет фаервол машины или хостинга.`,
       howto: detailsHtml('Что проверить', `
         <ol>
           <li>Фаервол хостинга/облака — отдельный слой поверх машины, о нём забывают чаще
@@ -677,10 +739,8 @@ function diagnoseClosed({ port, proto }, data, results) {
   if (openPort) {
     return {
       scope: 'network',
-      hint: `Порт ${openPort} снаружи виден, а ${port}/${protoLabel} — нет. Значит до этой машины из интернета пускают, и дело в правиле именно для порта ${port}.`,
+      hint: `Порт ${openPort} снаружи виден, а ${port}/${protoLabel} — нет: до машины пускают, дело в правиле именно для этого порта.`,
       howto: detailsHtml('Что проверить', `
-        <p>Раз соседний порт работает, серый IP провайдера, двойной NAT и «фаервол режет всё
-        подряд» отпадают — ищем то, что отличает именно этот порт.</p>
         ${forwardingHowtoHtml(port, proto, data)}
         <p>Если правило точно верное — остаётся фаервол с правилом на конкретный порт:</p>
         ${firewallHowtoHtml(port, proto)}`),
@@ -689,17 +749,14 @@ function diagnoseClosed({ port, proto }, data, results) {
 
   return {
     scope: 'network',
-    hint: `Пакеты снаружи молча теряются: ни один проверенный порт до этой машины не доходит (адрес ${data.targetIp}). Сервис на месте, значит режут по дороге.`,
+    hint: `Снаружи не долетает ни один порт — сервис на месте, значит режут по дороге. Начни с проброса на роутере.`,
     howto:
       detailsHtml('1. Проброс порта на роутере — начни отсюда', forwardingHowtoHtml(port, proto, data)) +
       detailsHtml('2. Проверить, белый ли у тебя адрес (серый IP / второй роутер)', grayIpHowtoHtml(data)) +
       detailsHtml('3. Фаервол Windows и антивирус', firewallHowtoHtml(port, proto)) +
       detailsHtml('4. Если ничего из этого', `
-        <p>Остаётся редкое: некоторые провайдеры режут входящие подключения на домашних
-        тарифах. Признак — адрес белый, правило проброса верное, фаервол снят, а снаружи
-        не видно ни одного порта. Это лечится только звонком провайдеру (попросить снять
-        ограничение или дать «белый IP» отдельной услугой) либо переносом приёмника на
-        арендованный сервер.</p>`),
+        <p>Некоторые провайдеры режут входящие подключения на домашних тарифах — звони
+        провайдеру и проси снять ограничение или дать «белый IP» отдельной услугой.</p>`),
   };
 }
 
@@ -1116,12 +1173,18 @@ function regenerateInvite() {
 // Заголовки держим короткими: три плашки стоят в ряд, и перенос у одной делает
 // весь ряд разной высоты — читается как поломка вёрстки, а не как текст.
 const FLOWS = [
-  { id: 'bondcast', icon: '📱', title: 'Через Bondcast', hint: 'Настроится само по коду' },
+  { id: 'bondcast', icon: '📱', title: 'Через Bondcast', hint: 'Приложение к этой панели — проще всего' },
   { id: 'other-app', icon: '⇄', title: 'Другое приложение', hint: 'Moblin, Larix, PRISM — адрес вручную' },
   { id: 'invite', icon: '👥', title: 'Компьютер друга', hint: 'Друг стримит из своего OBS' },
 ];
 
-let activeFlowId = null;
+// Ветка «Через Bondcast» открыта сразу: три закрытые плашки и пустота под ними —
+// это экран, на котором непонятно, что делать дальше. Выбор запоминаем, чтобы
+// человек, который стримит из Moblin, не открывал свою ветку каждый раз заново.
+const FLOW_KEY = 'bondcast_flow';
+let activeFlowId = FLOWS.some((f) => f.id === localStorage.getItem(FLOW_KEY))
+  ? localStorage.getItem(FLOW_KEY)
+  : 'bondcast';
 const flowSelectorEl = document.getElementById('flowSelector');
 const flowPanelEl = document.getElementById('flowPanel');
 
@@ -1165,6 +1228,8 @@ function animateHeight(el, renderFn) {
 
 function setActiveFlow(id) {
   activeFlowId = activeFlowId === id ? null : id;
+  if (activeFlowId) localStorage.setItem(FLOW_KEY, activeFlowId);
+  else localStorage.removeItem(FLOW_KEY);
   renderFlowList();
 }
 
@@ -1232,7 +1297,7 @@ function lanStepHtml() {
   return `
     <div class="flow-step">
       <div class="flow-step-dot dot-live" style="${pulseDelay('lan-ok')}"></div>
-      <div><b>Телефон в той же Wi-Fi — больше ничего не нужно</b><span class="flow-step-meta">Роутер настраивать не надо. ${escapeHtml(tail)}</span></div>
+      <div><b>Телефон в той же Wi-Fi — больше ничего не нужно</b><span class="flow-step-meta">${escapeHtml(tail)}</span></div>
     </div>`;
 }
 
@@ -1316,6 +1381,23 @@ function reconcileSteps(container, items) {
   });
 }
 
+// Ссылка на страницу приложения в Google Play. Первым шагом, до проверок сети и
+// до QR-кода: у человека, который открыл панель впервые, приложения на телефоне
+// ещё нет, и «наведи телефон на код» ему наводить нечем.
+const PLAY_URL = 'https://play.google.com/store/apps/details?id=n7.bondcast';
+
+function installStepHtml() {
+  return `
+    <div class="flow-step" style="border-color:rgba(59,130,246,0.45)">
+      <div class="flow-step-dot dot-live-accent" style="${pulseDelay('install-app')}"></div>
+      <div style="flex:1;min-width:0">
+        <b>Установи Bondcast на телефон</b>
+        <span class="flow-step-meta">Приложение, которое снимает и шлёт видео сюда</span>
+      </div>
+      <a class="btn-link" href="${PLAY_URL}" target="_blank" rel="noopener">Открыть Google Play</a>
+    </div>`;
+}
+
 function bondcastFlowBody() {
   const host = activeHost();
   if (!host) return noHostWarningItems();
@@ -1327,9 +1409,10 @@ function bondcastFlowBody() {
         <button type="button" class="dice-btn" id="regenName" title="Придумать другое имя">🎲</button>
       </div>
       <img src="${host.qrDataUrl}" alt="Код для подключения" style="display:block;margin:4px auto;border-radius:8px;width:160px;height:160px;background:#fff" />
-      <div class="row-meta" style="text-align:center">Открой Bondcast → Настройки → значок камеры → наведи → «Стримить»</div>
+      <div class="row-meta" style="text-align:center">Bondcast → Настройки → камера → «Стримить»</div>
     </div>`;
   return gateSteps([
+    { key: 'install', html: installStepHtml() },
     { key: 'net-mode', html: netModeStepHtml() },
     ...netSteps(host, [
       { key: 'port-5000', html: portStepHtml(PORTS_TO_CHECK[0]) },
@@ -1536,9 +1619,9 @@ refreshConnections();
 refreshInviteConnections();
 checkPort();
 
-// --- Сайдбар "Стримы на сервере" (общий для обеих вкладок) ------------------
-// Простой обзор "кто сейчас на канале" — не путать с #streamCards на вкладке
-// "Функции" (там — управление субтитрами конкретного стрима, здесь — просто
+// --- "Сейчас в эфире" в левой колонке ---------------------------------------
+// Простой обзор "кто сейчас на канале" — не путать с #streamCards в разделе
+// "Субтитры" (там — управление субтитрами конкретного стрима, здесь — просто
 // кто есть и куда стримить, если это OBS друга).
 const serverStreamsEl = document.getElementById('serverStreams');
 
@@ -1553,6 +1636,53 @@ function obsPlayUrl(name) {
   const host = watchHost();
   if (!host) return '';
   return `http://${host.mobileSrtlaHost}:8080/live/${name}.flv`;
+}
+
+// --- Раздел «Картинка в OBS» -------------------------------------------------
+// Отдельный шаг между «телефон подключён» и функциями эфира. Раньше ссылка жила
+// кнопкой «Ссылка для OBS» в сайдбаре и никак не объясняла, куда её девать —
+// человек копировал адрес и упирался в пустой OBS.
+function renderObsSourceCard() {
+  const el = document.getElementById('obsSourceCard');
+  if (!el) return;
+  // Свой стрим важнее чужого: если параллельно стримит кто-то ещё, показываем всё
+  // равно тот, что идёт с этого телефона.
+  const stream = latestStreams.find((s) => s.name === currentStreamName) || latestStreams[0];
+  if (!stream) {
+    el.innerHTML = `
+      <div class="section-title" style="margin-bottom:8px">Картинка в OBS</div>
+      <div class="row-meta">Сигнала сейчас нет. Ссылка появится, когда телефон начнёт стримить</div>`;
+    return;
+  }
+  const url = obsPlayUrl(stream.name);
+  el.innerHTML = `
+    <div class="section-title" style="margin-bottom:12px">Картинка в OBS</div>
+    <div class="flow-panel-content" style="padding-top:0">
+      <div class="flow-step">
+        <div class="num-step">1</div>
+        <div style="flex:1;min-width:0">
+          <b style="font-size:13px">Скопируй ссылку на эфир</b>
+          <div class="addr-row">
+            <code>${escapeHtml(url)}</code>
+            <button class="copy-addr primary" data-value="${escapeHtml(url)}">Копировать</button>
+          </div>
+        </div>
+      </div>
+      <div class="conn-wrap"><div class="conn-line"></div><div class="conn-packet" style="${pulseDelay('obs-conn-1', 1.6)}"></div></div>
+      <div class="flow-step">
+        <div class="num-step">2</div>
+        <div><b style="font-size:13px">В OBS: Источники → + → Медиаисточник</b><span class="flow-step-meta">Сними «Локальный файл», вставь ссылку в «Ввод»</span></div>
+      </div>
+      <div class="conn-wrap"><div class="conn-line"></div><div class="conn-packet" style="${pulseDelay('obs-conn-2', 1.6)}"></div></div>
+      <div class="flow-step">
+        <div class="flow-step-dot dot-live" style="${pulseDelay('obs-source')}"></div>
+        <div><b style="font-size:13px">Проверь картинку</b><span class="flow-step-meta">${escapeHtml(stream.name)}${stream.liveSinceMs ? ' · в эфире ' + escapeHtml(formatLiveSince(stream.liveSinceMs)) : ''}</span></div>
+        <button type="button" class="primary obs-watch" style="margin-left:auto">Смотреть</button>
+      </div>
+    </div>`;
+  bindCopyButtons(el);
+  const watchBtn = el.querySelector('.obs-watch');
+  if (watchBtn) watchBtn.onclick = () => openPreview(stream.name);
 }
 
 function formatLiveSince(liveSinceMs) {
@@ -1598,8 +1728,8 @@ function renderServerStreams(streams) {
   const emptySlot = `
     <div class="server-stream-empty">
       <div class="icon">👥</div>
-      <b>Свободное место</b>
-      <div class="hint">Здесь появится каждый, кто начнёт стримить на этот компьютер</div>
+      <b>Пока никого</b>
+      <div class="hint">Здесь появится каждый, кто начнёт стримить сюда</div>
     </div>`;
 
   serverStreamsEl.innerHTML = slots + emptySlot;
@@ -1645,8 +1775,8 @@ const sceneSwitcherBodyEl = document.getElementById('sceneSwitcherBody');
 const sceneSwitcherErrorEl = document.getElementById('sceneSwitcherError');
 
 // extraHtml — готовая инструкция (напр. OBS_WEBSOCKET_HOWTO), а не ссылка "смотри
-// её в другом сценарии" — стример уже здесь, на вкладке "Функции", незачем
-// заставлять его переключаться на "Старт и подключение" за тем же текстом.
+// её в другом сценарии" — стример уже здесь, в разделе "Заглушка при обрыве",
+// незачем гонять его в "Подключить телефон" за тем же текстом.
 function showSceneSwitcherError(message, extraHtml = '') {
   // .flow-warn красит весь свой текст в красный цвет ошибки (это ок для самой
   // ошибки) — инструкцию внутри extraHtml возвращаем к обычному цвету текста,
@@ -1661,6 +1791,7 @@ function clearSceneSwitcherError() {
 }
 
 function applySceneSwitch() {
+  renderSectionNav();
   sceneSwitchEl.classList.toggle('on', sceneSwitcherState.enabled);
   sceneSwitcherBodyEl.hidden = !sceneSwitcherState.enabled;
 }
@@ -2027,6 +2158,7 @@ function applyCaptionsStage() {
   const buildBtn = capBuildStageEl.querySelector('.cap-build');
   buildBtn.disabled = captionsState.buildStatus === 'building';
   buildBtn.textContent = captionsState.buildStatus === 'building' ? 'Скачиваю…' : 'Скачать';
+  renderSectionNav();
 }
 capBuildStageEl.querySelector('.cap-build').onclick = buildCaptions;
 addVoiceBtnEl.title = `${ENROLL_DURATION_SEC} секунд. Говорить всё это время должен только один человек`;
@@ -2063,7 +2195,7 @@ function streamRowHtml(s) {
 
 function renderStreamCards(streams) {
   if (!streams.length) {
-    streamCardsEl.innerHTML = '<div class="row"><span class="row-label"><span class="row-meta">Сначала запусти стрим — тогда будет к чему подключать субтитры.</span></span></div>';
+    streamCardsEl.innerHTML = '<div class="row"><span class="row-label"><span class="row-meta">Сначала запусти стрим — тогда будет к чему их подключать</span></span></div>';
   } else {
     streamCardsEl.innerHTML = streams.map(streamRowHtml).join('');
   }
@@ -2230,9 +2362,14 @@ async function refreshStreams() {
     const res = await fetch('/api/streams');
     const data = await res.json();
     latestStreams = data.streams || [];
+    if (latestStreams.length) everLive = true;
     renderStreamCards(latestStreams);
     renderServerStreams(latestStreams);
     updatePreviewStats();
+    // Замки и метки в левой колонке живут ровно от этого опроса — отдельного
+    // источника правды про «идёт ли эфир» у панели нет.
+    applySections();
+    renderSectionNav();
   } catch (e) {
     streamCardsEl.innerHTML = `<div class="row"><span class="row-label"><span class="row-meta">не удалось получить список стримов: ${escapeHtml(e.message)}</span></span></div>`;
   }
@@ -2557,14 +2694,19 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshUpdateStatus();
 });
 
-// --- Вкладка «Диагностика» -------------------------------------------------
+// Первый показ левой колонки — здесь, а не рядом с её кодом: renderSectionNav()
+// читает latestStreams/captionsState/sceneSwitcherState, а они объявлены через let
+// ниже по файлу и до этой строки лежат в мёртвой зоне.
+navReady = true;
+applySections();
+renderSectionNav();
+
+// --- Живой лог (адрес с #debug) ---------------------------------------------
 // Тот же поток строк, что уходит в файл (см. panel/logger.js), только живьём.
 // Фильтры чисто клиентские: строк в буфере максимум 500 + новые, фильтровать на
 // сервере смысла нет, а переподключать SSE на каждое изменение фильтра — вредно.
 if (debugEnabled) {
   const diagLog = document.getElementById('diagLog');
-  const diagService = document.getElementById('diagService');
-  const diagLevel = document.getElementById('diagLevel');
   const diagSearch = document.getElementById('diagSearch');
   const diagPause = document.getElementById('diagPause');
   const diagClear = document.getElementById('diagClear');
@@ -2572,6 +2714,36 @@ if (debugEnabled) {
   const LEVEL_ORDER = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
   let diagLines = [];
   let diagPaused = false;
+
+  // Фильтры — чипсы, а не select: наборы короткие и целиком помещаются на экран,
+  // держать их за кликом «раскрой список» незачем (тот же приём, что в «Заглушке
+  // при обрыве»). Первый чипс в каждом ряду — «не фильтровать», пустое значение.
+  const DIAG_SERVICES = ['', 'panel', 'srs', 'srtla-rec', 'overlay', 'asr-worker', 'ui'];
+  const DIAG_LEVELS = [['', 'любой'], ['INFO', 'info и выше'], ['WARN', 'warn и выше'], ['ERROR', 'только error']];
+  let diagServiceValue = '';
+  let diagLevelValue = '';
+
+  function renderDiagChips(el, items, active, onPick) {
+    el.innerHTML = items
+      .map(([value, label]) => `<button type="button" class="chip ${value === active ? 'is-active' : ''}" data-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`)
+      .join('');
+    el.querySelectorAll('.chip').forEach((btn) => { btn.onclick = () => onPick(btn.dataset.value); });
+  }
+
+  function renderDiagFilters() {
+    renderDiagChips(
+      document.getElementById('diagServiceChips'),
+      DIAG_SERVICES.map((name) => [name, name || 'все']),
+      diagServiceValue,
+      (value) => { diagServiceValue = value; renderDiagFilters(); renderDiag(); },
+    );
+    renderDiagChips(
+      document.getElementById('diagLevelChips'),
+      DIAG_LEVELS,
+      diagLevelValue,
+      (value) => { diagLevelValue = value; renderDiagFilters(); renderDiag(); },
+    );
+  }
 
   // Разбираем строку регуляркой, а не срезами по фиксированным позициям: имена
   // сервисов разной длины ("asr-worker" длиннее колонки), и срезы бы поехали.
@@ -2584,8 +2756,8 @@ if (debugEnabled) {
     // фильтруем только поиском, иначе они бы пропадали при любом выборе сервиса.
     if (!m) return !needleOnly || line.toLowerCase().includes(needleOnly);
     const [, , level, service] = m;
-    if (diagService.value && service !== diagService.value) return false;
-    const min = diagLevel.value;
+    if (diagServiceValue && service !== diagServiceValue) return false;
+    const min = diagLevelValue;
     if (min && LEVEL_ORDER.indexOf(level) < LEVEL_ORDER.indexOf(min)) return false;
     if (needleOnly && !line.toLowerCase().includes(needleOnly)) return false;
     return true;
@@ -2596,8 +2768,7 @@ if (debugEnabled) {
     if (!diagPaused) diagLog.scrollTop = diagLog.scrollHeight;
   }
 
-  diagService.onchange = renderDiag;
-  diagLevel.onchange = renderDiag;
+  renderDiagFilters();
   diagSearch.oninput = renderDiag;
   diagClear.onclick = () => { diagLines = []; renderDiag(); };
   diagPause.onclick = () => {

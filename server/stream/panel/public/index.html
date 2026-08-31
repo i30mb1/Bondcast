@@ -30,8 +30,7 @@
   }
   .page { max-width: 1280px; margin: 0 auto; padding: 28px 20px 60px; }
 
-  /* --- Раскладка страницы: основной столбец + постоянный сайдбар "Стримы на
-     сервере" справа (виден на обеих вкладках, не только "Старт и подключение"). --- */
+  /* --- Раскладка страницы: постоянная карта разделов слева + основной столбец. --- */
   .page-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
   /* container-type: inline-size — внутренние блоки перестраиваются по ширине САМОЙ
      колонки, а не окна. Иначе при открытом превью (или узком окне вполовину экрана)
@@ -41,7 +40,10 @@
      в ряд: как только на всё места не хватает, .page-row (flex-wrap) уносит превью
      на отдельную строку целиком, а не отжимает основную колонку. */
   .page-main { flex: 1 1 640px; min-width: 0; container-type: inline-size; container-name: main-col; }
-  .page-sidebar { flex: 0 0 260px; width: 260px; }
+  /* Карта разделов — слева, до основной колонки в потоке документа: это постоянная
+     навигация, а не довесок сбоку. Раньше здесь был правый сайдбар «Стримы на
+     сервере»; список стримов уехал вниз этой же колонки. */
+  .page-sidebar { flex: 0 0 262px; width: 262px; display: flex; flex-direction: column; gap: 16px; }
   /* width: 100% у .page-main обязателен: в колоночном режиме при align-items:flex-start
      ширину задаёт содержимое, а container-type: inline-size его как раз и отрезает —
      без явной ширины колонка схлопывается в ноль. */
@@ -95,19 +97,42 @@
   }
   .top-bar .lead { font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
 
-  /* --- Вкладки --- */
-  .tabs-nav { display: flex; gap: 4px; margin-bottom: 18px; overflow-x: auto; padding-bottom: 2px; }
-  .tab-btn {
-    padding: 9px 15px; border-radius: 8px; background: transparent; color: var(--text-secondary);
-    border: 1px solid var(--divider); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  /* --- Карта разделов слева ---
+     Раньше здесь были вкладки: «Начать стрим» и «Настроить эфир». Вторая вкладка и
+     была источником «кнопок из ниоткуда» — субтитры и заглушку при обрыве показывали
+     человеку, который ещё ни одного стрима не запустил. Теперь это постоянный список,
+     где пункт не появляется и не исчезает, а снимает замок, и у каждого замка написана
+     причина. Диагностика — такой же пункт, а не спрятанная вкладка. */
+  .nav-list { display: flex; flex-direction: column; gap: 3px; }
+  .nav-group { font: 700 11.5px -apple-system, sans-serif; color: var(--text-muted);
+               text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 6px 4px; }
+  .nav-group + .nav-item { margin-top: 0; }
+  .nav-sep { height: 1px; background: var(--divider); margin: 10px 4px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 11px 13px; border-radius: 10px; background: transparent; border: 1px solid transparent;
+    color: var(--text-secondary); white-space: normal;
   }
-  .tab-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-  /* Общий button:hover ниже специфичнее (.tab-btn.active — 0,2,0 против 0,3,1),
-     поэтому под курсором синяя заливка активной вкладки подменяется тёмно-серым.
-     Тёмный текст на нём даёт 1.4:1 — в этом состоянии возвращаем белый. */
-  .tab-btn.active:hover { color: #fff; }
-  .tab-panel { display: none; flex-direction: column; gap: 14px; }
-  .tab-panel.active { display: flex; }
+  .nav-item:hover:not(:disabled):not(.primary) { background: var(--elevated); }
+  .nav-item.active, .nav-item.active:hover { background: var(--accent-dim); border-color: var(--accent); }
+  .nav-item .nav-ico { width: 20px; height: 20px; flex-shrink: 0; color: var(--text-muted); }
+  .nav-item.active .nav-ico { color: var(--accent); }
+  .nav-item.locked .nav-ico { color: #4a4a4a; }
+  .nav-item .nav-txt { flex: 1; min-width: 0; }
+  .nav-item .nav-txt b { display: block; font-size: 13px; color: var(--text-secondary); }
+  .nav-item.active .nav-txt b { color: #fff; }
+  .nav-item.locked .nav-txt b { color: var(--text-muted); }
+  /* Причина замка — обычными словами и всегда на месте, а не всплывашкой по наведению. */
+  .nav-item .nav-why { display: block; font-size: 11px; color: #4a4a4a; margin-top: 1px; }
+  .nav-item.locked { cursor: not-allowed; }
+  .nav-item .nav-lock { width: 15px; height: 15px; flex-shrink: 0; color: #3a3a3a; }
+  .nav-item .nav-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
+  .nav-item .nav-dot.warn { background: #d99a20; }
+  /* Тумблер фичи прямо в списке: её состояние видно, не открывая раздел. */
+  .nav-item .feature-switch { transform: scale(0.72); transform-origin: right center; pointer-events: none; }
+
+  .section-panel { display: none; flex-direction: column; gap: 14px; }
+  .section-panel.active { display: flex; }
 
   /* --- Общие карточки --- */
   .card { background: var(--card); border: 1px solid var(--divider); border-radius: 12px; padding: 16px 18px; }
@@ -168,7 +193,8 @@
   .seg { display: flex; background: var(--input-bg); border: 1px solid var(--divider); border-radius: 8px; padding: 3px; gap: 2px; }
   .seg button { background: transparent; padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
   .seg button.active { background: var(--accent); color: var(--on-accent); }
-  /* Та же ловушка со специфичностью, что у .tab-btn.active выше. */
+  /* Общий button:hover ниже специфичнее — под курсором синяя заливка активного
+     сегмента подменялась бы тёмно-серым, а тёмный текст на нём даёт 1.4:1. */
   .seg button.active:hover { color: #fff; }
 
   /* --- Тумблер вкл/выкл фичи (вкладка "Функции") --- */
@@ -395,6 +421,12 @@
     border-radius: 12px; padding: 13px 14px; display: flex; align-items: center; gap: 11px;
     box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
   }
+  /* Шаг, который делает человек руками (в отличие от .flow-step-dot — там результат
+     автоматической проверки): номер по порядку вместо цветного огонька. */
+  .num-step {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent-dim); color: var(--accent);
+    font: 700 11.5px/22px -apple-system, sans-serif; text-align: center; flex-shrink: 0;
+  }
   .flow-step .flow-step-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
   .flow-step .flow-step-dot.bad { background: var(--danger); }
   .flow-step .flow-step-dot.dot-live-accent { background: var(--accent); }
@@ -564,31 +596,40 @@
   <div class="top-bar">
     <div>
       <h1>Bondcast</h1>
-      <p class="lead">Принимает видео с телефона и отдаёт картинку в OBS — оттуда ты ведёшь эфир.</p>
+      <p class="lead">Видео с телефона → картинка в OBS</p>
     </div>
   </div>
 
-  <div class="tabs-nav">
-    <button class="tab-btn" data-tab="quickstart">Начать стрим</button>
-    <button class="tab-btn" data-tab="stream">Настроить эфир</button>
-    <button class="tab-btn" data-tab="diagnostics" id="diagnosticsTabBtn" hidden>Диагностика</button>
-  </div>
-
 <div class="page-row">
+<div class="page-sidebar">
+  <nav class="nav-list" id="sectionNav"></nav>
+  <div class="card">
+    <div class="section-title" style="margin-bottom:12px">Сейчас в эфире</div>
+    <div id="serverStreams" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+</div>
 <div class="page-main">
 
-  <!-- ======================= Старт и подключение ======================= -->
-  <div class="tab-panel" data-tab-panel="quickstart">
+  <!-- ======================= Подключить телефон ======================= -->
+  <div class="section-panel" data-section-panel="connect">
     <div class="card">
-      <div class="section-title" style="margin-bottom:12px">Откуда идёт картинка?</div>
+      <div class="section-title" style="margin-bottom:12px">Откуда идёт картинка</div>
       <div class="flow-selector" id="flowSelector"></div>
       <div id="flowPanel"></div>
     </div>
   </div>
 
-  <!-- =============================== Функции =============================== -->
-  <div class="tab-panel" data-tab-panel="stream">
-    <div style="display:flex;flex-direction:column;gap:14px">
+  <!-- ========================= Картинка в OBS =========================
+       Раньше ссылка на эфир была кнопкой в сайдбаре и никак не объясняла, что с
+       ней делать в самом OBS. Теперь это отдельный шаг между «телефон подключён»
+       и функциями эфира. Содержимое рисует renderObsSourceCard() — оно зависит от
+       того, какой стрим сейчас живой. -->
+  <div class="section-panel" data-section-panel="obs">
+    <div class="card" id="obsSourceCard"></div>
+  </div>
+
+  <!-- ============================= Субтитры ============================= -->
+  <div class="section-panel" data-section-panel="subs">
 
       <!-- FEATURE: Субтитры на стриме -->
       <div class="feature-card">
@@ -596,7 +637,7 @@
           <div class="feature-card-icon">💬</div>
           <div class="feature-card-title">
             <b>Субтитры</b>
-            <div class="row-meta">Распознаём речь и показываем текст поверх картинки</div>
+            <div class="row-meta">Текст поверх картинки в OBS</div>
           </div>
           <div class="feature-switch" id="subsSwitch"><div class="knob"></div></div>
         </div>
@@ -613,7 +654,7 @@
             <div class="row">
               <div class="row-label">
                 <b>Сначала скачаем распознавание речи</b>
-                <span class="row-meta">Один раз, около 10 ГБ. Дальше работает само, интернет для этого больше не нужен</span>
+                <span class="row-meta">Один раз, около 10 ГБ. Эфир не прервётся, панель можно закрыть</span>
               </div>
               <div class="row-actions">
                 <button type="button" class="cap-build primary">Скачать</button>
@@ -698,67 +739,63 @@
 
         </div>
       </div>
+  </div>
 
+  <!-- ======================= Заглушка при обрыве ======================= -->
+  <div class="section-panel" data-section-panel="scene">
       <!-- FEATURE: Умный переключатель сцен OBS -->
       <div class="feature-card">
         <div class="feature-card-head">
           <div class="feature-card-icon">🔀</div>
           <div class="feature-card-title">
             <b>Заглушка при обрыве</b>
-            <div class="row-meta">Пропала связь с телефоном — OBS сам покажет заставку, а потом вернёт эфир</div>
+            <div class="row-meta">Пропала связь — OBS сам покажет заставку и вернёт эфир</div>
           </div>
           <div class="feature-switch" id="sceneSwitch"><div class="knob"></div></div>
         </div>
         <div class="flow-warn" id="sceneSwitcherError" style="padding:0 20px 14px" hidden></div>
         <div class="feature-card-body" id="sceneSwitcherBody" hidden></div>
       </div>
-
-    </div>
   </div>
 
-  <!-- ============================ Диагностика ============================ -->
-  <!-- Скрытая вкладка: обычному пользователю она не нужна и только пугает,
-       ему хватает кнопки «Скачать логи». Открывается адресом с #debug. -->
-  <div class="tab-panel" data-tab-panel="diagnostics">
+  <!-- ======================= Логи и диагностика =======================
+       Раньше это была вкладка, спрятанная за адресом с #debug: обычному человеку
+       она не нужна и только пугает. Теперь пункт списка есть всегда, но живой лог
+       внутри по-прежнему появляется только с #debug — рядовому стримеру хватает
+       кнопки «Скачать логи». -->
+  <div class="section-panel" data-section-panel="logs">
     <div class="card">
+      <div class="section-title" style="margin-bottom:4px">Что-то не работает?</div>
+      <div class="row-meta" style="margin-bottom:12px">Скачай файл с логами и пришли его — по нему видно, что сломалось</div>
+      <a class="btn-link" href="/api/logs/bundle" download>Скачать логи</a>
+    </div>
+    <div class="card" id="diagCard" hidden>
       <div class="section-title" style="margin-bottom:12px">Живой лог</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-        <select id="diagService">
-          <option value="">все сервисы</option>
-          <option value="panel">panel</option>
-          <option value="srs">srs</option>
-          <option value="srtla-rec">srtla-rec</option>
-          <option value="overlay">overlay</option>
-          <option value="asr-worker">asr-worker</option>
-          <option value="ui">ui (браузер)</option>
-        </select>
-        <select id="diagLevel">
-          <option value="">любой уровень</option>
-          <option value="INFO">info и выше</option>
-          <option value="WARN">warn и выше</option>
-          <option value="ERROR">только error</option>
-        </select>
-        <input id="diagSearch" type="text" placeholder="поиск по тексту" style="flex:1;min-width:140px">
-        <button id="diagPause">Пауза</button>
-        <button id="diagClear">Очистить</button>
-        <a class="btn-link" href="/api/logs/bundle" download>Скачать логи</a>
+      <!-- Чипсы вместо выпадающих списков: сервисов и уровней по горстке, и держать
+           их за кликом «раскрой select» незачем — так весь набор виден сразу (тот же
+           приём, что в «Заглушке при обрыве»). Кнопку «Скачать логи» отсюда убрали:
+           она же стоит в карточке выше, на этом же экране. -->
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="field-label">Сервис</label>
+          <div class="chip-row" id="diagServiceChips"></div>
+        </div>
+        <div>
+          <label class="field-label">Уровень</label>
+          <div class="chip-row" id="diagLevelChips"></div>
+        </div>
+        <!-- align-items:stretch — иначе кнопки (padding 8px) стоят ниже поля ввода
+             (padding 10px) и ряд выглядит съехавшим. -->
+        <div style="display:flex;gap:8px;align-items:stretch;flex-wrap:wrap">
+          <input id="diagSearch" type="text" placeholder="поиск по тексту" style="flex:1;min-width:160px">
+          <button id="diagPause">Пауза</button>
+          <button id="diagClear">Очистить</button>
+        </div>
       </div>
       <pre id="diagLog" class="log-box" style="height:420px"></pre>
     </div>
   </div>
 
-</div>
-<div class="page-sidebar" style="display:flex;flex-direction:column;gap:16px">
-  <div class="card">
-    <div class="section-title" style="margin-bottom:4px">Сейчас в эфире</div>
-    <div class="row-meta" style="margin-bottom:14px">Кто прямо сейчас стримит на этот компьютер</div>
-    <div id="serverStreams" style="display:flex;flex-direction:column;gap:10px"></div>
-  </div>
-  <div class="card">
-    <div class="section-title" style="margin-bottom:4px">Что-то не работает?</div>
-    <div class="row-meta" style="margin-bottom:12px">Скачай файл с логами и пришли его — по нему видно, что именно сломалось</div>
-    <a class="btn-link" href="/api/logs/bundle" download>Скачать логи</a>
-  </div>
 </div>
 <div class="card page-preview" id="previewPanel" hidden></div>
 </div>
