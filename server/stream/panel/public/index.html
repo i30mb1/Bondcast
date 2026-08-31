@@ -571,6 +571,7 @@
   <div class="tabs-nav">
     <button class="tab-btn" data-tab="quickstart">Начать стрим</button>
     <button class="tab-btn" data-tab="stream">Настроить эфир</button>
+    <button class="tab-btn" data-tab="diagnostics" id="diagnosticsTabBtn" hidden>Диагностика</button>
   </div>
 
 <div class="page-row">
@@ -712,6 +713,37 @@
         <div class="feature-card-body" id="sceneSwitcherBody" hidden></div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ============================ Диагностика ============================ -->
+  <!-- Скрытая вкладка: обычному пользователю она не нужна и только пугает,
+       ему хватает кнопки «Скачать логи». Открывается адресом с #debug. -->
+  <div class="tab-panel" data-tab-panel="diagnostics">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">Живой лог</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <select id="diagService">
+          <option value="">все сервисы</option>
+          <option value="panel">panel</option>
+          <option value="srs">srs</option>
+          <option value="srtla-rec">srtla-rec</option>
+          <option value="overlay">overlay</option>
+          <option value="asr-worker">asr-worker</option>
+          <option value="ui">ui (браузер)</option>
+        </select>
+        <select id="diagLevel">
+          <option value="">любой уровень</option>
+          <option value="INFO">info и выше</option>
+          <option value="WARN">warn и выше</option>
+          <option value="ERROR">только error</option>
+        </select>
+        <input id="diagSearch" type="text" placeholder="поиск по тексту" style="flex:1;min-width:140px">
+        <button id="diagPause">Пауза</button>
+        <button id="diagClear">Очистить</button>
+        <a class="btn-link" href="/api/logs/bundle" download>Скачать логи</a>
+      </div>
+      <pre id="diagLog" class="log-box" style="height:420px"></pre>
     </div>
   </div>
 

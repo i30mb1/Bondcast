@@ -991,6 +991,31 @@ app.get('/api/logs/bundle', async (req, res) => {
   logger.log('panel', 'info', 'логи выгружены в файл');
 });
 
+// Живой лог для вкладки «Диагностика». Читаем из кольцевого буфера, а не из
+// файла: файл ротируется и может быть недоступен, а буфер есть всегда.
+app.get('/api/logs/stream', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+
+  for (const line of logger.tail(500)) res.write(`data: ${line}\n\n`);
+
+  const onLine = (line) => res.write(`data: ${line}\n\n`);
+  logger.subscribe(onLine);
+
+  // Тот же приём, что у /api/containers/:name/logs ниже — прокси и браузеры
+  // рвут молчащее SSE-соединение.
+  const keepAlive = setInterval(() => res.write(':keep-alive\n\n'), 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    logger.unsubscribe(onLine);
+  });
+});
+
 app.get('/api/status', async (req, res) => {
   const results = await Promise.all(
     ALLOWED.map(async (name) => {

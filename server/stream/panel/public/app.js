@@ -101,7 +101,12 @@ window.addEventListener('unhandledrejection', (e) => {
 // выбор которых переживает перезагрузку так же, как остальные настройки
 // панели (localStorage), а не сбрасывается на дефолт.
 const TAB_KEY = 'bondcast_tab';
-const TABS = ['quickstart', 'stream'];
+// Диагностика — скрытая вкладка: адрес с #debug включает её насовсем (запоминаем
+// в localStorage), чтобы не приходилось дописывать якорь при каждой перезагрузке.
+const DEBUG_KEY = 'bondcast_debug';
+if (location.hash === '#debug') localStorage.setItem(DEBUG_KEY, '1');
+const debugEnabled = localStorage.getItem(DEBUG_KEY) === '1';
+const TABS = debugEnabled ? ['quickstart', 'stream', 'diagnostics'] : ['quickstart', 'stream'];
 
 const uiState = {
   tab: TABS.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'quickstart',
@@ -115,6 +120,8 @@ function setTab(tab) {
 }
 
 function applyUiState() {
+  const diagBtn = document.getElementById('diagnosticsTabBtn');
+  if (diagBtn) diagBtn.hidden = !debugEnabled;
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === uiState.tab);
   });
@@ -523,8 +530,8 @@ function diagnoseClosed({ port, proto }, data, results) {
         scope: 'local',
         hint: `Сервис ${svc} падает и перезапускается по кругу (перезапусков: ${local.restartCount || '?'}) — порт ${port} успевает закрыться раньше, чем до него достучатся.`,
         howto: detailsHtml('Что делать', `
-          <p>Смотри лог сервиса на вкладке «Функции» → «Диагностика»: там будет строка,
-          на которой он падает. Чаще всего это занятый порт или испорченный
+          <p>Нажми «Скачать логи» в блоке «Что-то не работает?» справа — там будет строка,
+          на которой сервис падает. Чаще всего это занятый порт или испорченный
           <code>srs.conf</code>. Ярлык «Запустить трансляцию» пересобирает контейнеры
           с нуля и лечит второй случай.</p>`),
       };
@@ -2549,3 +2556,65 @@ setInterval(refreshUpdateStatus, 5 * 60 * 1000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshUpdateStatus();
 });
+
+// --- Вкладка «Диагностика» -------------------------------------------------
+// Тот же поток строк, что уходит в файл (см. panel/logger.js), только живьём.
+// Фильтры чисто клиентские: строк в буфере максимум 500 + новые, фильтровать на
+// сервере смысла нет, а переподключать SSE на каждое изменение фильтра — вредно.
+if (debugEnabled) {
+  const diagLog = document.getElementById('diagLog');
+  const diagService = document.getElementById('diagService');
+  const diagLevel = document.getElementById('diagLevel');
+  const diagSearch = document.getElementById('diagSearch');
+  const diagPause = document.getElementById('diagPause');
+  const diagClear = document.getElementById('diagClear');
+
+  const LEVEL_ORDER = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+  let diagLines = [];
+  let diagPaused = false;
+
+  // Разбираем строку регуляркой, а не срезами по фиксированным позициям: имена
+  // сервисов разной длины ("asr-worker" длиннее колонки), и срезы бы поехали.
+  const DIAG_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(DEBUG|INFO|WARN|ERROR)\s+(\S+)\s(.*)$/;
+
+  function diagMatches(line) {
+    const needleOnly = diagSearch.value.trim().toLowerCase();
+    const m = DIAG_RE.exec(line);
+    // Служебные строки («связь оборвалась») не имеют сервиса и уровня — их
+    // фильтруем только поиском, иначе они бы пропадали при любом выборе сервиса.
+    if (!m) return !needleOnly || line.toLowerCase().includes(needleOnly);
+    const [, , level, service] = m;
+    if (diagService.value && service !== diagService.value) return false;
+    const min = diagLevel.value;
+    if (min && LEVEL_ORDER.indexOf(level) < LEVEL_ORDER.indexOf(min)) return false;
+    if (needleOnly && !line.toLowerCase().includes(needleOnly)) return false;
+    return true;
+  }
+
+  function renderDiag() {
+    diagLog.textContent = diagLines.filter(diagMatches).join('\n');
+    if (!diagPaused) diagLog.scrollTop = diagLog.scrollHeight;
+  }
+
+  diagService.onchange = renderDiag;
+  diagLevel.onchange = renderDiag;
+  diagSearch.oninput = renderDiag;
+  diagClear.onclick = () => { diagLines = []; renderDiag(); };
+  diagPause.onclick = () => {
+    diagPaused = !diagPaused;
+    diagPause.textContent = diagPaused ? 'Продолжить' : 'Пауза';
+  };
+
+  const diagSource = new EventSource('/api/logs/stream');
+  diagSource.onmessage = (e) => {
+    diagLines.push(e.data);
+    // Тот же потолок, что у кольцевого буфера на сервере — страница не должна
+    // расти в памяти бесконечно за сутки открытой вкладки.
+    if (diagLines.length > 2000) diagLines.shift();
+    if (!diagPaused) renderDiag();
+  };
+  diagSource.onerror = () => {
+    diagLines.push('[связь с логом оборвалась, перезагрузи страницу]');
+    renderDiag();
+  };
+}
