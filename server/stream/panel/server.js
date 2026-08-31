@@ -900,7 +900,9 @@ app.post('/api/logs/client', (req, res) => {
 // Выгрузка всего, что нужно постороннему человеку, чтобы понять, почему у
 // пользователя не работает. Один .txt, а не zip: не нужна новая зависимость,
 // а текстовый файл проще переслать в мессенджер и открыть чем угодно.
-const BUNDLE_SERVICES = ['srs', 'srtla-rec', 'panel', 'overlay', CAPTIONS_CONTAINER];
+// Имена именно контейнеров, а не сервисов compose: у панели container_name
+// stream-panel, и по 'panel' docker её не находит.
+const BUNDLE_SERVICES = ['srs', 'srtla-rec', 'stream-panel', 'overlay', CAPTIONS_CONTAINER];
 
 // Пароль панели и токен статистики в выгрузку попасть не должны — файл пересылают
 // посторонним. Показываем только сам факт, что значение задано.
