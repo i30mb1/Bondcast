@@ -27,6 +27,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.App">
+
+        <!-- Android 16 игнорирует screenOrientation на экранах от 600dp; стрим-экран рассчитан
+             на ландшафт, поэтому пока отказываемся от нового поведения. Флаг временный —
+             при переходе на targetSdk 37 перестанет работать, тогда нужен адаптивный UI. -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
