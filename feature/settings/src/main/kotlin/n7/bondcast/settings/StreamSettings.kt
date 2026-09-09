@@ -7,7 +7,7 @@ public data class StreamSettings(
     val passphrase: String = "",
     val width: Int = 1920,
     val height: Int = 1080,
-    val fps: Int = 30,
+    val fps: Int = 24,
     // сервер всегда свой (SRS 6) и умеет HEVC, поэтому кодек не настраивается в UI
     val videoCodec: VideoCodec = VideoCodec.H265,
     val videoBitrateKbps: Int = 4500,

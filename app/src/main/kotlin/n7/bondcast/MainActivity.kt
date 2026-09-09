@@ -191,6 +191,7 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
             onTwitchLogout = { graph.twitchChat.session.logout() },
             onFetchTwitchStreamKey = { graph.twitchChat.session.streamKey() },
+            sessionLog = graph.sessionLog,
         )
     } else if (showSettings && currentSettings != null) {
         SettingsScreen(
@@ -204,6 +205,7 @@ private fun App(graph: AppGraph, autostart: Boolean) {
             onTwitchLogin = { graph.twitchChat.session.startDeviceLogin() },
             onTwitchLogout = { graph.twitchChat.session.logout() },
             onFetchTwitchStreamKey = { graph.twitchChat.session.streamKey() },
+            sessionLog = graph.sessionLog,
         )
     } else {
         StreamScreen(

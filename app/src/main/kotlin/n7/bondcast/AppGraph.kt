@@ -6,6 +6,7 @@ import android.util.Log
 import n7.bondcast.bonding.srtlaClient
 import n7.bondcast.chat.impl.chatController
 import n7.bondcast.chat.twitch.twitchChat
+import n7.bondcast.logging.sessionLog
 import n7.bondcast.obs.ObsController
 import n7.bondcast.overlay.overlayCompositor
 import n7.bondcast.service.StreamService
@@ -18,6 +19,9 @@ import n7.bondcast.thermal.ThermalMitigations
 import n7.bondcast.thermal.thermalMonitor
 
 internal class AppGraph(application: Application) {
+    // пишем с самого старта: когда человек дойдёт до настроек и захочет пожаловаться,
+    // системный буфер logcat уже прокрутится, а свой файл останется
+    val sessionLog = sessionLog(application).apply { start() }
     val settingsRepository = SettingsRepository(application)
     val thermalMonitor = thermalMonitor(application) { Log.i("Thermal", it) }
     val thermalMitigations = ThermalMitigations()

@@ -4,6 +4,7 @@ plugins {
 }
 
 dependencies {
+    api(project(":core:logging"))
     implementation(project(":core:ui"))
     implementation(project(":feature:qr"))
 

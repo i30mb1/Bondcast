@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Отдаёт почтовику один-единственный файл лога из кэша. exported=false: доступ
+             выдаётся разово, флагом FLAG_GRANT_READ_URI_PERMISSION на самом интенте. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.logs"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/bondcast_log_paths" />
+        </provider>
+    </application>
+</manifest>

@@ -169,13 +169,16 @@ public fun DiscordField(
     keyboardType: KeyboardType = KeyboardType.Text,
     isError: Boolean = false,
     info: String? = null,
+    /** Многострочный ввод: поле сразу занимает [minLines] строк и растёт по мере набора. */
+    minLines: Int = 1,
+    placeholder: String? = null,
     trailingIcon: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         FieldLabel(label, info)
         Spacer(Modifier.height(6.dp))
         Row(
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = if (minLines > 1) Alignment.Top else Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
                 .background(DiscordColors.inputBackground, ButtonShape)
@@ -189,11 +192,25 @@ public fun DiscordField(
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                singleLine = true,
+                singleLine = minLines == 1,
+                minLines = minLines,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = DiscordColors.textPrimary),
                 cursorBrush = SolidColor(DiscordColors.blurple),
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    // BasicTextField своего placeholder'а не имеет — подкладываем подсказку под текст
+                    Box {
+                        if (value.isEmpty() && placeholder != null) {
+                            Text(
+                                text = placeholder,
+                                color = DiscordColors.textMuted,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        inner()
+                    }
+                },
             )
             if (trailingIcon != null) {
                 Spacer(Modifier.width(8.dp))

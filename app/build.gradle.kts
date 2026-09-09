@@ -24,6 +24,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:logging"))
     implementation(project(":core:ui"))
     implementation(project(":feature:bonding:impl"))
     implementation(project(":feature:settings"))

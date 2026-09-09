@@ -61,4 +61,19 @@
     <string name="settings_obs_password_info">"Тот же пароль, что в OBS.\n\nГде взять:\n• Сервис → Настройка сервера WebSocket → «Пароль сервера»\n• или кнопка «Показать сведения о подключении»\n\nГалочка «Включить аутентификацию» снята — оставь пустым."</string>
 
     <string name="onboarding_section_destination">"Куда стримить"</string>
+
+    <string name="settings_section_feedback">"Пожелания"</string>
+    <string name="settings_feedback_message_label">"Что улучшить"</string>
+    <string name="settings_feedback_message_placeholder">"Что не работает, чего не хватает, что бесит"</string>
+    <string name="settings_feedback_message_info">"Письмо уходит автору приложения. Открывается твой почтовый клиент с уже заполненным письмом — прочитай и нажми «Отправить». Придёт оно с твоего адреса, так что автор сможет ответить."</string>
+    <string name="settings_feedback_attach_log_label">"Приложить лог работы"</string>
+    <string name="settings_feedback_attach_log_info">"Файл с техническими записями за этот и прошлый запуск приложения — по нему видно, что происходило с камерой, кодировщиком и сетью.
+
+Ключ трансляции, passphrase и пароль OBS из лога вырезаны. Адрес сервера остаётся — без него разбирать проблемы с подключением бессмысленно.
+
+Вложение видно в почтовике до отправки: можно посмотреть или удалить."</string>
+    <string name="settings_feedback_send_button">"Отправить"</string>
+    <string name="settings_feedback_subject">"Bondcast — пожелание"</string>
+    <string name="settings_feedback_no_mail_app">"Почтовый клиент не найден. Напиши на %1$s"</string>
+    <string name="settings_feedback_copied">"Адрес скопирован"</string>
 </resources>

@@ -33,8 +33,8 @@ import androidx.lifecycle.LifecycleRegistry
 import io.github.thibaultbee.streampack.core.elements.processing.video.source.ISourceInfoProvider
 import io.github.thibaultbee.streampack.core.elements.sources.video.ISurfaceSourceInternal
 import io.github.thibaultbee.streampack.core.elements.sources.video.IVideoSourceInternal
-import io.github.thibaultbee.streampack.core.elements.utils.extensions.isNaturalToPortrait
 import io.github.thibaultbee.streampack.core.elements.sources.video.VideoSourceConfig
+import io.github.thibaultbee.streampack.core.elements.utils.extensions.isNaturalToPortrait
 import io.github.thibaultbee.streampack.core.elements.utils.time.Timebase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -359,11 +359,20 @@ internal class CameraXVideoSource(
         }.onFailure { Log.w(TAG, "setCompositionSettings failed: $it") }
     }
 
-    /** Подбирает диапазон, реально поддерживаемый камерой, под целевой fps энкодера. */
+    /**
+     * Подбирает диапазон, реально поддерживаемый камерой, под целевой fps энкодера.
+     *
+     * Порядок важен именно из-за 24 к/с: жёсткий [24,24] есть не у всех сенсоров, а «просто
+     * содержащий 24» диапазон вроде [7,30] или [15,30] — плавающий, и на свету камера в нём
+     * уедет к 30. Поэтому сначала жёсткая фиксация, потом диапазон с ВЕРХНЕЙ границей ровно
+     * в целевой fps (там 24 — это потолок, ниже автоэкспозиция опускается только в темноте),
+     * и лишь в последнюю очередь любой подходящий.
+     */
     private fun CameraInfo.pickFrameRateRange(fps: Int): Range<Int>? {
-        val desired = Range(fps, fps)
         val ranges = runCatching { supportedFrameRateRanges }.getOrNull() ?: return null
-        return ranges.firstOrNull { it == desired } ?: ranges.firstOrNull { it.contains(fps) }
+        return ranges.firstOrNull { it.lower == fps && it.upper == fps }
+            ?: ranges.firstOrNull { it.upper == fps }
+            ?: ranges.firstOrNull { it.contains(fps) }
     }
 
     private fun unbind() {
