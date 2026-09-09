@@ -50,12 +50,13 @@ internal class SessionLogImpl(private val context: Context) : SessionLog {
         runCatching { writer?.close() }
     }
 
-    override fun dump(secrets: List<String>): File? {
+    override fun dump(header: String, secrets: List<String>): File? {
         val files = writer?.files().orEmpty()
         if (files.isEmpty()) return null
         val shareDir = File(context.cacheDir, SHARE_DIR_NAME).apply { mkdirs() }
         val out = File(shareDir, SHARE_FILE_NAME)
-        val raw = files.joinToString("\n") { file -> runCatching { file.readText() }.getOrDefault("") }
+        val body = files.joinToString("\n") { file -> runCatching { file.readText() }.getOrDefault("") }
+        val raw = if (header.isBlank()) body else header.trimEnd() + "\n\n" + body
         return runCatching {
             out.writeText(redactLog(raw, secrets))
             out

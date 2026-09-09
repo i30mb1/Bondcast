@@ -62,7 +62,6 @@
 
     <string name="onboarding_section_destination">"Where to stream"</string>
 
-    <string name="settings_section_feedback">"Feedback"</string>
     <string name="settings_feedback_message_label">"What to improve"</string>
     <string name="settings_feedback_message_placeholder">"What's broken, what's missing, what drives you up the wall"</string>
     <string name="settings_feedback_message_info">"Goes straight to the app's author. Your mail app opens with the message already filled in — read it over and hit Send. It arrives from your address, so you can get a reply."</string>
@@ -76,4 +75,8 @@ The attachment is visible in your mail app before you send — look it over or d
     <string name="settings_feedback_subject">"Bondcast — feedback"</string>
     <string name="settings_feedback_no_mail_app">"No mail app found. Write to %1$s"</string>
     <string name="settings_feedback_copied">"Address copied"</string>
+    <string name="settings_feedback_title">"Feedback"</string>
+    <string name="settings_feedback_open_button">"Write to the author"</string>
+    <string name="settings_feedback_send_failed">"Couldn't open the message. Write to %1$s"</string>
+    <string name="settings_feedback_chooser_title">"Send with"</string>
 </resources>

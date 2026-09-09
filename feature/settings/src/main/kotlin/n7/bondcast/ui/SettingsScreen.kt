@@ -1,8 +1,5 @@
 package n7.bondcast.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -49,21 +46,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import n7.bondcast.ButtonShape
 import n7.bondcast.DiscordColors
 import n7.bondcast.feature.settings.R
 import n7.bondcast.logging.SessionLog
 import n7.bondcast.qr.QrPayload
-import n7.bondcast.settings.FEEDBACK_EMAIL
 import n7.bondcast.settings.StreamSettings
 import n7.bondcast.settings.VideoCodec
-import n7.bondcast.settings.feedbackIntent
-import n7.bondcast.settings.secretsForLog
 import n7.bondcast.ui.components.DiscordField
-import n7.bondcast.ui.components.DiscordHint
 import n7.bondcast.ui.components.DiscordSegmentedRow
 import n7.bondcast.ui.components.DiscordStepperField
 import n7.bondcast.ui.components.DiscordSwitchRow
@@ -107,9 +98,7 @@ public fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     var showScanner by remember { mutableStateOf(false) }
     var expertMode by remember { mutableStateOf(initial.expertMode) }
-    var feedback by remember { mutableStateOf("") }
-    var attachLog by remember { mutableStateOf(true) }
-    var mailAppMissing by remember { mutableStateOf(false) }
+    var showFeedback by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val fetchErrorRelogin = stringResource(R.string.settings_twitch_fetch_error_relogin)
     val fetchErrorLoginFirst = stringResource(R.string.settings_twitch_fetch_error_login_first)
@@ -199,29 +188,6 @@ public fun SettingsScreen(
     // buildSettings() упал бы на requireNotNull, поэтому берём последнее сохранённое
     fun feedbackSettings(): StreamSettings = if (valid) buildSettings() else initial
 
-    fun sendFeedback() {
-        val text = feedback.trim()
-        if (text.isBlank()) return
-        val current = feedbackSettings()
-        mailAppMissing = false
-        coroutineScope.launch {
-            // сборка дампа читает и переписывает файлы — не на главном потоке
-            val log = if (attachLog && sessionLog != null) {
-                withContext(Dispatchers.IO) { sessionLog.dump(current.secretsForLog()) }
-            } else {
-                null
-            }
-            val opened = runCatching { context.startActivity(feedbackIntent(context, text, current, log)) }
-            if (opened.isSuccess) feedback = "" else mailAppMissing = true
-        }
-    }
-
-    fun copyFeedbackEmail() {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-        clipboard.setPrimaryClip(ClipData.newPlainText(FEEDBACK_EMAIL, FEEDBACK_EMAIL))
-        Toast.makeText(context, R.string.settings_feedback_copied, Toast.LENGTH_SHORT).show()
-    }
-
     // сохраняем только при валидных полях — иначе просто выходим, не портя сохранённые настройки
     fun saveAndBack() {
         if (valid) onSave(buildSettings())
@@ -271,6 +237,15 @@ public fun SettingsScreen(
                 showScanner = false
             },
             onBack = { showScanner = false },
+        )
+        return
+    }
+
+    if (showFeedback) {
+        FeedbackScreen(
+            settings = feedbackSettings(),
+            sessionLog = sessionLog,
+            onBack = { showFeedback = false },
         )
         return
     }
@@ -610,47 +585,18 @@ public fun SettingsScreen(
                     }
                 }
 
-                SectionLabel(stringResource(R.string.settings_section_feedback))
                 SettingsCard {
-                    DiscordField(
-                        label = stringResource(R.string.settings_feedback_message_label),
-                        value = feedback,
-                        onValueChange = { feedback = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        placeholder = stringResource(R.string.settings_feedback_message_placeholder),
-                        info = stringResource(R.string.settings_feedback_message_info),
-                    )
-                    if (sessionLog != null) {
-                        RowDivider()
-                        DiscordSwitchRow(
-                            label = stringResource(R.string.settings_feedback_attach_log_label),
-                            checked = attachLog,
-                            onCheckedChange = { attachLog = it },
-                            info = stringResource(R.string.settings_feedback_attach_log_info),
-                        )
-                    }
-                    RowDivider()
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.End,
+                            .clickable { showFeedback = true }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = stringResource(R.string.settings_feedback_send_button),
-                            color = if (feedback.isBlank()) DiscordColors.textMuted else DiscordColors.blurple,
+                            text = stringResource(R.string.settings_feedback_open_button),
+                            color = DiscordColors.blurple,
                             style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier
-                                .clip(ButtonShape)
-                                .clickable(enabled = feedback.isNotBlank(), onClick = { sendFeedback() })
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        )
-                    }
-                    if (mailAppMissing) {
-                        DiscordHint(
-                            text = stringResource(R.string.settings_feedback_no_mail_app, FEEDBACK_EMAIL),
-                            onClick = { copyFeedbackEmail() },
                         )
                     }
                 }

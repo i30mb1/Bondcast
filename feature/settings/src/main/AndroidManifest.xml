@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Начиная с Android 11 (а мы таргетим SDK 36) приложение не видит чужие пакеты, если
+        не объявило, что именно ищет. Без этого блока неявный интент на почтовик не находит
+        НИ ОДНОГО приложения — startActivity кидает ActivityNotFoundException, и человеку
+        показывается «почтовый клиент не найден», хотя почтовики стоят.
+
+        Ссылка на Twitch (ACTION_VIEW + https) работает без объявления только потому, что
+        браузеры Android из фильтрации видимости исключены; на mailto такого исключения нет.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
+</manifest>
