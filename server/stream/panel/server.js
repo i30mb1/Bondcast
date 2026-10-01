@@ -1239,6 +1239,58 @@ let sceneSwitcher = {
 let rememberedLiveScene = null; // сцена, на которую вернёмся, когда сигнал появится снова
 let pendingSwitchTimer = null;
 let watchedStreamWasLive = null; // null — ещё не знаем (только включили/сменили стрим); дальше true/false для детекта фронта
+let switchBackInFlight = false; // не плодим параллельные возвраты, если OBS отвечает дольше тика
+
+// Короткое окно битрейта для решения «сигнал вернулся». recv_30s из SRS после
+// переподключения ещё полминуты тянет в себе нули с момента обрыва, а телефонный
+// ABR разгоняется постепенно — по нему возврат сцены затягивался на минуту и
+// дольше. Считаем сами по приросту recv_bytes за последние ~6с.
+const RETURN_WINDOW_MS = 6000;
+let recvSamples = []; // [{ t, bytes }] отслеживаемого стрима
+
+function trackRecvBytes(watched) {
+  if (!watched || watched.recvBytes == null) {
+    recvSamples = [];
+    return;
+  }
+  const now = Date.now();
+  const last = recvSamples[recvSamples.length - 1];
+  if (last && watched.recvBytes < last.bytes) recvSamples = []; // счётчик сбросился — новый паблиш
+  recvSamples.push({ t: now, bytes: watched.recvBytes });
+  while (recvSamples.length > 2 && now - recvSamples[1].t >= RETURN_WINDOW_MS) recvSamples.shift();
+}
+
+// null — данных на окно ещё не набралось
+function shortWindowKbps() {
+  if (recvSamples.length < 2) return null;
+  const first = recvSamples[0];
+  const last = recvSamples[recvSamples.length - 1];
+  if (last.t - first.t < RETURN_WINDOW_MS / 2) return null;
+  return ((last.bytes - first.bytes) * 8) / (last.t - first.t); // байт/мс → кбит/с
+}
+
+// obs-websocket-js не ограничивает время ответа: на «зависшем» сокете вызов
+// не завершится никогда, и возврат сцены молча пропадёт. Рвём соединение по
+// таймауту — следующий вызов переподключится через ensureObsConnected.
+const OBS_CALL_TIMEOUT_MS = 5000;
+
+async function obsCall(requestType, requestData) {
+  const client = await ensureObsConnected();
+  let timer;
+  try {
+    return await Promise.race([
+      client.call(requestType, requestData),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          obs.disconnect().catch(() => {});
+          reject(new Error(`OBS не ответил на ${requestType} за ${OBS_CALL_TIMEOUT_MS / 1000} с`));
+        }, OBS_CALL_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function clearPendingSwitch() {
   if (pendingSwitchTimer) {
@@ -1250,27 +1302,35 @@ function clearPendingSwitch() {
 async function switchToFallback() {
   pendingSwitchTimer = null;
   try {
-    const client = await ensureObsConnected();
-    const current = await client.call('GetCurrentProgramScene');
-    rememberedLiveScene = current.sceneName;
-    await client.call('SetCurrentProgramScene', { sceneName: sceneSwitcher.fallbackScene });
+    const current = await obsCall('GetCurrentProgramScene');
+    // Уже стоим на заглушке (переключили руками или прошлый цикл) — не затираем
+    // запомненную рабочую сцену, иначе «вернём» на ту же заглушку.
+    if (current.sceneName !== sceneSwitcher.fallbackScene) rememberedLiveScene = current.sceneName;
+    await obsCall('SetCurrentProgramScene', { sceneName: sceneSwitcher.fallbackScene });
     sceneSwitcher.state = 'switched';
     sceneSwitcher.lastError = null;
+    logger.log('panel', 'warn', `сцены: сигнал "${sceneSwitcher.watchStreamName}" пропал — включена заглушка "${sceneSwitcher.fallbackScene}" (вернём на "${rememberedLiveScene}")`);
   } catch (e) {
     sceneSwitcher.lastError = e.message;
+    logger.log('panel', 'error', `сцены: не удалось включить заглушку: ${e.message}`);
   }
 }
 
 async function switchBackToLive() {
+  if (switchBackInFlight) return;
+  switchBackInFlight = true;
   try {
-    const client = await ensureObsConnected();
     if (rememberedLiveScene) {
-      await client.call('SetCurrentProgramScene', { sceneName: rememberedLiveScene });
+      await obsCall('SetCurrentProgramScene', { sceneName: rememberedLiveScene });
     }
     sceneSwitcher.state = 'watching';
     sceneSwitcher.lastError = null;
+    logger.log('panel', 'info', `сцены: сигнал вернулся — снова "${rememberedLiveScene ?? '(сцена не запомнена)'}"`);
   } catch (e) {
     sceneSwitcher.lastError = e.message;
+    logger.log('panel', 'error', `сцены: не удалось вернуть рабочую сцену: ${e.message}`);
+  } finally {
+    switchBackInFlight = false;
   }
 }
 
@@ -1311,11 +1371,18 @@ async function monitorTick() {
   const bitrateOk = !sceneSwitcher.minBitrateKbps || (watched && watched.kbpsRecv30s != null && watched.kbpsRecv30s >= sceneSwitcher.minBitrateKbps);
   const isLive = Boolean(watched) && bitrateOk;
 
+  // Возврат — по короткому окну (см. trackRecvBytes): на заглушке висим, пока
+  // свежий битрейт не дотянет до порога, а не пока 30-секундное среднее отмоется
+  // от нулей обрыва. Без порога — достаточно самого факта паблиша.
+  trackRecvBytes(watched);
+  const recentKbps = shortWindowKbps();
+  const isBack = Boolean(watched) && (!sceneSwitcher.minBitrateKbps || (recentKbps != null ? recentKbps >= sceneSwitcher.minBitrateKbps : bitrateOk));
+
   if (isLive && pendingSwitchTimer) {
     clearPendingSwitch(); // сигнал вернулся раньше, чем истёк delay — переключать не нужно
   } else if (!isLive && watchedStreamWasLive && !pendingSwitchTimer && sceneSwitcher.state !== 'switched') {
     pendingSwitchTimer = setTimeout(switchToFallback, sceneSwitcher.delaySec * 1000);
-  } else if (isLive && sceneSwitcher.state === 'switched') {
+  } else if (isBack && sceneSwitcher.state === 'switched') {
     await switchBackToLive();
   }
   watchedStreamWasLive = isLive;
@@ -1381,6 +1448,16 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
     if (sceneSwitcher.state === 'switched') await switchBackToLive();
     watchedStreamWasLive = null;
     rememberedLiveScene = null;
+    recvSamples = [];
+  }
+
+  // Сменили заглушку прямо во время показа заглушки — сразу показываем новую.
+  if (enabled && sceneSwitcher.state === 'switched' && fallbackScene !== sceneSwitcher.fallbackScene) {
+    try {
+      await obsCall('SetCurrentProgramScene', { sceneName: fallbackScene });
+    } catch (e) {
+      sceneSwitcher.lastError = e.message;
+    }
   }
 
   sceneSwitcher.enabled = enabled;
@@ -1388,8 +1465,10 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
   sceneSwitcher.fallbackScene = enabled ? fallbackScene : sceneSwitcher.fallbackScene; // помним выбор даже выключенным
   sceneSwitcher.delaySec = delaySec;
   sceneSwitcher.minBitrateKbps = minBitrateKbps;
-  sceneSwitcher.state = enabled ? 'watching' : 'idle';
-  if (enabled) sceneSwitcher.lastError = null;
+  // Правка задержки/порога/заглушки во время показа заглушки не должна
+  // «забывать», что мы на ней — иначе возврат на рабочую сцену не случится.
+  sceneSwitcher.state = !enabled ? 'idle' : sceneSwitcher.state === 'switched' ? 'switched' : 'watching';
+  if (enabled && sceneSwitcher.state !== 'switched') sceneSwitcher.lastError = null;
 
   res.json(sceneSwitcher);
 });
