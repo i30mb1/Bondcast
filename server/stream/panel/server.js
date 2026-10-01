@@ -1239,6 +1239,7 @@ let sceneSwitcher = {
 let rememberedLiveScene = null; // сцена, на которую вернёмся, когда сигнал появится снова
 let pendingSwitchTimer = null;
 let watchedStreamWasLive = null; // null — ещё не знаем (только включили/сменили стрим); дальше true/false для детекта фронта
+let watchedStreamWasPresent = false; // паблиш был на прошлом тике, независимо от порога битрейта
 let switchBackInFlight = false; // не плодим параллельные возвраты, если OBS отвечает дольше тика
 
 // Короткое окно битрейта для решения «сигнал вернулся». recv_30s из SRS после
@@ -1380,12 +1381,15 @@ async function monitorTick() {
 
   if (isLive && pendingSwitchTimer) {
     clearPendingSwitch(); // сигнал вернулся раньше, чем истёк delay — переключать не нужно
-  } else if (!isLive && watchedStreamWasLive && !pendingSwitchTimer && sceneSwitcher.state !== 'switched') {
+  } else if (!isLive && (watchedStreamWasLive || (!watched && watchedStreamWasPresent)) && !pendingSwitchTimer && sceneSwitcher.state !== 'switched') {
+    // Второе условие — полная пропажа сразу после возврата по короткому окну,
+    // пока recv_30s ещё ниже порога и isLive не успел стать true.
     pendingSwitchTimer = setTimeout(switchToFallback, sceneSwitcher.delaySec * 1000);
   } else if (isBack && sceneSwitcher.state === 'switched') {
     await switchBackToLive();
   }
   watchedStreamWasLive = isLive;
+  watchedStreamWasPresent = Boolean(watched);
 }
 
 setInterval(monitorTick, 2000);
@@ -1449,6 +1453,7 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
     watchedStreamWasLive = null;
     rememberedLiveScene = null;
     recvSamples = [];
+    watchedStreamWasPresent = false;
   }
 
   // Сменили заглушку прямо во время показа заглушки — сразу показываем новую.
