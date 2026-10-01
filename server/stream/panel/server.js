@@ -11,6 +11,7 @@ const QRCode = require('qrcode');
 const { WebSocketServer } = require('ws');
 const { OBSWebSocket } = require('obs-websocket-js');
 const { createLogger } = require('./logger');
+const { createSceneSwitcher } = require('./scene-switcher');
 
 // Единый логгер стека: сюда пишет и сама панель, и коллектор докеровских логов
 // (см. attachCollector ниже). Папка /logs bind-монтирована с хоста — файл оттуда
@@ -1227,49 +1228,6 @@ async function ensureObsConnected() {
   throw lastErr;
 }
 
-let sceneSwitcher = {
-  enabled: false,
-  watchStreamName: null,
-  fallbackScene: null,
-  delaySec: 3,
-  minBitrateKbps: 0, // 0 — не проверять, переключать только при полном пропадании паблиша
-  state: 'idle', // idle (выключен) | watching (включён, ждёт) | switched (сейчас на резервной сцене)
-  lastError: null,
-};
-let rememberedLiveScene = null; // сцена, на которую вернёмся, когда сигнал появится снова
-let pendingSwitchTimer = null;
-let watchedStreamWasLive = null; // null — ещё не знаем (только включили/сменили стрим); дальше true/false для детекта фронта
-let watchedStreamWasPresent = false; // паблиш был на прошлом тике, независимо от порога битрейта
-let switchBackInFlight = false; // не плодим параллельные возвраты, если OBS отвечает дольше тика
-
-// Короткое окно битрейта для решения «сигнал вернулся». recv_30s из SRS после
-// переподключения ещё полминуты тянет в себе нули с момента обрыва, а телефонный
-// ABR разгоняется постепенно — по нему возврат сцены затягивался на минуту и
-// дольше. Считаем сами по приросту recv_bytes за последние ~6с.
-const RETURN_WINDOW_MS = 6000;
-let recvSamples = []; // [{ t, bytes }] отслеживаемого стрима
-
-function trackRecvBytes(watched) {
-  if (!watched || watched.recvBytes == null) {
-    recvSamples = [];
-    return;
-  }
-  const now = Date.now();
-  const last = recvSamples[recvSamples.length - 1];
-  if (last && watched.recvBytes < last.bytes) recvSamples = []; // счётчик сбросился — новый паблиш
-  recvSamples.push({ t: now, bytes: watched.recvBytes });
-  while (recvSamples.length > 2 && now - recvSamples[1].t >= RETURN_WINDOW_MS) recvSamples.shift();
-}
-
-// null — данных на окно ещё не набралось
-function shortWindowKbps() {
-  if (recvSamples.length < 2) return null;
-  const first = recvSamples[0];
-  const last = recvSamples[recvSamples.length - 1];
-  if (last.t - first.t < RETURN_WINDOW_MS / 2) return null;
-  return ((last.bytes - first.bytes) * 8) / (last.t - first.t); // байт/мс → кбит/с
-}
-
 // obs-websocket-js не ограничивает время ответа: на «зависшем» сокете вызов
 // не завершится никогда, и возврат сцены молча пропадёт. Рвём соединение по
 // таймауту — следующий вызов переподключится через ensureObsConnected.
@@ -1293,47 +1251,7 @@ async function obsCall(requestType, requestData) {
   }
 }
 
-function clearPendingSwitch() {
-  if (pendingSwitchTimer) {
-    clearTimeout(pendingSwitchTimer);
-    pendingSwitchTimer = null;
-  }
-}
-
-async function switchToFallback() {
-  pendingSwitchTimer = null;
-  try {
-    const current = await obsCall('GetCurrentProgramScene');
-    // Уже стоим на заглушке (переключили руками или прошлый цикл) — не затираем
-    // запомненную рабочую сцену, иначе «вернём» на ту же заглушку.
-    if (current.sceneName !== sceneSwitcher.fallbackScene) rememberedLiveScene = current.sceneName;
-    await obsCall('SetCurrentProgramScene', { sceneName: sceneSwitcher.fallbackScene });
-    sceneSwitcher.state = 'switched';
-    sceneSwitcher.lastError = null;
-    logger.log('panel', 'warn', `сцены: сигнал "${sceneSwitcher.watchStreamName}" пропал — включена заглушка "${sceneSwitcher.fallbackScene}" (вернём на "${rememberedLiveScene}")`);
-  } catch (e) {
-    sceneSwitcher.lastError = e.message;
-    logger.log('panel', 'error', `сцены: не удалось включить заглушку: ${e.message}`);
-  }
-}
-
-async function switchBackToLive() {
-  if (switchBackInFlight) return;
-  switchBackInFlight = true;
-  try {
-    if (rememberedLiveScene) {
-      await obsCall('SetCurrentProgramScene', { sceneName: rememberedLiveScene });
-    }
-    sceneSwitcher.state = 'watching';
-    sceneSwitcher.lastError = null;
-    logger.log('panel', 'info', `сцены: сигнал вернулся — снова "${rememberedLiveScene ?? '(сцена не запомнена)'}"`);
-  } catch (e) {
-    sceneSwitcher.lastError = e.message;
-    logger.log('panel', 'error', `сцены: не удалось вернуть рабочую сцену: ${e.message}`);
-  } finally {
-    switchBackInFlight = false;
-  }
-}
+const sceneSwitcher = createSceneSwitcher({ obsCall, logger });
 
 // Общий поллинг раз в 2с: обновляет streamFirstSeenAt (аптайм для сайдбара) и,
 // если включён переключатель сцен, следит за пропаданием/появлением именно того
@@ -1364,32 +1282,7 @@ async function monitorTick() {
     }
   }
 
-  if (!sceneSwitcher.enabled || !sceneSwitcher.watchStreamName || !sceneSwitcher.fallbackScene) return;
-  const watched = streams.find((s) => s.name === sceneSwitcher.watchStreamName);
-  // minBitrateKbps=0 — прежнее поведение (только публикует/нет). С порогом канал
-  // формально в эфире, но битрейта в нём уже недостаточно, тоже считаем "не живым" —
-  // kbpsRecv30s ещё null первые секунды после коннекта, тогда тоже "недостаточно".
-  const bitrateOk = !sceneSwitcher.minBitrateKbps || (watched && watched.kbpsRecv30s != null && watched.kbpsRecv30s >= sceneSwitcher.minBitrateKbps);
-  const isLive = Boolean(watched) && bitrateOk;
-
-  // Возврат — по короткому окну (см. trackRecvBytes): на заглушке висим, пока
-  // свежий битрейт не дотянет до порога, а не пока 30-секундное среднее отмоется
-  // от нулей обрыва. Без порога — достаточно самого факта паблиша.
-  trackRecvBytes(watched);
-  const recentKbps = shortWindowKbps();
-  const isBack = Boolean(watched) && (!sceneSwitcher.minBitrateKbps || (recentKbps != null ? recentKbps >= sceneSwitcher.minBitrateKbps : bitrateOk));
-
-  if (isLive && pendingSwitchTimer) {
-    clearPendingSwitch(); // сигнал вернулся раньше, чем истёк delay — переключать не нужно
-  } else if (!isLive && (watchedStreamWasLive || (!watched && watchedStreamWasPresent)) && !pendingSwitchTimer && sceneSwitcher.state !== 'switched') {
-    // Второе условие — полная пропажа сразу после возврата по короткому окну,
-    // пока recv_30s ещё ниже порога и isLive не успел стать true.
-    pendingSwitchTimer = setTimeout(switchToFallback, sceneSwitcher.delaySec * 1000);
-  } else if (isBack && sceneSwitcher.state === 'switched') {
-    await switchBackToLive();
-  }
-  watchedStreamWasLive = isLive;
-  watchedStreamWasPresent = Boolean(watched);
+  await sceneSwitcher.tick(streams);
 }
 
 setInterval(monitorTick, 2000);
@@ -1407,7 +1300,7 @@ app.get('/api/obs/scenes', async (req, res) => {
 });
 
 app.get('/api/obs/scene-switcher', (req, res) => {
-  res.json(sceneSwitcher);
+  res.json(sceneSwitcher.state);
 });
 
 app.post('/api/obs/scene-switcher', async (req, res) => {
@@ -1416,9 +1309,9 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
   const watchStreamName = body.watchStreamName != null ? String(body.watchStreamName).trim() : null;
   const fallbackScene = body.fallbackScene != null ? String(body.fallbackScene).trim() : null;
   const rawDelay = Number(body.delaySec);
-  const delaySec = Number.isFinite(rawDelay) ? Math.min(60, Math.max(0, rawDelay)) : sceneSwitcher.delaySec;
+  const delaySec = Number.isFinite(rawDelay) ? Math.min(60, Math.max(0, rawDelay)) : sceneSwitcher.state.delaySec;
   const rawMinBitrate = Number(body.minBitrateKbps);
-  const minBitrateKbps = Number.isFinite(rawMinBitrate) ? Math.min(50000, Math.max(0, Math.round(rawMinBitrate))) : sceneSwitcher.minBitrateKbps;
+  const minBitrateKbps = Number.isFinite(rawMinBitrate) ? Math.min(50000, Math.max(0, Math.round(rawMinBitrate))) : sceneSwitcher.state.minBitrateKbps;
 
   if (enabled && (!watchStreamName || !STREAM_NAME_RE.test(watchStreamName))) {
     return res.status(400).json({ error: 'не выбран стрим для отслеживания' });
@@ -1428,7 +1321,7 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
   }
 
   // fallbackScene может быть значением, запомненным с прошлого раза, когда OBS ещё
-  // был доступен (sceneSwitcher.fallbackScene переживает выключение, см. ниже) —
+  // был доступен (fallbackScene переживает выключение, см. applySettings в scene-switcher.js) —
   // без этой проверки включить "watching" можно вслепую, а обрыв WS вскрылся бы
   // только в момент реальной пропажи сигнала, когда переключать сцену уже поздно.
   if (enabled) {
@@ -1445,37 +1338,7 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
     }
   }
 
-  // Смена отслеживаемого стрима или выключение — сбрасываем текущий цикл
-  // переключения, чтобы не словить лишнее переключение сцены на стыке смены настроек.
-  if (watchStreamName !== sceneSwitcher.watchStreamName || !enabled) {
-    clearPendingSwitch();
-    if (sceneSwitcher.state === 'switched') await switchBackToLive();
-    watchedStreamWasLive = null;
-    rememberedLiveScene = null;
-    recvSamples = [];
-    watchedStreamWasPresent = false;
-  }
-
-  // Сменили заглушку прямо во время показа заглушки — сразу показываем новую.
-  if (enabled && sceneSwitcher.state === 'switched' && fallbackScene !== sceneSwitcher.fallbackScene) {
-    try {
-      await obsCall('SetCurrentProgramScene', { sceneName: fallbackScene });
-    } catch (e) {
-      sceneSwitcher.lastError = e.message;
-    }
-  }
-
-  sceneSwitcher.enabled = enabled;
-  sceneSwitcher.watchStreamName = enabled ? watchStreamName : null;
-  sceneSwitcher.fallbackScene = enabled ? fallbackScene : sceneSwitcher.fallbackScene; // помним выбор даже выключенным
-  sceneSwitcher.delaySec = delaySec;
-  sceneSwitcher.minBitrateKbps = minBitrateKbps;
-  // Правка задержки/порога/заглушки во время показа заглушки не должна
-  // «забывать», что мы на ней — иначе возврат на рабочую сцену не случится.
-  sceneSwitcher.state = !enabled ? 'idle' : sceneSwitcher.state === 'switched' ? 'switched' : 'watching';
-  if (enabled && sceneSwitcher.state !== 'switched') sceneSwitcher.lastError = null;
-
-  res.json(sceneSwitcher);
+  res.json(await sceneSwitcher.applySettings({ enabled, watchStreamName, fallbackScene, delaySec, minBitrateKbps }));
 });
 
 // --- WS-статистика для NOALBS ----------------------------------------------
