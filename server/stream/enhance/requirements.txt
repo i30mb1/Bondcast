@@ -1,0 +1,9 @@
+nvidia-vfx==0.2.0.0
+av==19.0.2
+numpy
+# Без [ctk]: та подтягивает весь CUDA Toolkit (cuBLAS, cuFFT, cuSOLVER... +2 ГБ).
+# Нашим ядрам в app/colors.py нужен только компилятор NVRTC и рантайм — CuPy
+# находит их в pip-пакетах nvidia-* сам (cuda-pathfinder).
+cupy-cuda12x==14.2.0
+nvidia-cuda-nvrtc-cu12
+nvidia-cuda-runtime-cu12

@@ -69,6 +69,10 @@ Source: "..\panel\*"; DestDir: "{app}\panel"; Flags: ignoreversion recursesubdir
 ; мусор (см. server/stream/asr-obs/.gitignore), таскать незачем - voices/ панель создаёт
 ; сама при первом старте (см. server.js), тащить чужие эталоны голосов в установщике не нужно.
 Source: "..\asr-obs\*"; DestDir: "{app}\asr-obs"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\__pycache__\*,\app\__pycache__\*,\host_samples\*,\voices\*,\overlay_style.json,\reference.npy,\host_name.txt"
+; enhance (улучшение картинки на NVIDIA) - тот же расклад, что у asr-obs: sibling
+; srs/srtla-rec/panel, панель монтирует его как "/build-context/enhance" и собирает образ
+; по кнопке.
+Source: "..\enhance\*"; DestDir: "{app}\enhance"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\__pycache__\*,\app\__pycache__\*"
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

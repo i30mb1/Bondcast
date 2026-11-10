@@ -170,7 +170,7 @@ if not exist "%~dp0VERSION" echo dev> "%~dp0VERSION"
 :: "overlay" belongs in this list too - it publishes 8082 like the rest, and leaving it
 :: behind is exactly how the two-compose-projects clash described at the top of
 :: docker-compose.yml shows up in practice.
-docker rm -f srs srtla-rec stream-panel overlay asr-worker >nul 2>nul
+docker rm -f srs srtla-rec stream-panel overlay asr-worker enhance-worker >nul 2>nul
 
 :: Preflight: is anything else already sitting on the ports we publish? Without this,
 :: "docker compose up" below just dies with an English wall of text ("Bind for
@@ -208,6 +208,7 @@ echo Please don't close this window.
 :: asr-worker (captions) is intentionally excluded here - it's a multi-GB GPU/CUDA
 :: image, built lazily from the panel's dashboard ("Build" button under Captions)
 :: only when someone actually wants subtitles, not on every plain startup.
+:: Same for enhance-worker (picture enhancement on NVIDIA, ~3 GB).
 docker compose build --progress=plain srs srtla-rec panel
 if errorlevel 1 (
   echo.

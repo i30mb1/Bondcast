@@ -741,6 +741,24 @@
       </div>
   </div>
 
+  <!-- ======================= Улучшение картинки =======================
+       Видеокарта NVIDIA (VSR) улучшает эфир на сервере, панель сама переключает
+       медиаисточник OBS на улучшенный поток. Содержимое рисует renderEnhanceBody(). -->
+  <div class="section-panel" data-section-panel="enhance">
+      <div class="feature-card">
+        <div class="feature-card-head">
+          <div class="feature-card-icon">✨</div>
+          <div class="feature-card-title">
+            <b>Улучшение картинки</b>
+            <div class="row-meta">Видеокарта NVIDIA убирает квадраты и мыло от слабой связи и поднимает разрешение</div>
+          </div>
+          <div class="feature-switch" id="enhanceSwitch"><div class="knob"></div></div>
+        </div>
+        <div class="flow-warn" id="enhanceError" style="padding:0 20px 14px" hidden></div>
+        <div class="feature-card-body" id="enhanceBody"></div>
+      </div>
+  </div>
+
   <!-- ======================= Заглушка при обрыве ======================= -->
   <div class="section-panel" data-section-panel="scene">
       <!-- FEATURE: Умный переключатель сцен OBS -->

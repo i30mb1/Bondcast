@@ -117,6 +117,7 @@ const NAV_SVG = {
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.6h2"/>',
   monitor: '<rect x="2.8" y="5" width="18.4" height="12" rx="2.5"/><path d="M8 20h8"/>',
   captions: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.2 10.6a2.4 2.4 0 1 0 0 2.8"/><path d="M17.2 10.6a2.4 2.4 0 1 0 0 2.8"/>',
+  sparkle: '<path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
   scene: '<path d="M3 7h4l10 10h4"/><path d="M17.5 4.5L21 8l-3.5 3.5"/><path d="M3 17h4"/><path d="M17.5 13.5L21 17l-3.5 3.5"/>',
   logs: '<path d="M12 4v11"/><path d="M7.5 11.5L12 16l4.5-4.5"/><path d="M4.5 19.5h15"/>',
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
@@ -131,6 +132,7 @@ const SECTIONS = [
   { id: 'connect', icon: 'phone', title: 'Подключить телефон', group: 'Что делаем' },
   { id: 'obs', icon: 'monitor', title: 'Картинка в OBS', needsStream: 'после подключения' },
   { id: 'subs', icon: 'captions', title: 'Субтитры', needsStream: 'нужен живой эфир', sep: true, group: 'Во время эфира' },
+  { id: 'enhance', icon: 'sparkle', title: 'Улучшение картинки', needsStream: 'нужен живой эфир' },
   { id: 'scene', icon: 'scene', title: 'Заглушка при обрыве', needsStream: 'нужен живой эфир' },
   { id: 'logs', icon: 'logs', title: 'Логи и диагностика', sep: true },
 ];
@@ -151,7 +153,7 @@ function hasLiveStream() {
 }
 
 function streamingUnlocked() {
-  return everLive || hasLiveStream() || captionsState.connected || sceneSwitcherState.enabled;
+  return everLive || hasLiveStream() || captionsState.connected || sceneSwitcherState.enabled || enhanceState.connected;
 }
 
 // null — раздел открыт, строка — причина замка, её же показываем в списке.
@@ -200,6 +202,7 @@ function navStatusHtml(section, locked) {
     return '';
   }
   if (section.id === 'subs') return `<span class="feature-switch${captionsState.connected ? ' on' : ''}"><span class="knob"></span></span>`;
+  if (section.id === 'enhance') return `<span class="feature-switch${enhanceState.connected ? ' on' : ''}"><span class="knob"></span></span>`;
   if (section.id === 'scene') return `<span class="feature-switch${sceneSwitcherState.enabled ? ' on' : ''}"><span class="knob"></span></span>`;
   return '';
 }
@@ -210,6 +213,8 @@ function navWhyText(section, locked) {
   if (section.id === 'subs' && captionsState.buildStatus === 'building') return 'скачиваю распознавание';
   if (section.id === 'subs' && captionsState.connected && !captionsState.ready) return 'готовлюсь';
   if (section.id === 'scene' && sceneSwitcherState.state === 'switched') return 'сейчас показываю заглушку';
+  if (section.id === 'enhance' && enhanceState.buildStatus === 'building') return 'скачиваю улучшение';
+  if (section.id === 'enhance' && enhanceState.connected && !enhanceState.outputLive) return 'готовлюсь';
   return '';
 }
 
@@ -2694,6 +2699,257 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshUpdateStatus();
 });
 
+// --- Раздел «Улучшение картинки» --------------------------------------------
+// Тумблер в шапке — настоящее вкл/выкл (как у «Заглушки»), а не свернуть/развернуть.
+// Включение: воркер на сервере берёт эфир с телефона, улучшает на видеокарте и
+// отдаёт рядом как <стрим>_enh, а панель сама перекидывает медиаисточник OBS на
+// него (см. enhanceTick в server.js). Выключение — OBS назад, воркер гасится.
+const ENHANCE_TARGET_KEY = 'bondcast_enhance_target';
+const ENHANCE_TARGET_OPTIONS = [
+  ['auto', 'Авто'],
+  ['same', 'Без увеличения'],
+  ['1080', '1080p'],
+  ['1440', '1440p'],
+  ['2160', '4K'],
+];
+let enhanceState = { imageExists: false, buildStatus: 'idle', connected: false, obs: { state: 'idle', inputs: [] } };
+let enhanceTarget = ENHANCE_TARGET_OPTIONS.some(([v]) => v === localStorage.getItem(ENHANCE_TARGET_KEY))
+  ? localStorage.getItem(ENHANCE_TARGET_KEY)
+  : 'auto';
+let enhanceBusy = false;
+let enhanceBuildLines = [];
+const enhanceSwitchEl = document.getElementById('enhanceSwitch');
+const enhanceBodyEl = document.getElementById('enhanceBody');
+const enhanceErrorEl = document.getElementById('enhanceError');
+
+function showEnhanceError(message, extraHtml = '') {
+  const extra = extraHtml ? `<div style="color:var(--text)">${extraHtml}</div>` : '';
+  enhanceErrorEl.innerHTML = escapeHtml(message) + extra;
+  enhanceErrorEl.hidden = false;
+}
+
+function clearEnhanceError() {
+  enhanceErrorEl.hidden = true;
+}
+
+// Какой эфир улучшать при включении: свой (с этого телефона), иначе первый живой.
+function enhanceCandidateStream() {
+  const own = latestStreams.find((s) => s.name === currentStreamName);
+  return own || latestStreams[0] || null;
+}
+
+function enhanceStatsHtml() {
+  const st = enhanceState.stats;
+  if (!enhanceState.outputLive || !st) {
+    return '<div class="row-meta">⏳ Готовлюсь — первая картинка появится через пару секунд после того, как придёт эфир</div>';
+  }
+  const upscale = st.outWidth !== st.inWidth || st.outHeight !== st.inHeight;
+  const what = upscale
+    ? `${st.inWidth}×${st.inHeight} → ${st.outWidth}×${st.outHeight}`
+    : `${st.inWidth}×${st.inHeight}, только очистка`;
+  // Отставание растёт, только если видеокарта/процессор не успевают за эфиром —
+  // тогда честно говорим и подсказываем, что поменять.
+  const slow = st.lagMs > 500
+    ? `<div class="flow-warn" style="margin-top:6px">Не успевает за эфиром (отстаёт на ${(st.lagMs / 1000).toFixed(1)} с). Выбери разрешение пониже или «Без увеличения»</div>`
+    : '';
+  return `
+    <div class="row-meta">Работает: ${escapeHtml(what)} · ${st.fps.toFixed(0)} к/с · видеокарта ${st.gpuMs.toFixed(0)} мс на кадр</div>
+    ${slow}`;
+}
+
+function enhanceObsHtml() {
+  const out = enhanceState.outputName;
+  if (!out || !enhanceState.outputLive) return '';
+  const manual = addrRow('Улучшенный эфир для OBS', obsPlayUrl(out), 'В OBS: медиаисточник → «Ввод». Выключишь улучшение — верни прежнюю ссылку');
+  const obs = enhanceState.obs || {};
+  if (obs.state === 'switched') {
+    return `<div class="row-meta">✅ OBS уже показывает улучшенную картинку (${escapeHtml((obs.inputs || []).join(', '))}). Выключишь — вернётся обычная</div>`;
+  }
+  if (obs.state === 'unreachable') {
+    return `
+      <div class="row-meta">OBS не отвечает, поэтому переключить его сам не могу. Включи в OBS WebSocket-сервер или вставь ссылку руками:</div>
+      ${manual}
+      <div style="margin-top:8px">${OBS_WEBSOCKET_HOWTO}</div>`;
+  }
+  return `
+    <div class="row-meta">В OBS не нашёл медиаисточник с этим эфиром — вставь ссылку руками:</div>
+    ${manual}`;
+}
+
+let enhanceBodyHtml = '';
+function setEnhanceBodyHtml(html) {
+  if (html === enhanceBodyHtml) return false;
+  enhanceBodyHtml = html;
+  enhanceBodyEl.innerHTML = html;
+  return true;
+}
+
+// Опрос раз в 3 с — перерисовываем, только если что-то реально поменялось, иначе
+// у кнопки «Копировать» слетало бы «Готово», а у подсказки «?» — наведение.
+function renderEnhanceBody() {
+  if (!enhanceState.imageExists) {
+    const building = enhanceState.buildStatus === 'building';
+    if (!setEnhanceBodyHtml(`
+      <div class="row">
+        <div class="row-label">
+          <b>Сначала скачаем улучшение</b>
+          <span class="row-meta">Один раз, около 3 ГБ. Нужна видеокарта NVIDIA RTX. Эфир не прервётся</span>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="enhance-build primary"${building ? ' disabled' : ''}>${building ? 'Скачиваю…' : 'Скачать'}</button>
+        </div>
+      </div>
+      ${enhanceBuildLines.length ? `<pre class="log-box" id="enhanceBuildLog">${escapeHtml(enhanceBuildLines.slice(-200).join('\n'))}</pre>` : ''}
+      ${enhanceState.buildStatus === 'error' ? `<div class="flow-warn">Не скачалось: ${escapeHtml(enhanceState.buildError || '')}</div>` : ''}`)) return;
+    enhanceBodyEl.querySelector('.enhance-build').onclick = buildEnhance;
+    const logEl = document.getElementById('enhanceBuildLog');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    return;
+  }
+
+  const seg = ENHANCE_TARGET_OPTIONS
+    .map(([value, label]) => `<button type="button" data-target="${value}" class="${value === enhanceTarget ? 'active' : ''}">${escapeHtml(label)}</button>`)
+    .join('');
+  const connectedHtml = enhanceState.connected
+    ? `
+      <div class="stream-row">
+        <div class="row-label" style="margin-bottom:6px"><b>${escapeHtml(enhanceState.streamName)}</b></div>
+        ${enhanceStatsHtml()}
+        ${enhanceState.error ? `<div class="flow-warn" style="margin-top:6px">${escapeHtml(enhanceState.error)}</div>` : ''}
+        <div style="margin-top:8px">${enhanceObsHtml()}</div>
+      </div>`
+    : `<div class="row-meta">${enhanceCandidateStream() ? 'Включи тумблер сверху — улучшение подхватит эфир и само переключит OBS' : 'Запусти эфир — тогда будет что улучшать'}</div>`;
+
+  if (!setEnhanceBodyHtml(`
+    <div style="margin-bottom:14px">
+      <label class="field-label">Разрешение на выходе <span class="info" tabindex="0">?<span class="bubble">«Авто» — поднимет до 1080p, если с телефона приходит меньше, а 1080p и выше просто почистит от квадратов. «Без увеличения» — только очистка. 1440p и 4K имеют смысл для YouTube: он даёт таким эфирам кодек получше. Twitch больше 1080p не показывает.</span></span></label>
+      <div class="seg" id="enhanceTargetSeg">${seg}</div>
+    </div>
+    ${connectedHtml}`)) return;
+  bindCopyButtons(enhanceBodyEl);
+  enhanceBodyEl.querySelectorAll('#enhanceTargetSeg button').forEach((btn) => {
+    btn.onclick = () => setEnhanceTarget(btn.dataset.target);
+  });
+}
+
+function applyEnhanceState() {
+  enhanceSwitchEl.classList.toggle('on', Boolean(enhanceState.connected));
+  renderEnhanceBody();
+  renderSectionNav();
+}
+
+async function refreshEnhanceStatus() {
+  try {
+    const res = await fetch('/api/enhance/status');
+    enhanceState = await res.json();
+  } catch (e) {
+    return; // тихо — обновим на следующем опросе
+  }
+  applyEnhanceState();
+}
+
+async function enhancePost(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function connectEnhance(name) {
+  if (enhanceBusy) return;
+  enhanceBusy = true;
+  clearEnhanceError();
+  enhanceSwitchEl.classList.add('on');
+  try {
+    await enhancePost('/api/enhance/connect', { name, target: enhanceTarget });
+  } catch (e) {
+    showEnhanceError(`Улучшение не включилось: ${e.message}`);
+  } finally {
+    enhanceBusy = false;
+    refreshEnhanceStatus();
+  }
+}
+
+async function disconnectEnhance() {
+  if (enhanceBusy) return;
+  enhanceBusy = true;
+  clearEnhanceError();
+  enhanceSwitchEl.classList.remove('on');
+  try {
+    const data = await enhancePost('/api/enhance/disconnect');
+    if (data.warning) showEnhanceError(data.warning);
+  } catch (e) {
+    showEnhanceError(`Улучшение не выключилось: ${e.message}`);
+  } finally {
+    enhanceBusy = false;
+    refreshEnhanceStatus();
+  }
+}
+
+// Новое разрешение при включённом улучшении применяется сразу — перезапуском
+// воркера (пара секунд старой картинки в OBS, обрыва нет: панель сначала
+// возвращает OBS на исходный поток).
+function setEnhanceTarget(value) {
+  enhanceTarget = value;
+  localStorage.setItem(ENHANCE_TARGET_KEY, value);
+  renderEnhanceBody();
+  if (enhanceState.connected && enhanceState.streamName && enhanceState.target !== value) {
+    connectEnhance(enhanceState.streamName);
+  }
+}
+
+async function buildEnhance() {
+  if (enhanceBusy) return;
+  enhanceBusy = true;
+  clearEnhanceError();
+  enhanceBuildLines = [];
+  try {
+    await enhancePost('/api/enhance/build');
+    enhanceState.buildStatus = 'building';
+    renderEnhanceBody();
+    const source = new EventSource('/api/enhance/build/logs');
+    source.onmessage = (e) => {
+      enhanceBuildLines.push(e.data);
+      if (enhanceBuildLines.length > 1000) enhanceBuildLines.shift();
+      renderEnhanceBody();
+    };
+    source.addEventListener('done', () => {
+      source.close();
+      refreshEnhanceStatus();
+    });
+    // Без close() EventSource сам переподключается бесконечно (см. субтитры).
+    source.onerror = () => source.close();
+  } catch (e) {
+    showEnhanceError(`Не получилось скачать: ${e.message}`);
+  } finally {
+    enhanceBusy = false;
+  }
+}
+
+enhanceSwitchEl.onclick = () => {
+  if (enhanceState.connected) {
+    disconnectEnhance();
+    return;
+  }
+  if (!enhanceState.imageExists) {
+    showEnhanceError('Сначала нажми «Скачать» ниже — улучшению нужна своя программа на сервере.');
+    return;
+  }
+  const stream = enhanceCandidateStream();
+  if (!stream) {
+    showEnhanceError('Сейчас нет эфира — запусти стрим с телефона, и включай.');
+    return;
+  }
+  connectEnhance(stream.name);
+};
+
+refreshEnhanceStatus();
+setInterval(refreshEnhanceStatus, 3000);
+
 // Первый показ левой колонки — здесь, а не рядом с её кодом: renderSectionNav()
 // читает latestStreams/captionsState/sceneSwitcherState, а они объявлены через let
 // ниже по файлу и до этой строки лежат в мёртвой зоне.
@@ -2718,7 +2974,7 @@ if (debugEnabled) {
   // Фильтры — чипсы, а не select: наборы короткие и целиком помещаются на экран,
   // держать их за кликом «раскрой список» незачем (тот же приём, что в «Заглушке
   // при обрыве»). Первый чипс в каждом ряду — «не фильтровать», пустое значение.
-  const DIAG_SERVICES = ['', 'panel', 'srs', 'srtla-rec', 'overlay', 'asr-worker', 'ui'];
+  const DIAG_SERVICES = ['', 'panel', 'srs', 'srtla-rec', 'overlay', 'asr-worker', 'enhance-worker', 'ui'];
   const DIAG_LEVELS = [['', 'любой'], ['INFO', 'info и выше'], ['WARN', 'warn и выше'], ['ERROR', 'только error']];
   let diagServiceValue = '';
   let diagLevelValue = '';

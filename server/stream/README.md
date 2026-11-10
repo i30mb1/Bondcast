@@ -53,6 +53,7 @@ OBS ──RTMP:1935 или SRT:10080──────────────�
 | [`srtla-rec/`](srtla-rec/README.md) | Приёмник бондинга с телефона, форвардит поток в SRS |
 | [`panel/`](panel/server.js) | Веб-панель управления (Node.js), сама тоже в Docker |
 | [`asr-obs/`](asr-obs/README.md) | Опционально: субтитры «ведущий/гость» (`asr-worker` + `overlay`), GPU, поднимается по кнопке в панели |
+| [`enhance/`](enhance/README.md) | Опционально: улучшение картинки на NVIDIA RTX (`enhance-worker`), панель сама переключает OBS на улучшенный поток |
 | [`installer/`](installer/setup.iss) | Inno Setup-скрипт, собирает всё вышеперечисленное в один `BondcastStream-Setup.exe` |
 | [`index.html`](index.html) | Лендинг со ссылкой на скачивание установщика |
 | `logs/` | Логи всего стека, пишет панель ([`panel/logger.js`](panel/logger.js)). В git не попадает |

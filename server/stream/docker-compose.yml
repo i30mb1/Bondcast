@@ -91,6 +91,8 @@ services:
       # Контекст сборки asr-worker — панель билдит образ сама (кнопка «Собрать» в дашборде),
       # ей нужен физический доступ к файлам, не только хостовый путь для Binds.
       - ./asr-obs:/build-context/asr-obs
+      # Контекст сборки enhance-worker (улучшение картинки) — тот же приём, что у субтитров.
+      - ./enhance:/build-context/enhance:ro
       # Версия установленной копии (пишет installer/setup.iss при установке/обновлении,
       # см. GET /api/update/status в server.js) — bind на файл, не env-переменная: после
       # тихого обновления (update.ps1) файл на диске меняется сразу, панель видит новую
@@ -120,6 +122,30 @@ services:
       - ./asr-obs/voices:/srv/voices:ro
       - hf-cache:/root/.cache/huggingface
       - gigaam-cache:/root/.cache/gigaam
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    logging: *logging
+
+  # Улучшение картинки эфира на NVIDIA (VSR из Maxine VFX SDK) — как и субтитры, не
+  # поднимается на обычный "up" (profiles), образ собирается по кнопке в панели
+  # (POST /api/enhance/build), контейнер создаётся под конкретный стрим через
+  # POST /api/enhance/connect. Этот блок — для прямого "docker compose up enhance-worker".
+  enhance-worker:
+    build: ./enhance
+    image: bondcast-enhance:latest
+    container_name: enhance-worker
+    profiles: ["enhance"]
+    networks: [bondcast-net]
+    environment:
+      - ENHANCE_SOURCE=${ENHANCE_SOURCE:-livestream}
+      # all, а не дефолтные compute,utility: иначе в контейнер не попадёт
+      # libnvidia-ngx, на котором работает VSR.
+      - NVIDIA_DRIVER_CAPABILITIES=all
     deploy:
       resources:
         reservations:

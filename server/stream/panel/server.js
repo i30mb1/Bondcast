@@ -62,6 +62,17 @@ const CAPTIONS_OVERLAY_PORT = 8082;
 const ENROLL_CONTAINER = 'asr-enroll';
 const ENROLL_DURATION_SEC = 15;
 
+// Улучшение картинки (enhance/) — такой же тяжёлый GPU-контейнер под конкретный
+// стрим, как субтитры: образ собирается по кнопке, контейнер пересоздаётся при
+// включении. Публикует обработанный эфир обратно в SRS под именем
+// <стрим>ENHANCE_SUFFIX — этот служебный поток в списках стримов не показываем.
+const ENHANCE_CONTAINER = 'enhance-worker';
+const ENHANCE_IMAGE = 'bondcast-enhance:latest';
+const ENHANCE_SUFFIX = '_enh';
+const ENHANCE_TARGETS = ['auto', 'same', '1080', '1440', '2160'];
+const enhancedName = (name) => `${name}${ENHANCE_SUFFIX}`;
+const isEnhancedName = (name) => typeof name === 'string' && name.endsWith(ENHANCE_SUFFIX);
+
 // Тот же каталог, что панель монтирует себе на запись для сборки образа
 // (docker-compose.yml: ./asr-obs:/build-context/asr-obs) — переиспользуем его и для
 // голосов: панель пишет их напрямую на диск, без похода в контейнер
@@ -303,7 +314,7 @@ function checkAllowed(req, res, next) {
 // Логи отдельно от start/stop/recreate: у asr-worker/asr-enroll нет статичного SPECS
 // (Env зависит от текущего стрима/энроллмента), но посмотреть их лог — безопасно и
 // нужно для диагностики, так что список для /logs шире, чем ALLOWED.
-const LOGGABLE = [...ALLOWED, CAPTIONS_CONTAINER, ENROLL_CONTAINER];
+const LOGGABLE = [...ALLOWED, CAPTIONS_CONTAINER, ENROLL_CONTAINER, ENHANCE_CONTAINER];
 function checkLoggable(req, res, next) {
   if (!LOGGABLE.includes(req.params.name)) {
     return res.status(403).json({ error: `container "${req.params.name}" is not managed by this panel` });
@@ -316,7 +327,7 @@ function checkLoggable(req, res, next) {
 // хронологию. Именно она нужна при расследовании: «телефон отвалился → что в
 // этот момент сказал srtla-rec → что SRS». Через docker logs по отдельности
 // такую картину не собрать.
-const COLLECTED = ['srs', 'srtla-rec', 'overlay', CAPTIONS_CONTAINER];
+const COLLECTED = ['srs', 'srtla-rec', 'overlay', CAPTIONS_CONTAINER, ENHANCE_CONTAINER];
 const collectorStreams = new Map(); // имя контейнера -> активный лог-стрим
 
 // Сервисы пишут в свободной форме, уровня в машинном виде у них нет — достаём
@@ -1138,7 +1149,15 @@ app.get('/api/containers/:name/logs', checkLoggable, async (req, res) => {
 // не может его знать заранее, поэтому спрашивает сам SRS, что сейчас реально
 // публикуется. Панель в той же bondcast-net сети, что и srs — резолвит по
 // имени контейнера, порт 1985 (SRS HTTP API) наружу пробрасывать не нужно.
-async function getActiveSrsStreams() {
+// Служебный поток улучшения картинки (<стрим>_enh) — не отдельный эфир: ни в
+// списках панели, ни для «Заглушки при обрыве» его не существует. Видит его только
+// enhanceTick (через includeEnhanced).
+async function getActiveSrsStreams({ includeEnhanced = false } = {}) {
+  const all = await fetchSrsStreams();
+  return includeEnhanced ? all : all.filter((s) => !isEnhancedName(s.name));
+}
+
+async function fetchSrsStreams() {
   const srsRes = await fetch('http://srs:1985/api/v1/streams/');
   const data = await srsRes.json();
   return (data.streams || [])
@@ -1259,12 +1278,14 @@ const sceneSwitcher = createSceneSwitcher({ obsCall, logger });
 // пропажи (короткая просадка сама отменяет ещё не сработавший таймер) и
 // возвращает прежнюю сцену, как только сигнал придёт снова.
 async function monitorTick() {
-  let streams;
+  let allStreams;
   try {
-    streams = await getActiveSrsStreams();
+    allStreams = await getActiveSrsStreams({ includeEnhanced: true });
   } catch (e) {
     return; // сеть/SRS моргнули — не считаем это "стрим пропал", просто пропускаем тик
   }
+  const streams = allStreams.filter((s) => !isEnhancedName(s.name));
+  enhanceTick(allStreams); // не await — OBS может отвечать долго, тик не держим
 
   // monitorTick крутится раз в 2 секунды — логируем только переходы, а не каждый тик.
   const liveNames = new Set(streams.map((s) => s.name));
@@ -1841,6 +1862,371 @@ app.patch('/api/captions/overlay-style', (req, res) => {
 
   writeOverlayStyleAtomic(next);
   res.json({ ok: true, style: next });
+});
+
+// --- Улучшение картинки (enhance-worker, NVIDIA VSR) ----------------------
+// Контейнер забирает live/<стрим> из SRS, улучшает каждый кадр на видеокарте и
+// публикует live/<стрим>_enh (см. enhance/app/main.py). Чтобы зрители увидели
+// результат, панель сама переключает медиаисточники OBS со ссылки на исходный
+// поток на улучшенный — и обратно, если воркер упал или улучшение выключили.
+// Без OBS WebSocket переключения нет: тогда в разделе показываем ссылку руками.
+
+let enhanceBuildStatus = 'idle'; // idle | building | done | error
+let enhanceBuildError = null;
+let enhanceBuildLog = [];
+const enhanceBuildEmitter = new EventEmitter();
+
+// Что панель сейчас сделала с OBS. Живёт в памяти: после перезапуска панели
+// первый же тик найдёт медиаисточники по ссылке заново, а они и есть правда.
+const enhanceObs = {
+  pointedAt: null, // имя стрима, на который сейчас смотрят переключённые нами медиаисточники
+  sourceName: null, // исходный стрим этих медиаисточников — чтобы вернуть их назад
+  inputs: [], // имена медиаисточников, которые мы переключили
+  state: 'idle', // idle | switched | not_found | unreachable
+  error: null,
+  outMissingSince: null,
+  retryAt: 0,
+};
+let enhanceTickBusy = false;
+// Медиаисточника с нашим стримом в OBS может не быть вовсе (картинку берут из
+// другого места) — тогда не перебираем все источники OBS каждые 2 секунды.
+const ENHANCE_OBS_RETRY_MS = 10000;
+// Улучшенный поток пропал, а исходный жив — значит упал воркер. Даём ему время
+// подняться (переподключение после обрыва телефона — пара секунд) и только потом
+// возвращаем OBS на исходный, чтобы зрители не смотрели в чёрный экран.
+const ENHANCE_FALLBACK_AFTER_MS = 6000;
+
+function pushEnhanceBuildLine(line) {
+  enhanceBuildLog.push(line);
+  if (enhanceBuildLog.length > MAX_BUILD_LOG_LINES) enhanceBuildLog.shift();
+  enhanceBuildEmitter.emit('line', line);
+}
+
+async function enhanceImageExists() {
+  try {
+    await docker.getImage(ENHANCE_IMAGE).inspect();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function enhanceSpec(streamName, target) {
+  return {
+    name: ENHANCE_CONTAINER,
+    Image: ENHANCE_IMAGE,
+    Env: [
+      `ENHANCE_SOURCE=${streamName}`,
+      `ENHANCE_OUTPUT=${enhancedName(streamName)}`,
+      `ENHANCE_TARGET=${target}`,
+      // Без "all" (по умолчанию только compute,utility) в контейнер не попадает
+      // libnvidia-ngx — VSR падает на load() с кодом -12. А NVENC нужен "video".
+      'NVIDIA_DRIVER_CAPABILITIES=all',
+    ],
+    HostConfig: {
+      // Привязан к стриму текущей сессии — как и субтитры, сам не воскресаем.
+      RestartPolicy: { Name: 'no' },
+      DeviceRequests: [{ Driver: 'nvidia', Count: 1, Capabilities: [['gpu']] }],
+      NetworkMode: NETWORK,
+    },
+  };
+}
+
+async function readEnhanceContainer() {
+  try {
+    const info = await docker.getContainer(ENHANCE_CONTAINER).inspect();
+    const env = info.Config.Env || [];
+    const findEnv = (key) => {
+      const line = env.find((e) => e.startsWith(`${key}=`));
+      return line ? line.slice(key.length + 1) : null;
+    };
+    return {
+      exists: true,
+      running: info.State.Running,
+      streamName: findEnv('ENHANCE_SOURCE'),
+      target: findEnv('ENHANCE_TARGET'),
+      exitCode: info.State.Running ? null : info.State.ExitCode,
+    };
+  } catch (e) {
+    return { exists: false, running: false, streamName: null, target: null, exitCode: null };
+  }
+}
+
+// Последняя строка STATS из лога воркера → цифры для панели. Хвост лога —
+// дёшево, а отдельный канал статистики ради одной строки не нужен.
+async function readEnhanceStats() {
+  try {
+    const raw = await docker.getContainer(ENHANCE_CONTAINER).logs({ stdout: true, stderr: true, tail: 200 });
+    const lines = raw.toString('utf8').split(/\r?\n/);
+    let stats = null;
+    let lastError = null;
+    for (const line of lines) {
+      const m = /STATS fps=([\d.]+) in=(\d+)x(\d+) out=(\d+)x(\d+) mode=(\S+) gpu_ms=([\d.]+) frame_ms=([\d.]+) lag_ms=(-?\d+)/.exec(line);
+      if (m) {
+        stats = {
+          fps: Number(m[1]),
+          inWidth: Number(m[2]),
+          inHeight: Number(m[3]),
+          outWidth: Number(m[4]),
+          outHeight: Number(m[5]),
+          mode: m[6],
+          gpuMs: Number(m[7]),
+          frameMs: Number(m[8]),
+          lagMs: Number(m[9]),
+        };
+        lastError = null;
+      } else if (/ ERROR |сессия упала|не загрузился/.test(line)) {
+        lastError = line.replace(/^\S+ \S+ \S+ /, '').slice(0, 300);
+      }
+    }
+    return { stats, lastError };
+  } catch (e) {
+    return { stats: null, lastError: null };
+  }
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Переписывает ссылку во всех медиаисточниках OBS, которые смотрят на fromName,
+// на toName. Ловит и HTTP-FLV (/live/<имя>.flv — то, что выдаёт раздел «Картинка
+// в OBS»), и HLS, и SRT (streamid=…live/<имя>,…). Возвращает имена переключённых.
+async function swapObsMediaInputs(fromName, toName) {
+  const re = new RegExp(`(?<=[=/])live/${escapeRegExp(fromName)}(?=\\.flv|\\.m3u8|[,&?]|$)`);
+  const { inputs } = await obsCall('GetInputList', { inputKind: 'ffmpeg_source' });
+  const swapped = [];
+  for (const input of inputs || []) {
+    const { inputSettings } = await obsCall('GetInputSettings', { inputName: input.inputName });
+    const url = inputSettings && inputSettings.input;
+    if (typeof url !== 'string' || !re.test(url)) continue;
+    await obsCall('SetInputSettings', {
+      inputName: input.inputName,
+      inputSettings: { input: url.replace(re, `live/${toName}`) },
+    });
+    swapped.push(input.inputName);
+  }
+  return swapped;
+}
+
+async function pointObsAtEnhanced(sourceName) {
+  const swapped = await swapObsMediaInputs(sourceName, enhancedName(sourceName));
+  if (!swapped.length) {
+    enhanceObs.state = 'not_found';
+    enhanceObs.error = null;
+    enhanceObs.retryAt = Date.now() + ENHANCE_OBS_RETRY_MS;
+    return;
+  }
+  enhanceObs.pointedAt = enhancedName(sourceName);
+  enhanceObs.sourceName = sourceName;
+  enhanceObs.inputs = swapped;
+  enhanceObs.state = 'switched';
+  enhanceObs.error = null;
+  logger.log('panel', 'info', `улучшение: OBS переключён на "${enhancedName(sourceName)}" (${swapped.join(', ')})`);
+}
+
+async function pointObsBackToSource(reason) {
+  if (!enhanceObs.pointedAt) return;
+  const swapped = await swapObsMediaInputs(enhanceObs.pointedAt, enhanceObs.sourceName);
+  logger.log('panel', 'info', `улучшение: OBS возвращён на "${enhanceObs.sourceName}" — ${reason} (${swapped.join(', ') || 'источников не нашлось'})`);
+  enhanceObs.pointedAt = null;
+  enhanceObs.sourceName = null;
+  enhanceObs.inputs = [];
+  enhanceObs.state = 'idle';
+  enhanceObs.outMissingSince = null;
+}
+
+function rememberObsFailure(e) {
+  enhanceObs.state = 'unreachable';
+  enhanceObs.error = e.message;
+  enhanceObs.retryAt = Date.now() + ENHANCE_OBS_RETRY_MS;
+}
+
+// Раз в 2 секунды из общего monitorTick. Держит OBS в согласии с тем, что реально
+// идёт: улучшенный поток есть — смотрим его; пропал при живом исходном — назад.
+async function enhanceTick(allStreams) {
+  if (enhanceTickBusy) return;
+  enhanceTickBusy = true;
+  try {
+    const container = await readEnhanceContainer();
+    const live = new Set(allStreams.map((s) => s.name));
+    const source = container.running ? container.streamName : null;
+
+    // Улучшение выключили, контейнер умер насовсем или переключён на другой стрим —
+    // OBS назад на тот исходник, с которого мы его забирали.
+    if (enhanceObs.pointedAt && enhanceObs.sourceName !== source) {
+      if (Date.now() < enhanceObs.retryAt) return;
+      await pointObsBackToSource('улучшение выключено');
+    }
+    if (!source) {
+      enhanceObs.state = 'idle';
+      return;
+    }
+
+    if (live.has(enhancedName(source))) {
+      enhanceObs.outMissingSince = null;
+      if (enhanceObs.pointedAt !== enhancedName(source) && Date.now() >= enhanceObs.retryAt) {
+        await pointObsAtEnhanced(source);
+      }
+      return;
+    }
+
+    if (enhanceObs.pointedAt && live.has(source)) {
+      enhanceObs.outMissingSince = enhanceObs.outMissingSince || Date.now();
+      if (Date.now() - enhanceObs.outMissingSince >= ENHANCE_FALLBACK_AFTER_MS) {
+        await pointObsBackToSource('улучшенный поток пропал, а исходный жив');
+        logger.log('panel', 'warn', 'улучшение: воркер не отдаёт картинку — зрители снова видят исходный поток');
+      }
+    }
+  } catch (e) {
+    rememberObsFailure(e);
+  } finally {
+    enhanceTickBusy = false;
+  }
+}
+
+app.post('/api/enhance/build', async (req, res) => {
+  if (enhanceBuildStatus === 'building') {
+    return res.status(409).json({ error: 'сборка уже идёт' });
+  }
+  enhanceBuildStatus = 'building';
+  enhanceBuildError = null;
+  enhanceBuildLog = [];
+  logger.log('panel', 'info', 'началась сборка образа улучшения картинки');
+  try {
+    const stream = await docker.buildImage(
+      { context: '/build-context/enhance', src: ['Dockerfile', 'requirements.txt', 'app'] },
+      { t: ENHANCE_IMAGE },
+    );
+    docker.modem.followProgress(
+      stream,
+      (err) => {
+        enhanceBuildStatus = err ? 'error' : 'done';
+        enhanceBuildError = err ? err.message : null;
+        pushEnhanceBuildLine(err ? `[ошибка сборки] ${err.message}` : '[сборка завершена]');
+        logger.log('panel', err ? 'error' : 'info', err ? `образ улучшения не собрался: ${err.message}` : 'образ улучшения собран');
+        enhanceBuildEmitter.emit('done', { ok: !err });
+      },
+      (event) => pushEnhanceBuildLine(event.stream || event.status || JSON.stringify(event)),
+    );
+    res.json({ ok: true, status: enhanceBuildStatus });
+  } catch (e) {
+    enhanceBuildStatus = 'error';
+    enhanceBuildError = e.message;
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/enhance/build/logs', (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+  res.flushHeaders();
+  enhanceBuildLog.forEach((line) => res.write(`data: ${line}\n\n`));
+  const onLine = (line) => res.write(`data: ${line}\n\n`);
+  const onDone = ({ ok }) => res.write(`event: done\ndata: ${ok}\n\n`);
+  enhanceBuildEmitter.on('line', onLine);
+  enhanceBuildEmitter.on('done', onDone);
+  const keepAlive = setInterval(() => res.write(':keep-alive\n\n'), 15000);
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    enhanceBuildEmitter.off('line', onLine);
+    enhanceBuildEmitter.off('done', onDone);
+  });
+});
+
+app.get('/api/enhance/status', async (req, res) => {
+  const [imageExists, container] = await Promise.all([enhanceImageExists(), readEnhanceContainer()]);
+  let outputLive = false;
+  if (container.running && container.streamName) {
+    try {
+      const all = await getActiveSrsStreams({ includeEnhanced: true });
+      outputLive = all.some((s) => s.name === enhancedName(container.streamName));
+    } catch (e) {
+      // SRS моргнул — просто покажем «готовлюсь» до следующего опроса
+    }
+  }
+  const { stats, lastError } = container.exists ? await readEnhanceStats() : { stats: null, lastError: null };
+  let error = null;
+  if (container.running) error = lastError;
+  else if (container.exists && container.exitCode) error = lastError || `воркер остановился с кодом ${container.exitCode}`;
+  res.json({
+    imageExists,
+    buildStatus: enhanceBuildStatus,
+    buildError: enhanceBuildError,
+    connected: container.running,
+    streamName: container.running ? container.streamName : null,
+    target: container.target,
+    outputName: container.running && container.streamName ? enhancedName(container.streamName) : null,
+    outputLive,
+    stats: container.running ? stats : null,
+    error,
+    obs: {
+      state: enhanceObs.state,
+      inputs: enhanceObs.inputs,
+      error: enhanceObs.error,
+    },
+  });
+});
+
+app.post('/api/enhance/connect', async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  if (!STREAM_NAME_RE.test(name) || isEnhancedName(name)) {
+    return res.status(400).json({ error: 'некорректное имя стрима' });
+  }
+  const target = ENHANCE_TARGETS.includes(String(req.body && req.body.target)) ? String(req.body.target) : 'auto';
+  if (!(await enhanceImageExists())) {
+    return res.status(409).json({ error: 'сначала скачай улучшение — кнопка «Скачать»' });
+  }
+  try {
+    // Другой стрим или новые настройки — сначала вернуть OBS на исходник: ссылка
+    // на старый улучшенный поток сейчас перестанет работать.
+    if (enhanceObs.pointedAt) {
+      try {
+        await pointObsBackToSource('улучшение перезапускается');
+      } catch (e) {
+        rememberObsFailure(e);
+      }
+    }
+    try {
+      await docker.getContainer(ENHANCE_CONTAINER).remove({ force: true });
+    } catch (e) {
+      if (e.statusCode !== 404) throw e;
+    }
+    await ensureNetwork();
+    enhanceObs.retryAt = 0;
+    enhanceObs.error = null;
+    const container = await docker.createContainer(enhanceSpec(name, target));
+    await container.start();
+    logger.log('panel', 'info', `улучшение картинки включено для "${name}", цель ${target}`);
+    res.json({ ok: true, streamName: name, target });
+  } catch (e) {
+    logger.log('panel', 'error', `улучшение не включилось для "${name}": ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/enhance/disconnect', async (req, res) => {
+  // Порядок важен: сначала OBS назад на исходный поток, потом гасим воркер —
+  // иначе зрители увидят обрыв между этими двумя шагами.
+  let warning = null;
+  if (enhanceObs.pointedAt) {
+    try {
+      await pointObsBackToSource('улучшение выключено');
+    } catch (e) {
+      rememberObsFailure(e);
+      warning = `OBS не ответил — верни ссылку в медиаисточнике руками: ${e.message}`;
+    }
+  }
+  try {
+    await docker.getContainer(ENHANCE_CONTAINER).remove({ force: true });
+  } catch (e) {
+    if (e.statusCode !== 404) {
+      logger.log('panel', 'error', `улучшение не выключилось: ${e.message}`);
+      return res.status(500).json({ error: e.message });
+    }
+  }
+  if (!enhanceObs.pointedAt) enhanceObs.state = 'idle';
+  logger.log('panel', 'info', 'улучшение картинки выключено');
+  res.json({ ok: true, warning });
 });
 
 // Обработчик ошибок express должен стоять после всех маршрутов, иначе он их не увидит.
