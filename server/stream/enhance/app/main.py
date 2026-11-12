@@ -40,7 +40,40 @@ OUTPUT = os.environ.get('ENHANCE_OUTPUT', f'{SOURCE}_enh')
 # auto — до 1080p, если меньше, иначе чистка в том же разрешении; same — только
 # чистка; 1080/1440/2160 — короткая сторона на выходе.
 TARGET = os.environ.get('ENHANCE_TARGET', 'auto')
-STRENGTH = float(os.environ.get('ENHANCE_STRENGTH', '1.0'))
+# Характер апскейла: natural — как снято, sharp — резче, но «дорисованнее».
+# Незнакомое значение = natural. На очистку без увеличения не влияет.
+STYLE = 'sharp' if os.environ.get('ENHANCE_STYLE', 'natural') == 'sharp' else 'natural'
+
+
+def _unit(name, default):
+    """Доля 0..1 из переменной окружения; мусор и выход за границы не роняют воркер."""
+    try:
+        value = float(os.environ.get(name, default))
+    except ValueError:
+        value = default
+    return min(1.0, max(0.0, value))
+
+
+# Сила апскейла: 0 — обычное растягивание (бикубик), 1 — эффект целиком. SDK
+# смешивает между ними линейно (замер: на 0 выход HIGH и STREAMING_ULTRA совпадает
+# с BICUBIC).
+STRENGTH = _unit('ENHANCE_STRENGTH', 1.0)
+# Сила очистки от квадратов и шума: 0 — кадр как пришёл, 1 — очистка целиком.
+# Именно сила, а не уровень DENOISE_LOW..ULTRA: уровни — это размер модели
+# (ULTRA в 3.5 раза дороже MEDIUM и на глаз от него не отличается), и «слабее»
+# среди них нет — LOW на замере меняет кадр сильнее, чем MEDIUM.
+CLEAN = _unit('ENHANCE_CLEAN', 1.0)
+# Чистить кадр перед увеличением (отдельным проходом, +~1 мс на 720p): апскейл
+# тогда не усиливает квадраты. Без увеличения очистка и так единственный проход.
+PRECLEAN = os.environ.get('ENHANCE_PRECLEAN', '0') == '1'
+# Плавность: между каждой парой кадров дорисовывается промежуточный, частота
+# кадров на выходе вдвое выше (24 -> 48, 30 -> 60).
+SMOOTH = os.environ.get('ENHANCE_SMOOTH', '0') == '1'
+# С телефона уже идёт 50+ к/с — удваивать нечего, только грузить видеокарту.
+SMOOTH_MAX_INPUT_FPS = 50.0
+# Пауза между кадрами дольше этой — кадры потерялись или эфир замер: дорисовывать
+# «середину» между далёкими кадрами нельзя, выйдет каша.
+SMOOTH_MAX_GAP_SEC = 0.1
 SRT_IN = os.environ.get('ENHANCE_SRT', 'srs:10080')
 RTMP_OUT = os.environ.get('ENHANCE_RTMP', 'srs:1935')
 # Нет пакетов дольше этого — считаем, что источник пропал, и переподключаемся.
@@ -51,7 +84,11 @@ Q = nvvfx.VideoSuperRes.QualityLevel
 
 
 def plan_output(w, h):
-    """Размер выхода и режим VSR под входной кадр."""
+    """Размер выхода и проходы VSR под входной кадр.
+
+    Проход — (ширина, высота, режимы на выбор, сила). Кадр идёт через проходы
+    по порядку; выход последнего и есть размер эфира.
+    """
     short = min(w, h)
     if TARGET == 'same':
         target = short
@@ -61,19 +98,29 @@ def plan_output(w, h):
         target = int(TARGET)
     if target <= short:
         # Режимы очистки работают только при выходе того же размера, что вход.
-        return w, h, [Q.DENOISE_MEDIUM]
+        return w, h, [(w, h, [Q.DENOISE_MEDIUM], CLEAN)]
     scale = min(target / short, 4.0)
     ow = int(round(w * scale / 2)) * 2
     oh = int(round(h * scale / 2)) * 2
-    # STREAMING_* сделан ровно под наш случай (живое сжатое видео с камеры: шум,
-    # блоки, мыло), но только с Ampere. На Turing откатываемся на HIGH.
-    return ow, oh, [Q.STREAMING_ULTRA, Q.HIGH]
+    # Замер на живом эфире (720p HEVC ~1 Мбит -> 1080p, RTX 4070 Ti, 2026-11-12):
+    # HIGH (2.2 мс/кадр) оставляет картинку как снято — фактура и тонкие линии на
+    # месте, квадраты не усиливает, но и резкости почти не добавляет.
+    # STREAMING_ULTRA (3.5 мс/кадр) заметно резче на лице и контурах, зато тонкие
+    # линии выходят «нарисованными», фактура сглаживается, а квадраты на смазанных
+    # участках усиливаются — NVIDIA сама не советует его для блочного входа.
+    # Что лучше — зависит от сцены, поэтому выбирает человек (ENHANCE_STYLE).
+    # STREAMING_* есть только с Ampere: на Turing откатываемся на HIGH.
+    passes = []
+    if PRECLEAN and CLEAN > 0:
+        passes.append((w, h, [Q.DENOISE_MEDIUM], CLEAN))
+    passes.append((ow, oh, [Q.STREAMING_ULTRA, Q.HIGH] if STYLE == 'sharp' else [Q.HIGH], STRENGTH))
+    return ow, oh, passes
 
 
-def open_effect(w, h, ow, oh, modes):
+def open_effect(ow, oh, modes, strength):
     last_error = None
     for mode in modes:
-        sr = nvvfx.VideoSuperRes(quality=mode, strength=STRENGTH, device=0)
+        sr = nvvfx.VideoSuperRes(quality=mode, strength=strength, device=0)
         sr.output_width = ow
         sr.output_height = oh
         try:
@@ -84,6 +131,33 @@ def open_effect(w, h, ow, oh, modes):
             log.warning('режим %s не загрузился (%s), пробую следующий', mode.name, e)
             sr.close()
     raise RuntimeError(f'VSR не загрузился ни в одном режиме: {last_error}')
+
+
+def open_framegen(w, h):
+    """Генератор промежуточных кадров под размер ВХОДА или None, если не завёлся.
+
+    Дорисовываем до увеличения, а не после: кадр для генератора тогда меньше,
+    и на 4K плавность стоит столько же, сколько на 1080p.
+
+    Режим LOW, хотя есть MEDIUM и HIGH. Замер на RTX 4070 Ti, 720p, вперемешку
+    с апскейлом, как в эфире: LOW — 1 мс на кадр, худший кадр 2.3 мс. MEDIUM в
+    среднем 2.5 мс, но срывается: отдельные кадры по 70-250 мс, а в живом
+    воркере держался на 20+ мс и эфир начинал отставать. HIGH — 15 мс. На глаз
+    дорисованные кадры LOW и MEDIUM на этой записи не различались.
+
+    Плавность — приятная добавка, а не основа: не загрузилась (старая карта,
+    нехватка памяти) — эфир идёт дальше без неё.
+    """
+    FG = nvvfx.VideoFrameGeneration
+    try:
+        fg = FG(mode=FG.Mode.LOW, device=0)
+        fg.input_width = w
+        fg.input_height = h
+        fg.load()
+        return fg
+    except Exception as e:  # noqa: BLE001
+        log.warning('плавность не включилась (%s) — продолжаю без неё', e)
+        return None
 
 
 # Коды AVColorSpace: 1 — BT.709, 5/6 — варианты BT.601.
@@ -163,7 +237,8 @@ class Session:
         self.dst = None
         self.inp = None
         self.out = None
-        self.sr = None
+        self.effects = []
+        self.fg = None
         self.vout = None
         self.aout = None
         self.last_packet_at = time.monotonic()
@@ -202,7 +277,14 @@ class Session:
                     if kind == 'a':
                         self.out.mux(payload)
                         continue
-                    nv12, pts, time_base, key = payload
+                    nv12, pts, time_base, key, due = payload
+                    # Плавность: настоящий кадр приходит вместе с дорисованным
+                    # перед ним — придерживаем его на полкадра, иначе зритель
+                    # получал бы кадры парами, и плавности бы не было.
+                    if due is not None:
+                        wait = due - time.monotonic()
+                        if 0 < wait < SMOOTH_MAX_GAP_SEC:
+                            time.sleep(wait)
                     out_frame = av.VideoFrame.from_ndarray(nv12, format='nv12')
                     out_frame.pts = pts
                     out_frame.time_base = time_base
@@ -230,9 +312,19 @@ class Session:
                 continue
 
     def start_output(self, w, h, vin, ain):
-        ow, oh, modes = plan_output(w, h)
-        self.sr, mode = open_effect(w, h, ow, oh, modes)
+        ow, oh, passes = plan_output(w, h)
+        names = []
+        for pw, ph, modes, strength in passes:
+            sr, mode = open_effect(pw, ph, modes, strength)
+            self.effects.append(sr)
+            names.append(mode.name)
         fps = pick_fps(vin)
+        if SMOOTH and float(fps) < SMOOTH_MAX_INPUT_FPS:
+            self.fg = open_framegen(w, h)
+        if self.fg is not None:
+            fps *= 2
+            names.append('x2')
+        mode_name = '+'.join(names)
         self.dst = spawn_output(ain.codec_context.name if ain else None)
         self.out = av.open(io.FileIO(self.dst.stdin.fileno(), 'wb', closefd=False), 'w', format='mpegts')
         self.vout = self.out.add_stream('h264_nvenc', rate=fps)
@@ -260,8 +352,18 @@ class Session:
         if ain is not None:
             self.aout = self.out.add_stream_from_template(ain)
         self.start_encoder()
-        log.info('READY вход %dx%d -> выход %dx%d, режим %s, %.2f к/с', w, h, ow, oh, mode.name, float(fps))
-        return ow, oh, mode
+        log.info('READY вход %dx%d -> выход %dx%d, режим %s, %.2f к/с', w, h, ow, oh, mode_name, float(fps))
+        return ow, oh, mode_name
+
+    def enhance(self, rgb):
+        """Кадр через все проходы VSR; возвращает RGB размера выхода (на видеокарте)."""
+        for sr in self.effects:
+            result = sr.run(rgb)
+            # RGB8-путь SDK может дописывать выход на нулевом потоке — ждём его
+            # явно, прежде чем читать буфер (так советует документация DLPack).
+            cp.cuda.runtime.deviceSynchronize()
+            rgb = cp.from_dlpack(result.image)
+        return rgb
 
     def decoded(self, demux_streams):
         """Демукс и декод — в отдельном потоке, обработка — в основном.
@@ -331,6 +433,9 @@ class Session:
         last_adts = None
         stats_at = time.monotonic()
         frames = 0
+        frames_out = 0
+        prev_rgb = None
+        prev_pts = None
         gpu_time = 0.0
         loop_time = 0.0
         clock0 = None
@@ -373,12 +478,24 @@ class Session:
 
             t_gpu = time.monotonic()
             rgb = yuv420_to_rgb(yuv, size[0], size[1], full_range, matrix)
-            result = self.sr.run(rgb)
-            # RGB8-путь SDK может дописывать выход на нулевом потоке — ждём его
-            # явно, прежде чем читать буфер (так советует документация DLPack).
-            cp.cuda.runtime.deviceSynchronize()
-            upscaled = cp.from_dlpack(result.image)
-            nv12 = rgb_to_nv12(upscaled, ow, oh).get()
+
+            # Плавность: дорисованный кадр встаёт ровно посередине между прошлым
+            # и этим — по меткам потока, поэтому со звуком ничего не разъезжается.
+            due = None
+            if self.fg is not None and prev_rgb is not None:
+                gap = frame.pts - prev_pts
+                gap_sec = float(gap * frame.time_base)
+                if gap >= 2 and gap_sec <= SMOOTH_MAX_GAP_SEC:
+                    middle = self.fg.run(prev_rgb, rgb, frame_index=1)
+                    cp.cuda.runtime.deviceSynchronize()
+                    mid_nv12 = rgb_to_nv12(self.enhance(cp.from_dlpack(middle.image)), ow, oh).get()
+                    self.to_encoder(('v', (mid_nv12.reshape(oh * 3 // 2, ow), prev_pts + gap // 2,
+                                           frame.time_base, False, None)))
+                    due = time.monotonic() + gap_sec / 2
+                    frames_out += 1
+            prev_rgb, prev_pts = rgb, frame.pts
+
+            nv12 = rgb_to_nv12(self.enhance(rgb), ow, oh).get()
             gpu_time += time.monotonic() - t_gpu
 
             # Ключевой кадр раз в секунду по времени потока — не полагаемся
@@ -387,7 +504,8 @@ class Session:
             key = next_key_sec is None or media_sec >= next_key_sec
             if key:
                 next_key_sec = media_sec + 1.0
-            self.to_encoder(('v', (nv12.reshape(oh * 3 // 2, ow), frame.pts, frame.time_base, key)))
+            self.to_encoder(('v', (nv12.reshape(oh * 3 // 2, ow), frame.pts, frame.time_base, key, due)))
+            frames_out += 1
 
             now = time.monotonic()
             loop_time += now - t_start
@@ -404,11 +522,14 @@ class Session:
 
             if now - stats_at >= STATS_EVERY_SEC:
                 elapsed = now - stats_at
+                # fps — кадры на выходе (с плавностью их вдвое больше, чем пришло);
+                # gpu_ms и frame_ms — на один пришедший кадр, это и есть бюджет.
                 log.info('STATS fps=%.1f in=%dx%d out=%dx%d mode=%s gpu_ms=%.1f frame_ms=%.1f lag_ms=%.0f',
-                         frames / elapsed, size[0], size[1], ow, oh, mode.name,
+                         frames_out / elapsed, size[0], size[1], ow, oh, mode,
                          gpu_time / frames * 1000, loop_time / frames * 1000, lag_ms)
                 stats_at = now
                 frames = 0
+                frames_out = 0
                 gpu_time = 0.0
                 loop_time = 0.0
 
@@ -432,9 +553,10 @@ class Session:
                     obj.close()
             except Exception:
                 pass
-        if self.sr is not None:
+        for effect in (*self.effects, self.fg):
             try:
-                self.sr.close()
+                if effect is not None:
+                    effect.close()
             except Exception:
                 pass
         stop_proc(self.dst)
@@ -443,8 +565,10 @@ class Session:
 
 def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    log.info('улучшение картинки: live/%s -> live/%s, цель %s, VFX SDK %s',
-             SOURCE, OUTPUT, TARGET, nvvfx.get_sdk_version())
+    log.info('улучшение картинки: live/%s -> live/%s, цель %s, стиль %s, сила %.2f, очистка %.2f%s%s, VFX SDK %s',
+             SOURCE, OUTPUT, TARGET, STYLE, STRENGTH, CLEAN,
+             ' (и перед увеличением)' if PRECLEAN else '', ', плавность x2' if SMOOTH else '',
+             nvvfx.get_sdk_version())
     while True:
         session = Session()
         try:

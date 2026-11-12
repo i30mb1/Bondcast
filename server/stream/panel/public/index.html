@@ -197,6 +197,24 @@
      сегмента подменялась бы тёмно-серым, а тёмный текст на нём даёт 1.4:1. */
   .seg button.active:hover { color: #fff; }
 
+  /* --- Пример «до/после» в разделе «Улучшение картинки» ---
+     Две картинки одна над другой, верхняя («до») обрезана по --cut. Поверх лежит
+     прозрачный ползунок на всю площадь: тянуть можно где угодно, и это работает
+     с клавиатуры и на тачскрине без своего кода перетаскивания. */
+  .enh-demo { display: flex; flex-direction: column; gap: 10px; }
+  .enh-demo-view {
+    --cut: 50%;
+    position: relative; width: 100%; max-width: 420px; aspect-ratio: 420 / 256;
+    border-radius: 10px; overflow: hidden; border: 1px solid var(--divider); background: var(--input-bg);
+  }
+  .enh-demo-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; user-select: none; }
+  .enh-demo-view img.before { clip-path: inset(0 calc(100% - var(--cut)) 0 0); }
+  .enh-demo-line { position: absolute; top: 0; bottom: 0; left: var(--cut); width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; }
+  .enh-demo-tag { position: absolute; bottom: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; font-weight: 600; pointer-events: none; }
+  .enh-demo-tag.left { left: 8px; }
+  .enh-demo-tag.right { right: 8px; }
+  .enh-demo-view input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
+
   /* --- Тумблер вкл/выкл фичи (вкладка "Функции") --- */
   .feature-switch {
     width: 40px; height: 24px; border-radius: 999px; background: var(--divider);

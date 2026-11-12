@@ -2716,6 +2716,34 @@ let enhanceState = { imageExists: false, buildStatus: 'idle', connected: false, 
 let enhanceTarget = ENHANCE_TARGET_OPTIONS.some(([v]) => v === localStorage.getItem(ENHANCE_TARGET_KEY))
   ? localStorage.getItem(ENHANCE_TARGET_KEY)
   : 'auto';
+// Тонкие настройки улучшения. Одной «лучшей» комбинации нет: на тонких линиях и
+// фактуре приятнее «Натурально», на лице крупным планом — «Резко», на плохой связи
+// нужна очистка посильнее — поэтому выбор отдан человеку. Умолчания те же, что у
+// воркера без переменных (enhance/app/main.py).
+const ENHANCE_OPTS_KEY = 'bondcast_enhance_opts';
+const ENHANCE_STYLE_OPTIONS = [
+  ['natural', 'Натурально'],
+  ['sharp', 'Резко'],
+];
+function loadEnhanceOpts() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(ENHANCE_OPTS_KEY)) || {};
+  } catch (e) {
+    // битая запись — берём умолчания
+  }
+  const unit = (v) => (typeof v === 'number' && v >= 0 && v <= 1 ? v : 1);
+  return {
+    style: ENHANCE_STYLE_OPTIONS.some(([v]) => v === saved.style) ? saved.style : 'natural',
+    strength: unit(saved.strength),
+    clean: unit(saved.clean),
+    preclean: saved.preclean === true,
+    smooth: saved.smooth === true,
+  };
+}
+let enhanceOpts = loadEnhanceOpts();
+let enhanceAdvancedOpen = false;
+let enhanceDemoCut = 50; // где стоит шторка примера «было/стало», в процентах
 let enhanceBusy = false;
 let enhanceBuildLines = [];
 const enhanceSwitchEl = document.getElementById('enhanceSwitch');
@@ -2750,7 +2778,7 @@ function enhanceStatsHtml() {
   // Отставание растёт, только если видеокарта/процессор не успевают за эфиром —
   // тогда честно говорим и подсказываем, что поменять.
   const slow = st.lagMs > 500
-    ? `<div class="flow-warn" style="margin-top:6px">Не успевает за эфиром (отстаёт на ${(st.lagMs / 1000).toFixed(1)} с). Выбери разрешение пониже или «Без увеличения»</div>`
+    ? `<div class="flow-warn" style="margin-top:6px">Не успевает за эфиром (отстаёт на ${(st.lagMs / 1000).toFixed(1)} с). Выбери разрешение пониже, «Без увеличения» или выключи плавность</div>`
     : '';
   return `
     <div class="row-meta">Работает: ${escapeHtml(what)} · ${st.fps.toFixed(0)} к/с · видеокарта ${st.gpuMs.toFixed(0)} мс на кадр</div>
@@ -2776,6 +2804,43 @@ function enhanceObsHtml() {
     ${manual}`;
 }
 
+// Пример «было/стало» — пока улучшение выключено: человек решает, включать ли, по
+// картинке, а не по словам. Текста нет вовсе: что делает раздел, сказано в его
+// шапке, а длинное никто не читает. Правая половина — в выбранном характере:
+// переключил «Резко» — сразу видно разницу.
+// Кадры в public/enhance-demo — настоящий эфир со слабой связи (360p), пропущенный
+// через этот же воркер, а не нарисованная реклама.
+function enhanceDemoHtml() {
+  const sharp = enhanceOpts.style === 'sharp';
+  return `
+    <div class="enh-demo">
+      <div class="enh-demo-view" id="enhanceDemo">
+        <img src="enhance-demo/${sharp ? 'sharp' : 'natural'}.jpg" alt="" draggable="false">
+        <img class="before" src="enhance-demo/before.jpg" alt="" draggable="false">
+        <span class="enh-demo-tag left">Было</span>
+        <span class="enh-demo-tag right">Стало</span>
+        <span class="enh-demo-line"></span>
+        <input type="range" min="0" max="100" value="50" aria-label="Сравнить картинку до и после улучшения">
+      </div>
+    </div>`;
+}
+
+function bindEnhanceDemo() {
+  const demo = document.getElementById('enhanceDemo');
+  if (!demo) return;
+  const range = demo.querySelector('input');
+  // Положение шторки помним сами: раздел перерисовывается при каждом переключении
+  // (характер, плавность), и шторка иначе прыгала бы обратно в середину — а человек
+  // как раз поставил её на интересное место, чтобы сравнить «Натурально» и «Резко».
+  range.value = enhanceDemoCut;
+  const apply = () => {
+    enhanceDemoCut = Number(range.value);
+    demo.style.setProperty('--cut', `${enhanceDemoCut}%`);
+  };
+  range.oninput = apply;
+  apply();
+}
+
 let enhanceBodyHtml = '';
 function setEnhanceBodyHtml(html) {
   if (html === enhanceBodyHtml) return false;
@@ -2787,21 +2852,25 @@ function setEnhanceBodyHtml(html) {
 // Опрос раз в 3 с — перерисовываем, только если что-то реально поменялось, иначе
 // у кнопки «Копировать» слетало бы «Готово», а у подсказки «?» — наведение.
 function renderEnhanceBody() {
-  if (!enhanceState.imageExists) {
+  if (!enhanceState.imageExists || enhanceState.imageOutdated) {
     const building = enhanceState.buildStatus === 'building';
+    // Образ есть, но от прошлой версии Bondcast: новые настройки он не понимает.
+    const update = enhanceState.imageExists;
     if (!setEnhanceBodyHtml(`
+      ${enhanceDemoHtml()}
       <div class="row">
         <div class="row-label">
-          <b>Сначала скачаем улучшение</b>
-          <span class="row-meta">Один раз, около 3 ГБ. Нужна видеокарта NVIDIA RTX. Эфир не прервётся</span>
+          <b>${update ? 'Улучшение обновилось' : 'Сначала скачаем улучшение'}</b>
+          <span class="row-meta">${update ? 'Нужна новая версия — около минуты. Эфир не прервётся' : 'Один раз, около 3 ГБ. Нужна видеокарта NVIDIA RTX. Эфир не прервётся'}</span>
         </div>
         <div class="row-actions">
-          <button type="button" class="enhance-build primary"${building ? ' disabled' : ''}>${building ? 'Скачиваю…' : 'Скачать'}</button>
+          <button type="button" class="enhance-build primary"${building ? ' disabled' : ''}>${building ? (update ? 'Обновляю…' : 'Скачиваю…') : (update ? 'Обновить' : 'Скачать')}</button>
         </div>
       </div>
       ${enhanceBuildLines.length ? `<pre class="log-box" id="enhanceBuildLog">${escapeHtml(enhanceBuildLines.slice(-200).join('\n'))}</pre>` : ''}
       ${enhanceState.buildStatus === 'error' ? `<div class="flow-warn">Не скачалось: ${escapeHtml(enhanceState.buildError || '')}</div>` : ''}`)) return;
     enhanceBodyEl.querySelector('.enhance-build').onclick = buildEnhance;
+    bindEnhanceDemo();
     const logEl = document.getElementById('enhanceBuildLog');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
     return;
@@ -2810,6 +2879,13 @@ function renderEnhanceBody() {
   const seg = ENHANCE_TARGET_OPTIONS
     .map(([value, label]) => `<button type="button" data-target="${value}" class="${value === enhanceTarget ? 'active' : ''}">${escapeHtml(label)}</button>`)
     .join('');
+  const styleSeg = ENHANCE_STYLE_OPTIONS
+    .map(([value, label]) => `<button type="button" data-style="${value}" class="${value === enhanceOpts.style ? 'active' : ''}">${escapeHtml(label)}</button>`)
+    .join('');
+  const smoothSeg = [[false, 'Как с телефона'], [true, 'Вдвое плавнее']]
+    .map(([value, label]) => `<button type="button" data-smooth="${value ? 1 : 0}" class="${value === enhanceOpts.smooth ? 'active' : ''}">${label}</button>`)
+    .join('');
+  const pct = (v) => Math.round(v * 100);
   const connectedHtml = enhanceState.connected
     ? `
       <div class="stream-row">
@@ -2821,15 +2897,66 @@ function renderEnhanceBody() {
     : `<div class="row-meta">${enhanceCandidateStream() ? 'Включи тумблер сверху — улучшение подхватит эфир и само переключит OBS' : 'Запусти эфир — тогда будет что улучшать'}</div>`;
 
   if (!setEnhanceBodyHtml(`
+    ${enhanceState.connected ? '' : enhanceDemoHtml()}
     <div style="margin-bottom:14px">
       <label class="field-label">Разрешение на выходе <span class="info" tabindex="0">?<span class="bubble">«Авто» — поднимет до 1080p, если с телефона приходит меньше, а 1080p и выше просто почистит от квадратов. «Без увеличения» — только очистка. 1440p и 4K имеют смысл для YouTube: он даёт таким эфирам кодек получше. Twitch больше 1080p не показывает.</span></span></label>
       <div class="seg" id="enhanceTargetSeg">${seg}</div>
     </div>
+    <div style="margin-bottom:14px">
+      <label class="field-label">Характер картинки</label>
+      <div class="seg" id="enhanceStyleSeg">${styleSeg}</div>
+      <div class="row-meta" style="margin-top:6px">${enhanceOpts.style === 'sharp' ? 'Чётче лицо и контуры, мелочи слегка «нарисованы»' : 'Как снято, без дорисовки'}</div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="field-label">Плавность</label>
+      <div class="seg" id="enhanceSmoothSeg">${smoothSeg}</div>
+      <div class="row-meta" style="margin-top:6px">${enhanceOpts.smooth ? 'Кадров вдвое больше: 30 → 60. В OBS поставь 60 к/с' : 'Кадров столько, сколько шлёт телефон'}</div>
+    </div>
+    <details class="nested" id="enhanceAdvanced"${enhanceAdvancedOpen ? ' open' : ''}>
+      <summary>Тонкая настройка</summary>
+      <div class="body" style="gap:14px">
+        <div class="range-field">
+          <div class="range-head"><span>Сила эффекта</span><output id="enhanceStrengthOut">${pct(enhanceOpts.strength)}%</output></div>
+          <input type="range" id="enhanceStrength" min="0" max="100" step="5" value="${pct(enhanceOpts.strength)}" />
+        </div>
+        <div class="range-field">
+          <div class="range-head"><span>Очистка от квадратов</span><output id="enhanceCleanOut">${pct(enhanceOpts.clean)}%</output></div>
+          <input type="range" id="enhanceClean" min="0" max="100" step="5" value="${pct(enhanceOpts.clean)}" />
+          <div class="row-meta" style="margin-top:6px">Больше — чище, но мягче кожа и ткань</div>
+        </div>
+        <label class="checkbox-row" style="margin-top:0">
+          <input type="checkbox" id="enhancePreclean"${enhanceOpts.preclean ? ' checked' : ''} />
+          <span>Чистить до увеличения — для плохой связи</span>
+        </label>
+      </div>
+    </details>
     ${connectedHtml}`)) return;
+  bindEnhanceDemo();
   bindCopyButtons(enhanceBodyEl);
   enhanceBodyEl.querySelectorAll('#enhanceTargetSeg button').forEach((btn) => {
     btn.onclick = () => setEnhanceTarget(btn.dataset.target);
   });
+  enhanceBodyEl.querySelectorAll('#enhanceStyleSeg button').forEach((btn) => {
+    btn.onclick = () => setEnhanceOpt('style', btn.dataset.style);
+  });
+  enhanceBodyEl.querySelectorAll('#enhanceSmoothSeg button').forEach((btn) => {
+    btn.onclick = () => setEnhanceOpt('smooth', btn.dataset.smooth === '1');
+  });
+  document.getElementById('enhancePreclean').onchange = (e) => setEnhanceOpt('preclean', e.target.checked);
+  // Спойлер помним сами: раздел перерисовывается на каждое изменение статуса.
+  const advanced = document.getElementById('enhanceAdvanced');
+  advanced.ontoggle = () => {
+    if (advanced.open === enhanceAdvancedOpen) return;
+    enhanceAdvancedOpen = advanced.open;
+    renderEnhanceBody();
+  };
+  // Ползунки: пока тянут — меняем только цифру (перерисовка оборвала бы
+  // перетаскивание), а применяем и перезапускаем воркер, когда отпустили.
+  for (const [id, outId, key] of [['enhanceStrength', 'enhanceStrengthOut', 'strength'], ['enhanceClean', 'enhanceCleanOut', 'clean']]) {
+    const input = document.getElementById(id);
+    input.oninput = () => { document.getElementById(outId).textContent = `${input.value}%`; };
+    input.onchange = () => setEnhanceOpt(key, Number(input.value) / 100);
+  }
 }
 
 function applyEnhanceState() {
@@ -2865,7 +2992,7 @@ async function connectEnhance(name) {
   clearEnhanceError();
   enhanceSwitchEl.classList.add('on');
   try {
-    await enhancePost('/api/enhance/connect', { name, target: enhanceTarget });
+    await enhancePost('/api/enhance/connect', { name, target: enhanceTarget, ...enhanceOpts });
   } catch (e) {
     showEnhanceError(`Улучшение не включилось: ${e.message}`);
   } finally {
@@ -2898,6 +3025,17 @@ function setEnhanceTarget(value) {
   localStorage.setItem(ENHANCE_TARGET_KEY, value);
   renderEnhanceBody();
   if (enhanceState.connected && enhanceState.streamName && enhanceState.target !== value) {
+    connectEnhance(enhanceState.streamName);
+  }
+}
+
+// Остальные настройки (характер, сила, очистка, плавность) меняются так же —
+// перезапуском воркера на ходу. Имена ключей совпадают с полями /api/enhance/status.
+function setEnhanceOpt(key, value) {
+  enhanceOpts[key] = value;
+  localStorage.setItem(ENHANCE_OPTS_KEY, JSON.stringify(enhanceOpts));
+  renderEnhanceBody();
+  if (enhanceState.connected && enhanceState.streamName && enhanceState[key] !== value) {
     connectEnhance(enhanceState.streamName);
   }
 }
@@ -2937,6 +3075,10 @@ enhanceSwitchEl.onclick = () => {
   }
   if (!enhanceState.imageExists) {
     showEnhanceError('Сначала нажми «Скачать» ниже — улучшению нужна своя программа на сервере.');
+    return;
+  }
+  if (enhanceState.imageOutdated) {
+    showEnhanceError('Сначала нажми «Обновить» ниже — улучшение обновилось.');
     return;
   }
   const stream = enhanceCandidateStream();

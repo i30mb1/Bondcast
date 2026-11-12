@@ -70,6 +70,32 @@ const ENHANCE_CONTAINER = 'enhance-worker';
 const ENHANCE_IMAGE = 'bondcast-enhance:latest';
 const ENHANCE_SUFFIX = '_enh';
 const ENHANCE_TARGETS = ['auto', 'same', '1080', '1440', '2160'];
+// Характер апскейла (см. plan_output в enhance/app/main.py): natural — как снято,
+// sharp — резче, но «дорисованнее». Что лучше, зависит от сцены — выбирает человек.
+const ENHANCE_STYLES = ['natural', 'sharp'];
+
+// Доля 0..1 из запроса или из Env контейнера. Пусто и мусор — значение по умолчанию;
+// округление до сотых, чтобы сравнение «настройки поменялись?» не спотыкалось о хвосты.
+function unitParam(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.round(Math.min(1, Math.max(0, n)) * 100) / 100;
+}
+
+// Настройки улучшения из тела запроса. Умолчания — те же, что у воркера без
+// переменных (enhance/app/main.py): старая панель и прямой docker run ведут себя одинаково.
+function enhanceOptions(body) {
+  const b = body || {};
+  return {
+    target: ENHANCE_TARGETS.includes(String(b.target)) ? String(b.target) : 'auto',
+    style: ENHANCE_STYLES.includes(String(b.style)) ? String(b.style) : 'natural',
+    strength: unitParam(b.strength, 1),
+    clean: unitParam(b.clean, 1),
+    preclean: b.preclean === true,
+    smooth: b.smooth === true,
+  };
+}
 const enhancedName = (name) => `${name}${ENHANCE_SUFFIX}`;
 const isEnhancedName = (name) => typeof name === 'string' && name.endsWith(ENHANCE_SUFFIX);
 
@@ -1902,23 +1928,64 @@ function pushEnhanceBuildLine(line) {
   enhanceBuildEmitter.emit('line', line);
 }
 
-async function enhanceImageExists() {
+// Отпечаток исходников воркера. Образ тяжёлый и собирается один раз по кнопке,
+// поэтому после обновления Bondcast на диске лежат новые исходники, а образ остаётся
+// старый: панель слала бы воркеру настройки, которых он не знает, и они молча не
+// работали бы. Отпечаток кладём меткой в образ при сборке и сверяем с диском: не
+// совпал (или метки нет — образ собран до этой проверки) — просим обновить.
+const ENHANCE_CONTEXT = '/build-context/enhance';
+const ENHANCE_CONTEXT_FILES = ['Dockerfile', 'requirements.txt', 'app'];
+const ENHANCE_FINGERPRINT_LABEL = 'bondcast.enhance.fingerprint';
+
+function enhanceFingerprint() {
+  const hash = crypto.createHash('sha256');
+  const walk = (rel) => {
+    const full = path.join(ENHANCE_CONTEXT, rel);
+    if (fs.statSync(full).isDirectory()) {
+      for (const name of fs.readdirSync(full).sort()) {
+        if (name === '__pycache__' || name.endsWith('.pyc')) continue;
+        walk(path.posix.join(rel, name));
+      }
+      return;
+    }
+    hash.update(`${rel}|`);
+    hash.update(fs.readFileSync(full));
+    hash.update('|');
+  };
   try {
-    await docker.getImage(ENHANCE_IMAGE).inspect();
-    return true;
+    ENHANCE_CONTEXT_FILES.forEach(walk);
+    return hash.digest('hex').slice(0, 16);
   } catch (e) {
-    return false;
+    return null; // исходников не видно — сверять не с чем, проверкой не мешаем
   }
 }
 
-function enhanceSpec(streamName, target) {
+// 'missing' — образа нет, 'outdated' — собран из других исходников, 'ready' — годен.
+async function enhanceImageState() {
+  let info;
+  try {
+    info = await docker.getImage(ENHANCE_IMAGE).inspect();
+  } catch (e) {
+    return 'missing';
+  }
+  const want = enhanceFingerprint();
+  const have = (info.Config && info.Config.Labels && info.Config.Labels[ENHANCE_FINGERPRINT_LABEL]) || null;
+  return want && have !== want ? 'outdated' : 'ready';
+}
+
+function enhanceSpec(streamName, opts) {
   return {
     name: ENHANCE_CONTAINER,
     Image: ENHANCE_IMAGE,
     Env: [
       `ENHANCE_SOURCE=${streamName}`,
       `ENHANCE_OUTPUT=${enhancedName(streamName)}`,
-      `ENHANCE_TARGET=${target}`,
+      `ENHANCE_TARGET=${opts.target}`,
+      `ENHANCE_STYLE=${opts.style}`,
+      `ENHANCE_STRENGTH=${opts.strength}`,
+      `ENHANCE_CLEAN=${opts.clean}`,
+      `ENHANCE_PRECLEAN=${opts.preclean ? 1 : 0}`,
+      `ENHANCE_SMOOTH=${opts.smooth ? 1 : 0}`,
       // Без "all" (по умолчанию только compute,utility) в контейнер не попадает
       // libnvidia-ngx — VSR падает на load() с кодом -12. А NVENC нужен "video".
       'NVIDIA_DRIVER_CAPABILITIES=all',
@@ -1945,10 +2012,19 @@ async function readEnhanceContainer() {
       running: info.State.Running,
       streamName: findEnv('ENHANCE_SOURCE'),
       target: findEnv('ENHANCE_TARGET'),
+      // Контейнер, созданный до появления стилей, работал в резком режиме.
+      style: findEnv('ENHANCE_STYLE') || 'sharp',
+      strength: unitParam(findEnv('ENHANCE_STRENGTH'), 1),
+      clean: unitParam(findEnv('ENHANCE_CLEAN'), 1),
+      preclean: findEnv('ENHANCE_PRECLEAN') === '1',
+      smooth: findEnv('ENHANCE_SMOOTH') === '1',
       exitCode: info.State.Running ? null : info.State.ExitCode,
     };
   } catch (e) {
-    return { exists: false, running: false, streamName: null, target: null, exitCode: null };
+    return {
+      exists: false, running: false, streamName: null, exitCode: null,
+      target: null, style: null, strength: null, clean: null, preclean: null, smooth: null,
+    };
   }
 }
 
@@ -2096,7 +2172,7 @@ app.post('/api/enhance/build', async (req, res) => {
   try {
     const stream = await docker.buildImage(
       { context: '/build-context/enhance', src: ['Dockerfile', 'requirements.txt', 'app'] },
-      { t: ENHANCE_IMAGE },
+      { t: ENHANCE_IMAGE, labels: { [ENHANCE_FINGERPRINT_LABEL]: enhanceFingerprint() || '' } },
     );
     docker.modem.followProgress(
       stream,
@@ -2134,7 +2210,7 @@ app.get('/api/enhance/build/logs', (req, res) => {
 });
 
 app.get('/api/enhance/status', async (req, res) => {
-  const [imageExists, container] = await Promise.all([enhanceImageExists(), readEnhanceContainer()]);
+  const [imageState, container] = await Promise.all([enhanceImageState(), readEnhanceContainer()]);
   let outputLive = false;
   if (container.running && container.streamName) {
     try {
@@ -2149,12 +2225,18 @@ app.get('/api/enhance/status', async (req, res) => {
   if (container.running) error = lastError;
   else if (container.exists && container.exitCode) error = lastError || `воркер остановился с кодом ${container.exitCode}`;
   res.json({
-    imageExists,
+    imageExists: imageState !== 'missing',
+    imageOutdated: imageState === 'outdated',
     buildStatus: enhanceBuildStatus,
     buildError: enhanceBuildError,
     connected: container.running,
     streamName: container.running ? container.streamName : null,
     target: container.target,
+    style: container.style,
+    strength: container.strength,
+    clean: container.clean,
+    preclean: container.preclean,
+    smooth: container.smooth,
     outputName: container.running && container.streamName ? enhancedName(container.streamName) : null,
     outputLive,
     stats: container.running ? stats : null,
@@ -2172,9 +2254,12 @@ app.post('/api/enhance/connect', async (req, res) => {
   if (!STREAM_NAME_RE.test(name) || isEnhancedName(name)) {
     return res.status(400).json({ error: 'некорректное имя стрима' });
   }
-  const target = ENHANCE_TARGETS.includes(String(req.body && req.body.target)) ? String(req.body.target) : 'auto';
-  if (!(await enhanceImageExists())) {
-    return res.status(409).json({ error: 'сначала скачай улучшение — кнопка «Скачать»' });
+  const opts = enhanceOptions(req.body);
+  const imageState = await enhanceImageState();
+  if (imageState !== 'ready') {
+    return res.status(409).json({
+      error: imageState === 'missing' ? 'сначала скачай улучшение — кнопка «Скачать»' : 'сначала обнови улучшение — кнопка «Обновить»',
+    });
   }
   try {
     // Другой стрим или новые настройки — сначала вернуть OBS на исходник: ссылка
@@ -2194,10 +2279,11 @@ app.post('/api/enhance/connect', async (req, res) => {
     await ensureNetwork();
     enhanceObs.retryAt = 0;
     enhanceObs.error = null;
-    const container = await docker.createContainer(enhanceSpec(name, target));
+    const container = await docker.createContainer(enhanceSpec(name, opts));
     await container.start();
-    logger.log('panel', 'info', `улучшение картинки включено для "${name}", цель ${target}`);
-    res.json({ ok: true, streamName: name, target });
+    logger.log('panel', 'info', `улучшение картинки включено для "${name}": цель ${opts.target}, стиль ${opts.style}, `
+      + `сила ${opts.strength}, очистка ${opts.clean}${opts.preclean ? ' (и перед увеличением)' : ''}${opts.smooth ? ', плавность' : ''}`);
+    res.json({ ok: true, streamName: name, ...opts });
   } catch (e) {
     logger.log('panel', 'error', `улучшение не включилось для "${name}": ${e.message}`);
     res.status(500).json({ error: e.message });
