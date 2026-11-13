@@ -2,6 +2,23 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+:: "/update" - запуск из установщика сразу после тихого обновления (см. [Run] в
+:: installer/setup.iss). Окна нет и спросить некого, поэтому в этом режиме:
+::  - никаких pause и страниц в браузере - скрытое окно с pause висело бы вечно;
+::  - старые контейнеры НЕ сносятся: пересоздаётся только то, что реально
+::    изменилось (обычно одна панель), SRS продолжает принимать эфир;
+::  - в конце браузер не открывается - открытая панель перезагрузится сама,
+::    когда увидит, что сервер стал другим (bootId в app.js).
+set "UPDATE_MODE=0"
+if /i "%~1"=="/update" set "UPDATE_MODE=1"
+
+:: Without this every "docker compose build" stamps a fresh provenance attestation
+:: into the image, so the image ID changes even when nothing was rebuilt (all layers
+:: cached) - and "docker compose up" then recreates srtla-rec and the panel on every
+:: run. With attestations off an unchanged service keeps its image ID and its running
+:: container: after an update only what really changed restarts, the stream goes on.
+set "BUILDX_NO_DEFAULT_ATTESTATIONS=1"
+
 :: Title stays plain ASCII for the same codepage reason as the echo text below -
 :: it's still useful even to a non-technical user as a "something is happening,
 :: this window is fine" signal, updated again at each stage further down.
@@ -104,6 +121,7 @@ if not "%HOST_IP_OVERRIDE%"=="" (
 )
 
 where docker >nul 2>nul
+if errorlevel 1 if "%UPDATE_MODE%"=="1" exit /b 1
 if errorlevel 1 (
   echo.
   echo Docker was not found on PATH. Opening install instructions in your browser...
@@ -147,6 +165,7 @@ if exist "%DOCKER_DESKTOP_EXE%" (
   )
 )
 
+if "%UPDATE_MODE%"=="1" exit /b 1
 echo.
 echo Docker Desktop still isn't responding. Opening instructions in your browser...
 start "" "docker-not-running.html"
@@ -160,6 +179,10 @@ exit /b 1
 :: so make sure it exists before compose ever runs. Only missing when running
 :: straight from a git checkout (the installer writes the real version on install).
 if not exist "%~dp0VERSION" echo dev> "%~dp0VERSION"
+
+:: После обновления стек уже работает: порты заняты нашими же контейнерами, а
+:: сносить их нельзя - там может идти эфир. Сразу к сборке.
+if "%UPDATE_MODE%"=="1" goto build
 
 :: Force-remove any leftover containers from a previous run before recreating them.
 :: Needed because the panel can also start/stop/recreate srs and srtla-rec directly
@@ -201,6 +224,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
+:build
 title Bondcast Stream - building (first run takes a few minutes)...
 echo Setting up the streaming server - srs, srtla-rec, panel...
 echo First run downloads and builds everything from scratch - can take several minutes, this is normal.
@@ -210,12 +234,14 @@ echo Please don't close this window.
 :: only when someone actually wants subtitles, not on every plain startup.
 :: Same for enhance-worker (picture enhancement on NVIDIA, ~3 GB).
 docker compose build --progress=plain srs srtla-rec panel
+if errorlevel 1 if "%UPDATE_MODE%"=="1" goto updateFailed
 if errorlevel 1 (
   echo.
   echo Build failed. See output above.
   pause
   exit /b 1
 )
+if "%UPDATE_MODE%"=="1" goto updateUp
 docker compose up -d
 if errorlevel 1 (
   echo.
@@ -236,6 +262,23 @@ title Bondcast Stream - running (opening browser)
 echo Done! Opening the panel in your browser...
 start "" "http://localhost:8081"
 exit /b 0
+
+:updateUp
+:: Пересоздаём только изменившееся. Если srs/srtla-rec когда-то пересоздавала сама
+:: панель через Docker API, compose может споткнуться о занятое имя - тогда
+:: обновляем хотя бы панель, остальное подтянется при следующем обычном запуске.
+docker compose up -d
+if not errorlevel 1 exit /b 0
+docker compose up -d --no-deps panel
+if not errorlevel 1 exit /b 0
+
+:updateFailed
+:: Старая панель, скорее всего, ещё жива - говорим ей, что перезапуск не вышел,
+:: чтобы на странице появилась понятная подсказка, а не вечное "перезапускаю".
+:: Текст ошибки - кодом: кириллица в .bat ломается на консолях с не-UTF-8 кодировкой,
+:: расшифровывает его app.js.
+curl -s -o nul -X POST -H "Content-Type: application/json" -d "{\"status\":\"error\",\"percent\":100,\"message\":\"restart-failed\"}" http://localhost:8081/api/update/progress
+exit /b 1
 
 :checkDocker
 powershell -NoProfile -Command ^

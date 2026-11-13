@@ -100,6 +100,13 @@ Root: HKCU; Subkey: "Software\Classes\bondcast-update\shell\open\command"; Value
 ; Чекбокс на странице Finished, отмечен по умолчанию (postinstall) - запускает
 ; тот же ярлык, что остаётся на рабочем столе.
 Filename: "{app}\start.bat"; Description: "Запустить трансляцию сейчас"; WorkingDir: "{app}"; Flags: postinstall shellexec skipifsilent runasoriginaluser
+; Тихая установка — это обновление из панели (update.ps1 запускает установщик с
+; /VERYSILENT). Раньше после неё человеку писали «закрой окно и перезапусти ярлык»:
+; файлы уже новые, а панель в Docker-образе старая. Теперь перезапускаем сами —
+; start.bat в режиме /update пересобирает панель без окна и не трогает SRS.
+; Запуск стоит именно здесь, а не в update.ps1: скрипт обновления всегда работает
+; из ПРЕДЫДУЩЕЙ версии, а [Run] — уже из новой.
+Filename: "{cmd}"; Parameters: "/c """"{app}\start.bat"" /update"""; WorkingDir: "{app}"; Flags: runhidden nowait; Check: WizardSilent
 
 [Code]
 var

@@ -1224,8 +1224,14 @@ app.get('/api/update/status', (req, res) => {
   });
 });
 
+// bootId меняется с каждым запуском панели. Страница запоминает его в начале
+// обновления и перезагружается, как только увидит другой: значит, панель уже
+// пересобрана и поднялась новая (см. pollUpdateProgress в app.js). По номеру версии
+// так не понять — VERSION установщик меняет сразу, ещё при старой панели.
+const BOOT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 app.get('/api/update/progress', (req, res) => {
-  res.json(updateProgress);
+  res.json({ ...updateProgress, bootId: BOOT_ID });
 });
 
 // --- OBS: время жизни стримов + «Умный переключатель сцен» ------------------

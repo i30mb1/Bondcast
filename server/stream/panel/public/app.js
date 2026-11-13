@@ -2680,6 +2680,13 @@ let updateConfirmPending = false;
 let updateInProgress = false;
 let updateProgressTimer = null;
 let updateStartTimeoutTimer = null;
+// Каким был сервер в начале обновления (bootId из /api/update/progress). Другой
+// bootId в ответе = панель уже перезапустилась новой, пора перезагрузить страницу.
+let updateBootId = null;
+// Перезапуск не уложился в отведённое время — говорим, что сделать руками.
+let updateRestartTimer = null;
+const UPDATE_RESTART_LIMIT_MS = 5 * 60 * 1000;
+const UPDATE_RESTART_FAILED = 'Не перезапустилось само — запусти ярлык «Запустить трансляцию»';
 
 function resetUpdateButton() {
   updateConfirmPending = false;
@@ -2715,15 +2722,32 @@ function renderUpdateProgress(data) {
     // не отдаёт наружу прогресс копирования файлов, честнее не выдумывать процент.
     updateProgressBarEl.removeAttribute('value');
     updateProgressTextEl.textContent = 'Устанавливаю…';
+  } else if (data.status === 'restarting') {
+    // Файлы уже новые, установщик сам пересобирает панель (start.bat /update).
+    // Опрос не останавливаем: по нему и поймём, что поднялась новая панель.
+    clearUpdateStartTimeout();
+    updateProgressBarEl.removeAttribute('value');
+    if (!updateRestartTimer) {
+      updateProgressTextEl.textContent = 'Перезапускаю — страница обновится сама';
+      updateRestartTimer = setTimeout(() => {
+        updateProgressTextEl.textContent = UPDATE_RESTART_FAILED;
+        stopUpdateProgressPolling();
+      }, UPDATE_RESTART_LIMIT_MS);
+    }
   } else if (data.status === 'done') {
+    // Сюда приходит только «обновлять нечего»: после настоящей установки статус —
+    // restarting, и страница перезагружается сама.
     clearUpdateStartTimeout();
     updateProgressBarEl.value = 100;
-    updateProgressTextEl.textContent = `Готово — закрой окно и ${RESTART}`;
+    updateProgressTextEl.textContent = 'Уже стоит последняя версия';
     stopUpdateProgressPolling();
   } else if (data.status === 'error') {
     clearUpdateStartTimeout();
+    clearTimeout(updateRestartTimer);
     updateProgressBarEl.removeAttribute('value');
-    updateProgressTextEl.textContent = `Не обновилось: ${data.message || 'причина неизвестна'}`;
+    updateProgressTextEl.textContent = data.message === 'restart-failed'
+      ? UPDATE_RESTART_FAILED
+      : `Не обновилось: ${data.message || 'причина неизвестна'}`;
     stopUpdateProgressPolling();
   } else {
     updateProgressBarEl.removeAttribute('value');
@@ -2731,10 +2755,25 @@ function renderUpdateProgress(data) {
   }
 }
 
+// Панель перезапустилась новой — перезагружаем страницу: в браузере ещё старый
+// скрипт, а сервер уже другой. Ошибки опроса в промежутке — норма: контейнер
+// пересоздаётся, несколько секунд панель не отвечает.
+function reloadIfPanelRestarted(data) {
+  if (!data.bootId) return false;
+  if (updateBootId === null) {
+    updateBootId = data.bootId;
+    return false;
+  }
+  if (data.bootId === updateBootId) return false;
+  window.location.reload();
+  return true;
+}
+
 async function pollUpdateProgress() {
   try {
     const res = await fetch('/api/update/progress');
     const data = await res.json();
+    if (reloadIfPanelRestarted(data)) return;
     if (data.status && data.status !== 'idle') renderUpdateProgress(data);
   } catch (e) {
     // тихо — попробуем на следующем тике
@@ -2748,6 +2787,7 @@ async function checkResumeUpdateProgress() {
   try {
     const res = await fetch('/api/update/progress');
     const data = await res.json();
+    reloadIfPanelRestarted(data); // первый вызов только запоминает, каким был сервер
     if (data.status && data.status !== 'idle') {
       updateInProgress = true;
       updateBannerEl.hidden = false;
@@ -2765,7 +2805,7 @@ async function checkResumeUpdateProgress() {
 updateBannerBtnEl.onclick = () => {
   if (!updateConfirmPending) {
     updateConfirmPending = true;
-    updateBannerBtnEl.textContent = 'Точно обновить?';
+    updateBannerBtnEl.textContent = hasLiveStream() ? 'Идёт эфир. Всё равно обновить?' : 'Точно обновить?';
     return;
   }
   updateInProgress = true;

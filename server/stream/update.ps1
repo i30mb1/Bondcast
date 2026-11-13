@@ -122,7 +122,10 @@ $process = Start-Process -FilePath $installerPath -ArgumentList '/VERYSILENT', '
 Remove-Item $installerPath -ErrorAction SilentlyContinue
 
 if ($process.ExitCode -eq 0) {
-  Complete-Update 'done' "Обновление до версии $latestVersionRaw установлено. Перезапусти трансляцию (закрой и открой ярлык `"Запустить трансляцию`" заново), чтобы применить изменения."
+  # Перезапуск уже идёт: его запустил сам установщик ([Run] в setup.iss, start.bat /update).
+  # Панель покажет «перезапускаю» и перезагрузит страницу, когда поднимется новая.
+  # MessageBox тут не нужен: если панель не ответила, она как раз перезапускается.
+  Report-Progress -Status 'restarting' -Percent 100 -Message $latestVersionRaw | Out-Null
 } else {
   Complete-Update 'error' "Установка обновления завершилась с кодом $($process.ExitCode) — попробуй ещё раз или установи вручную с GitHub." 'Error'
 }
