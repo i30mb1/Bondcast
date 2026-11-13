@@ -173,3 +173,20 @@ test('OBS не ответил при возврате — пишем в лог �
   assert.strictEqual(obs.scene, 'Камера');
   assert.strictEqual(sw.state.lastError, null);
 });
+
+test('настройки запоминаются и выключенными — заглушку выбирают до эфира', async () => {
+  const { sw, obs, tick, stream } = setup();
+  await sw.applySettings({ enabled: false, watchStreamName: 'potato', fallbackScene: 'Перерыв', delaySec: 5, minBitrateKbps: 1500 });
+  assert.strictEqual(sw.state.state, 'idle');
+  assert.strictEqual(sw.state.fallbackScene, 'Перерыв');
+  assert.strictEqual(sw.state.watchStreamName, 'potato');
+  assert.strictEqual(sw.state.delaySec, 5);
+  // Выключенная заглушка сцену не трогает, даже когда эфир пропал.
+  await tick(stream(5000));
+  for (let i = 0; i < 5; i++) await tick([]);
+  assert.strictEqual(obs.scene, 'Камера');
+  // Пустые значения выбор не стирают.
+  await sw.applySettings({ enabled: false, watchStreamName: null, fallbackScene: null, delaySec: 5, minBitrateKbps: 1500 });
+  assert.strictEqual(sw.state.fallbackScene, 'Перерыв');
+  assert.strictEqual(sw.state.watchStreamName, 'potato');
+});

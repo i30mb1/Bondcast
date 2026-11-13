@@ -134,7 +134,7 @@ function createSceneSwitcher({
   async function applySettings({ enabled, watchStreamName, fallbackScene, delaySec, minBitrateKbps }) {
     // Смена отслеживаемого стрима или выключение — сбрасываем текущий цикл
     // переключения, чтобы не словить лишнее переключение сцены на стыке смены настроек.
-    if (watchStreamName !== state.watchStreamName || !enabled) {
+    if ((watchStreamName && watchStreamName !== state.watchStreamName) || !enabled) {
       clearPendingSwitch();
       if (state.state === 'switched') await switchBackToLive();
       watchedStreamWasLive = null;
@@ -144,7 +144,7 @@ function createSceneSwitcher({
     }
 
     // Сменили заглушку прямо во время показа заглушки — сразу показываем новую.
-    if (enabled && state.state === 'switched' && fallbackScene !== state.fallbackScene) {
+    if (enabled && fallbackScene && state.state === 'switched' && fallbackScene !== state.fallbackScene) {
       try {
         await obsCall('SetCurrentProgramScene', { sceneName: fallbackScene });
       } catch (e) {
@@ -153,8 +153,10 @@ function createSceneSwitcher({
     }
 
     state.enabled = enabled;
-    state.watchStreamName = enabled ? watchStreamName : null;
-    state.fallbackScene = enabled ? fallbackScene : state.fallbackScene; // помним выбор даже выключенным
+    // Стрим и сцену помним и выключенными: заглушку настраивают заранее, до эфира,
+    // а включают одним тумблером. Пустое значение выбор не стирает.
+    if (watchStreamName) state.watchStreamName = watchStreamName;
+    if (fallbackScene) state.fallbackScene = fallbackScene;
     state.delaySec = delaySec;
     state.minBitrateKbps = minBitrateKbps;
     // Правка задержки/порога/заглушки во время показа заглушки не должна

@@ -1353,8 +1353,11 @@ app.get('/api/obs/scene-switcher', (req, res) => {
 app.post('/api/obs/scene-switcher', async (req, res) => {
   const body = req.body || {};
   const enabled = Boolean(body.enabled);
-  const watchStreamName = body.watchStreamName != null ? String(body.watchStreamName).trim() : null;
-  const fallbackScene = body.fallbackScene != null ? String(body.fallbackScene).trim() : null;
+  // Настройки приходят и при выключенном тумблере (заглушку выбирают заранее) —
+  // тогда кривое имя стрима просто не запоминаем, а не отвечаем ошибкой.
+  const rawWatch = body.watchStreamName != null ? String(body.watchStreamName).trim() : '';
+  const watchStreamName = enabled || STREAM_NAME_RE.test(rawWatch) ? rawWatch || null : null;
+  const fallbackScene = body.fallbackScene != null ? String(body.fallbackScene).trim() || null : null;
   const rawDelay = Number(body.delaySec);
   const delaySec = Number.isFinite(rawDelay) ? Math.min(60, Math.max(0, rawDelay)) : sceneSwitcher.state.delaySec;
   const rawMinBitrate = Number(body.minBitrateKbps);
@@ -1376,7 +1379,7 @@ app.post('/api/obs/scene-switcher', async (req, res) => {
       await ensureObsConnected();
     } catch (e) {
       return res.status(502).json({
-        error: 'Не удалось подключиться к OBS — включи WebSocket-сервер (Tools → WebSocket Server Settings, порт 4455) и попробуй снова.',
+        error: 'OBS не отвечает — включи в нём WebSocket-сервер',
         // Клиент (app.js) по этому коду показывает не просто текст ошибки, а
         // полную инструкцию (OBS_WEBSOCKET_HOWTO) прямо на месте, вместо
         // "смотри подсказку в другом сценарии".
@@ -1684,7 +1687,7 @@ app.post('/api/captions/connect', async (req, res) => {
     return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
   }
   if (!(await imageExists())) {
-    return res.status(409).json({ error: 'образ ещё не собран — нажми «Собрать»' });
+    return res.status(409).json({ error: 'сначала скачай распознавание — кнопка «Скачать»' });
   }
 
   try {
@@ -1750,7 +1753,7 @@ app.post('/api/captions/enroll', async (req, res) => {
     return res.status(500).json({ error: 'PROJECT_ROOT не задан — запусти ярлык «Запустить трансляцию», а не docker вручную' });
   }
   if (!(await imageExists())) {
-    return res.status(409).json({ error: 'образ ещё не собран — нажми «Собрать»' });
+    return res.status(409).json({ error: 'сначала скачай распознавание — кнопка «Скачать»' });
   }
   if (enrollStatus === 'running') {
     return res.status(409).json({ error: 'запись уже идёт' });
