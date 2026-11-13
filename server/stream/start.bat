@@ -264,6 +264,17 @@ start "" "http://localhost:8081"
 exit /b 0
 
 :updateUp
+:: Идёт ли эфир - от этого зависит, можно ли трогать SRS. Обновление может принести
+:: ему новый образ, и тогда "up -d" пересоздаст контейнер, а вслед за ним перезапустит
+:: srtla-rec - restart: true в docker-compose.yml. Это обрыв эфира на несколько секунд.
+:: SRS не ответил - считаем, что эфира нет: рвать нечего, а поднимать его надо.
+set "SRS_LIVE=0"
+set "SRS_STREAMS=%TEMP%\bondcast-srs-streams.json"
+del /q "%SRS_STREAMS%" >nul 2>nul
+curl -s -m 3 -o "%SRS_STREAMS%" http://localhost:1985/api/v1/streams/
+if exist "%SRS_STREAMS%" findstr /C:"\"active\":true" "%SRS_STREAMS%" >nul && set "SRS_LIVE=1"
+if "%SRS_LIVE%"=="1" goto updateKeepSrs
+
 :: Пересоздаём только изменившееся. Если srs/srtla-rec когда-то пересоздавала сама
 :: панель через Docker API, compose может споткнуться о занятое имя - тогда
 :: обновляем хотя бы панель, остальное подтянется при следующем обычном запуске.
@@ -271,6 +282,14 @@ docker compose up -d
 if not errorlevel 1 goto updateSrsConf
 docker compose up -d --no-deps panel
 if not errorlevel 1 goto updateSrsConf
+goto updateFailed
+
+:updateKeepSrs
+:: Эфир идёт: обновляем панель и оверлей, а SRS и srtla-rec не трогаем вовсе.
+:: Их новый образ и конфиг подтянутся при следующем запуске ярлыком - тот сносит
+:: и поднимает всё заново.
+docker compose up -d --no-deps panel overlay
+if not errorlevel 1 exit /b 0
 goto updateFailed
 
 :updateSrsConf

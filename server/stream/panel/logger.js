@@ -46,10 +46,54 @@ const NOISE = [
   /keepalive/i,
   // nginx оверлея: успешная отдача статики. Ошибки (4xx/5xx) под это не подпадают.
   /"(GET|HEAD) [^"]*" (200|204|304) /,
+  // SRS: уборка закрытых TCP-соединений. Пишется от имени менеджера соединений, а не
+  // самого соединения, после каждого закрытия — в том числе после каждого опроса API
+  // панелью, то есть раз в 2 секунды круглые сутки.
+  /TCP: clear zombies=/,
 ];
 
 function isNoise(message) {
   return NOISE.some((re) => re.test(message));
+}
+
+// Цветовые коды терминала: SRS красит WARN и ERROR, причём сброс цвета приезжает
+// в начале СЛЕДУЮЩЕЙ строки. В файле это мусор, а регулярки, привязанные к началу
+// строки, об него спотыкаются.
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+// SRS подписывает каждую строку соединением, которое её вызвало:
+// [дата][уровень][pid][cid]. По cid строки одного соединения и собираются вместе.
+const SRS_CID = /^\[[\d-]+ [\d:.]+\]\[\w+\]\[\d+\]\[([a-z0-9]+)\]/;
+// Запрос списка стримов. Панель шлёт его сама раз в 2 секунды (monitorTick в
+// server.js), плюс каждая открытая вкладка и каждый клиент NOALBS.
+const SRS_API_POLL = / GET http:\/\/\S+\/api\/v1\/streams\/?[,\s]/;
+// Последняя строка соединения — после неё этот cid больше не встретится.
+const SRS_CONN_END = /TCP: disposing #\d+ resource\(/;
+const POLL_CIDS_MAX = 64;
+
+// Фильтр опроса API. Одно такое соединение — это пять строк в логе SRS (запрос, разбор
+// соединения, «клиент отключился», уборка), и на стеке без эфира они давали 98% файла:
+// 15 МБ ротации хватало на десять часов простоя, и эфир, ради которого лог просили,
+// из него вымывался. Глушим соединение целиком, по cid, а не по тексту строк: те же
+// «TCP: before dispose» и «client disconnect peer» SRS пишет и про настоящего зрителя
+// (OBS, превью), и там они как раз нужны — по ним видно, когда и почему он отвалился.
+function createPollFilter() {
+  const pollCids = new Set();
+  return function isPollChatter(text) {
+    const m = SRS_CID.exec(text);
+    if (!m) return false;
+    const cid = m[1];
+    if (SRS_API_POLL.test(text)) {
+      pollCids.add(cid);
+      // SRS перезапустили посреди опроса — «последней строки» у соединения не будет.
+      // Чтобы набор не рос, выкидываем самый старый cid.
+      if (pollCids.size > POLL_CIDS_MAX) pollCids.delete(pollCids.values().next().value);
+      return true;
+    }
+    if (!pollCids.has(cid)) return false;
+    if (SRS_CONN_END.test(text)) pollCids.delete(cid);
+    return true;
+  };
 }
 
 // Повтор — это «то же самое сообщение с другими числами»: счётчики пакетов,
@@ -78,6 +122,7 @@ function createLogger(options = {}) {
   // Накопитель повторов: первую строку пишем сразу (ошибку надо видеть немедленно),
   // а её повторы копим и выдаём одной сводкой.
   let pending = null; // { key, service, level, firstMs, lastMs, count }
+  const isPollChatter = createPollFilter();
 
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -149,8 +194,9 @@ function createLogger(options = {}) {
 
   function log(service, level, message) {
     if ((LEVELS[level] || LEVELS.info) < threshold) return;
-    const text = String(message).replace(/\s+$/, '');
+    const text = String(message).replace(ANSI, '').replace(/\s+$/, '');
     if (!text || isNoise(text)) return;
+    if (service === 'srs' && isPollChatter(text)) return;
 
     const ms = now();
     const key = `${service} ${normalize(text)}`;

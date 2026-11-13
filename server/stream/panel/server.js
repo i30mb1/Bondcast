@@ -231,7 +231,8 @@ setInterval(checkForUpdate, 30 * 60 * 1000);
 const SPECS = {
   srs: {
     name: 'srs',
-    Image: 'ossrs/srs:v6.0-r0',
+    // Тот же тег, что в docker-compose.yml (почему именно r3 — там же). Менять вместе.
+    Image: 'ossrs/srs:v6.0-r3',
     Cmd: ['./objs/srs', '-c', 'conf/srs.conf'],
     ExposedPorts: { '1935/tcp': {}, '1985/tcp': {}, '8080/tcp': {}, '10080/udp': {} },
     HostConfig: {
@@ -251,6 +252,8 @@ const SPECS = {
     Image: 'srtla-rec:latest',
     Entrypoint: ['srtla_rec'],
     Cmd: ['5000', 'srs', '10080'],
+    // stop_grace_period из docker-compose.yml: srtla_rec не ловит SIGTERM.
+    StopTimeout: 1,
     ExposedPorts: { '5000/udp': {} },
     HostConfig: {
       RestartPolicy: { Name: 'unless-stopped' },
@@ -266,6 +269,43 @@ async function ensureNetwork() {
   } catch (e) {
     if (e.statusCode !== 409) throw e; // 409 = уже существует, это ок
   }
+}
+
+// srtla_rec узнаёт адрес "srs" один раз, при своём старте, и дальше шлёт туда
+// вслепую. Запущенный или пересозданный SRS мог получить в сети другой адрес —
+// тогда бондинг молча уходил бы в пустоту до полного перезапуска стека. Когда
+// SRS поднимает compose, srtla-rec за ним перезапускает он сам (restart: true в
+// docker-compose.yml); здесь — то же для запуска кнопкой в панели, мимо compose.
+async function resyncSrtlaRec() {
+  try {
+    const srtlaRec = docker.getContainer('srtla-rec');
+    const info = await srtlaRec.inspect();
+    if (!info.State.Running) return;
+    // t: 1 — srtla_rec не ловит SIGTERM, без этого остановка ждёт штатные 10 с.
+    await srtlaRec.restart({ t: 1 });
+    logger.log('panel', 'info', 'srtla-rec перезапущен вслед за SRS — заново узнаёт его адрес');
+  } catch (e) {
+    if (e.statusCode !== 404) logger.log('panel', 'warn', `не удалось перезапустить srtla-rec вслед за SRS: ${e.message}`);
+  }
+}
+
+// Образ SRS берётся из реестра, а не собирается здесь. Обычно его уже скачал
+// compose, но обновление, пришедшее посреди эфира, оставляет SRS на прежнем
+// образе до следующего запуска (см. :updateUp в start.bat) — и нового тега из
+// SPECS на машине ещё нет. Без скачивания «Создать и запустить» упала бы с
+// «No such image».
+async function ensurePulled(image) {
+  try {
+    await docker.getImage(image).inspect();
+    return;
+  } catch (e) {
+    if (e.statusCode !== 404) throw e;
+  }
+  logger.log('panel', 'info', `образа ${image} на машине нет — скачиваю`);
+  const stream = await docker.pull(image);
+  await new Promise((resolve, reject) => {
+    docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+  });
 }
 
 const app = express();
@@ -1080,6 +1120,7 @@ app.post('/api/containers/:name/start', checkAllowed, async (req, res) => {
   try {
     await docker.getContainer(req.params.name).start();
     logger.log('panel', 'info', `запуск контейнера ${req.params.name}: ок`);
+    if (req.params.name === 'srs') await resyncSrtlaRec();
     res.json({ ok: true });
   } catch (e) {
     logger.log('panel', 'error', `запуск контейнера ${req.params.name}: ${e.message}`);
@@ -1102,9 +1143,11 @@ app.post('/api/containers/:name/recreate', checkAllowed, async (req, res) => {
     }
 
     await ensureNetwork();
+    if (name === 'srs') await ensurePulled(SPECS[name].Image);
     const container = await docker.createContainer(SPECS[name]);
     await container.start();
     logger.log('panel', 'info', `пересоздание контейнера ${name}: ок`);
+    if (name === 'srs') await resyncSrtlaRec();
     res.json({ ok: true });
   } catch (e) {
     logger.log('panel', 'error', `пересоздание контейнера ${name}: ${e.message}`);

@@ -23,7 +23,11 @@ networks:
 
 services:
   srs:
-    image: ossrs/srs:v6.0-r0
+    # r3, не r0: в r0 зашит libsrt 1.5.3 с удалённым переполнением стека (CVE-2026-55868 и
+    # 55869), до которого дотягивается любой, кто установил SRT-соединение, — а порты 10080
+    # и 5000 у стримера открыты в интернет. Исправлено в libsrt 1.5.6, он в SRS с 6.0.192.
+    # Тот же тег стоит в SPECS в panel/server.js — менять вместе.
+    image: ossrs/srs:v6.0-r3
     container_name: srs
     command: ["./objs/srs", "-c", "conf/srs.conf"]
     restart: unless-stopped
@@ -44,11 +48,21 @@ services:
     entrypoint: ["srtla_rec"]
     command: ["5000", "srs", "10080"]
     restart: unless-stopped
+    # srtla_rec не ловит SIGTERM, поэтому остановка ждала штатные 10 с до SIGKILL (замер:
+    # перезапуск 10,5 с против 1,6 с). Сохранять ему при выходе нечего.
+    stop_grace_period: 1s
     networks: [bondcast-net]
     ports:
       - "5000:5000/udp"
+    # restart: true — srtla_rec узнаёт адрес "srs" один раз, при своём старте, и дальше шлёт
+    # туда вслепую. Пересоздали SRS (новый образ, обновление) — он мог получить другой адрес
+    # в сети, а бондинг молча уходил бы в пустоту до полного перезапуска. Так compose сам
+    # перезапускает srtla-rec вслед за SRS. Перезапуск SRS рвёт эфир в любом случае, лишнего
+    # обрыва это не добавляет. Запуск SRS мимо compose страхует panel/server.js.
     depends_on:
-      - srs
+      srs:
+        condition: service_started
+        restart: true
     logging: *logging
 
   panel:

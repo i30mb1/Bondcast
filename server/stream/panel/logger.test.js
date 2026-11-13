@@ -164,6 +164,66 @@ test('одинаковые строки разных сервисов не сх�
   assert.strictEqual(logger.tail().length, 2);
 });
 
+// Строки ниже — как их реально пишет SRS 6, вместе с цветовыми кодами: жёлтый включается
+// перед WARN, а сброс цвета приезжает в начале следующей строки.
+const srsLine = (cid, rest, level = 'INFO') => `[2026-11-13 10:37:33.758][${level}][1][${cid}] ${rest}`;
+const pollLines = (cid) => [
+  srsLine(cid, 'HTTP #0 172.18.0.3:59620 GET http://srs:1985/api/v1/streams/, content-length=-1'),
+  srsLine(cid, 'TCP: before dispose resource(HttpConn)(0x5e29f98e1490), conns=1, zombies=0, ign=0, inz=0, ind=0'),
+  `\x1b[33m[2026-11-13 10:37:33.759][WARN][1][${cid}][104] client disconnect peer. ret=1007`,
+  `\x1b[0m${srsLine('o2976ce8', 'TCP: clear zombies=1 resources, conns=1, removing=0, unsubs=0')}`,
+  srsLine(cid, 'TCP: disposing #0 resource(HttpConn)(0x5e29f98e1490), conns=1, disposing=1, zombies=0'),
+];
+
+test('опрос API панелью не попадает в лог — все пять строк соединения', () => {
+  const dir = tmpDir();
+  const logger = createLogger({ dir });
+  for (const line of pollLines('n7q4539f')) logger.log('srs', 'info', line);
+  for (const line of pollLines('72974698')) logger.log('srs', 'info', line);
+  assert.strictEqual(logger.tail().length, 0);
+  // Соединение закрыто — его cid снова обычный, а не «глушить всё, что под ним придёт».
+  logger.log('srs', 'info', srsLine('n7q4539f', 'SRT client ip=172.18.0.6:41559, fd=681887608'));
+  assert.strictEqual(logger.tail().length, 1);
+});
+
+test('те же служебные строки про настоящего зрителя остаются', () => {
+  const dir = tmpDir();
+  const logger = createLogger({ dir });
+  // Зритель по HTTP-FLV между двумя опросами: его запрос и его отключение нужны в логе.
+  for (const line of pollLines('n7q4539f')) logger.log('srs', 'info', line);
+  logger.log('srs', 'info', srsLine('abcd1234', 'HTTP #0 172.18.0.1:43982 GET http://192.168.31.133:8080/live/foo.flv, content-length=-1'));
+  for (const line of pollLines('72974698')) logger.log('srs', 'info', line);
+  logger.log('srs', 'info', srsLine('abcd1234', 'TCP: before dispose resource(HttpConn)(0x5e29f98e4270), conns=1, zombies=0, ign=0, inz=0, ind=0'));
+  logger.log('srs', 'warn', `\x1b[33m[2026-11-13 10:37:40.000][WARN][1][abcd1234][104] client disconnect peer. ret=1007`);
+  logger.log('srs', 'info', `\x1b[0m${srsLine('abcd1234', 'TCP: disposing #0 resource(HttpConn)(0x5e29f98e4270), conns=1, disposing=1, zombies=0')}`);
+  const lines = logger.tail();
+  assert.strictEqual(lines.length, 4);
+  assert.ok(lines[0].includes('/live/foo.flv'));
+  assert.ok(lines[2].includes('client disconnect peer'));
+});
+
+test('опрос глушится только в логе SRS — чужая строка такого же вида проходит', () => {
+  const dir = tmpDir();
+  const logger = createLogger({ dir });
+  logger.log('asr-worker', 'info', srsLine('n7q4539f', 'HTTP #0 172.18.0.3:59620 GET http://srs:1985/api/v1/streams/, content-length=-1'));
+  assert.strictEqual(logger.tail().length, 1);
+});
+
+test('цветовые коды терминала в лог не попадают', () => {
+  const dir = tmpDir();
+  const logger = createLogger({ dir });
+  logger.log('srs', 'warn', '\x1b[33m[2026-11-13 10:37:33.759][WARN][1][abcd1234][104] srt serve error\x1b[0m');
+  const [line] = logger.tail();
+  assert.ok(!line.includes('\x1b'));
+  assert.ok(line.endsWith('srt serve error'));
+});
+
+test('isNoise узнаёт уборку закрытых соединений SRS', () => {
+  assert.ok(isNoise(srsLine('o2976ce8', 'TCP: clear zombies=1 resources, conns=1, removing=0, unsubs=0')));
+  // У SRT-соединений уборка своя и редкая (раз на подключение) — она остаётся.
+  assert.ok(!isNoise(srsLine('3zn85729', 'SRT: clear zombies=1 resources, conns=1, removing=0, unsubs=0')));
+});
+
 test('isNoise узнаёт keepalive srtla и статику оверлея', () => {
   assert.ok(isNoise('got keepalive from 1.2.3.4'));
   assert.ok(isNoise('172.18.0.1 - - [30/Aug/2026:14:00:00 +0000] "GET /app.js HTTP/1.1" 200 4096 "-" "Mozilla"'));
