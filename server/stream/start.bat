@@ -268,9 +268,27 @@ exit /b 0
 :: панель через Docker API, compose может споткнуться о занятое имя - тогда
 :: обновляем хотя бы панель, остальное подтянется при следующем обычном запуске.
 docker compose up -d
-if not errorlevel 1 exit /b 0
+if not errorlevel 1 goto updateSrsConf
 docker compose up -d --no-deps panel
+if not errorlevel 1 goto updateSrsConf
+goto updateFailed
+
+:updateSrsConf
+:: srs.conf примонтирован в контейнер файлом, и SRS читает его только при старте.
+:: Новый конфиг для compose - не изменение сервиса: "up -d" контейнер не трогает, и
+:: настройка из обновления (например, буфер приёма SRT) молча не применялась бы до
+:: следующего запуска ярлыком. Поэтому перезапускаем SRS сами - но только когда в
+:: эфире никого нет: перезапуск рвёт эфир на несколько секунд. Идёт эфир или SRS
+:: не ответил - не трогаем, конфиг подхватится при следующем обычном запуске.
+set "SRS_STREAMS=%TEMP%\bondcast-srs-streams.json"
+curl -s -m 3 -o "%SRS_STREAMS%" http://localhost:1985/api/v1/streams/
+if errorlevel 1 exit /b 0
+findstr /C:"\"code\":0" "%SRS_STREAMS%" >nul
+if errorlevel 1 exit /b 0
+findstr /C:"\"active\":true" "%SRS_STREAMS%" >nul
 if not errorlevel 1 exit /b 0
+docker compose restart srs
+exit /b 0
 
 :updateFailed
 :: Старая панель, скорее всего, ещё жива - говорим ей, что перезапуск не вышел,
