@@ -1844,16 +1844,172 @@ function renderServerStreams(streams) {
       ${s.name !== currentStreamName && s.name !== inviteStreamName && obsPlayUrl(s.name)
         ? `<button type="button" class="copy-addr" data-value="${escapeHtml(obsPlayUrl(s.name))}">Ссылка для OBS</button>`
         : ''}
+      ${srtHealthHtml(s.srtHealth)}
     </div>`,
     )
     .join('');
   // «Пока никого» — только когда и правда никого: раньше эта плашка висела и под
   // живым эфиром.
-  if (!setHtml(serverStreamsEl, slots || '<div class="live-empty">Пока никого</div>')) return;
+  if (!setHtml(serverStreamsEl, (slots || '<div class="live-empty">Пока никого</div>') + netcheckHtml())) return;
   bindCopyButtons(serverStreamsEl);
   serverStreamsEl.querySelectorAll('.server-watch-stream').forEach((btn) => {
     btn.onclick = () => openPreview(btn.dataset.name);
   });
+  serverStreamsEl.querySelectorAll('.netcheck-start').forEach((btn) => {
+    btn.onclick = startNetcheck;
+  });
+  serverStreamsEl.querySelectorAll('.netcheck-hide').forEach((btn) => {
+    btn.onclick = () => {
+      netcheckHiddenAt = netcheckState.finishedAt || 0;
+      renderServerStreams(latestStreams);
+    };
+  });
+}
+
+// --- Проблемы приёма и замер «где теряется» -----------------------------------
+// Сервер сам замечает по статистике SRS, что эфир упёрся в ограничение сети или
+// что пакеты опаздывают (srtHealth в /api/streams, см. srt-health.js), — стример
+// видит это прямо под своим эфиром, а не узнаёт из логов задним числом.
+function srtHealthHtml(health) {
+  if (!health) return '';
+  const button = '<button type="button" class="netcheck-start">Найти, где теряется</button>';
+  if (health.state === 'limited') {
+    return `
+      <div class="live-slot-warn">
+        <b>Сеть не пропускает больше ${escapeHtml(formatKbps(Math.round(health.ceilingMbps * 1000)))}</b>
+        <span>Отсюда рывки и квадраты: приложение шлёт больше, лишнее теряется по дороге.
+        Поставь в нём битрейт не выше ${escapeHtml(formatKbps(health.suggestKbps))} и начни эфир заново.</span>
+        ${button}
+      </div>`;
+  }
+  return `
+    <div class="live-slot-warn">
+      <b>Пакеты теряются по дороге</b>
+      <span>За полминуты не дошло ${Number(health.dropped) || 0} — на картинке это рывки и квадраты. Попробуй снизить битрейт в приложении.</span>
+      ${button}
+    </div>`;
+}
+
+// Где именно теряется, из контейнера не видно — счётчики сетевой карты снимает
+// net-check.ps1 на самом компьютере (bondcast-netcheck://, тот же мост, что у
+// «Запустить OBS» и обновления), а сервер сравнивает их со своими (net-check.js).
+let netcheckState = { status: 'idle' };
+let netcheckClickedAt = 0;
+let netcheckHiddenAt = null;
+let netcheckTimer = null;
+// Столько ждём запуска скрипта, прежде чем подсказать, почему он мог не запуститься
+// (как у обновления). Скрипт может откликнуться и позже — тогда замер просто пойдёт.
+const NETCHECK_START_LIMIT_MS = 8000;
+
+function netcheckMbps(mbps) {
+  return formatKbps(Math.round((Number(mbps) || 0) * 1000));
+}
+
+// Вердикт сервера → заголовок и объяснение, что делать.
+const NETCHECK_VERDICTS = {
+  'before-pc': (r) => ['Теряется до этого компьютера',
+    `В сетевую карту пришло ${netcheckMbps(r.hostMbps)}, до сервера дошло ${netcheckMbps(r.containerMbps)} — ` +
+    `потерянные пакеты (ещё ${netcheckMbps(r.lostMbps)}) до компьютера не добрались. ` +
+    'Их отбросили раньше: Wi-Fi или мобильная сеть телефона, роутер, провайдер. ' +
+    'Настройки сервера это не исправят: снизь битрейт в приложении и поищи в роутере ограничение скорости.'],
+  'inside-pc': (r) => ['Теряется на этом компьютере',
+    `В сетевую карту пришло ${netcheckMbps(r.hostMbps)}, а до сервера дошло только ${netcheckMbps(r.containerMbps)}. ` +
+    'Пакеты пропадают уже здесь: перезапусти Docker Desktop, проверь антивирус, фаервол и программы, ' +
+    'которые управляют сетью (cFosSpeed, Killer, GameFirst). ' +
+    'Если во время замера на компьютере что-то качалось или шло видео — закрой и повтори.'],
+  unclear: (r) => ['Не удалось разобрать',
+    `В сетевую карту пришло ${netcheckMbps(r.hostMbps)}, до сервера дошло ${netcheckMbps(r.containerMbps)}, ` +
+    'но непонятно, эфир ли это лишнее. Закрой на компьютере загрузки, видео и игры и повтори замер. ' +
+    'Если всё закрыто, а итог тот же — пакеты отбрасывает сама Windows: проверь антивирус, фаервол и программы, которые управляют сетью.'],
+  'server-busy': (r) => ['Сервер не успевает принимать',
+    `Пакеты дошли до сервера, но не влезли в его буфер приёма (${Number(r.containerBufferDrops) || 0} за замер). ` +
+    'Компьютер перегружен — закрой тяжёлые программы.'],
+  'enhance-on': () => ['Выключи улучшение картинки',
+    'Его поток идёт в сервер изнутри компьютера и сбивает сравнение. Выключи «Улучшение картинки» на минуту и повтори замер.'],
+  bypass: () => ['Поток идёт мимо сетевой карты',
+    'Сервер получает эфир не через сетевую карту этого компьютера — похоже, приложение запущено здесь же. ' +
+    'Замер в таком случае ничего не покажет.'],
+  'too-small': () => ['Потерь слишком мало',
+    'Теряется так мало, что на фоне остального трафика замер этого не различит. Повтори, когда искажения станут заметнее.'],
+  'no-loss': () => ['Сейчас потерь нет', 'За время замера всё дошло. Повтори, когда на картинке пойдут искажения.'],
+  'no-stream': () => ['Эфира не было', 'Замер имеет смысл только во время эфира.'],
+  error: (r) => ['Замер не удался', r.reason || 'причина неизвестна'],
+};
+
+// Скрипт не откликнулся: протокол не зарегистрирован (старая установка или запуск
+// из папки с исходниками) либо панель открыта не на том компьютере, где сервер.
+const NETCHECK_NOT_STARTED = `
+  <b>Замер не запустился</b>
+  <span>Нажимать нужно в браузере на компьютере, где стоит сервер. Если это он — обнови Bondcast Stream:
+  замер появился в новой версии. Запускаешь из папки с исходниками — нажми кнопку ещё раз и выполни в этой папке
+  <code>powershell -ExecutionPolicy Bypass -File net-check.ps1</code></span>`;
+
+function netcheckHtml() {
+  const st = netcheckState;
+  if (st.status === 'idle') return '';
+  const finished = st.status === 'done' || st.status === 'error';
+  if (finished && netcheckHiddenAt === (st.finishedAt || 0)) return '';
+  const hide = '<button type="button" class="netcheck-hide">Скрыть</button>';
+  if (st.status === 'waiting') {
+    if (Date.now() - netcheckClickedAt < NETCHECK_START_LIMIT_MS) {
+      return '<div class="netcheck-box"><span><span class="spinner"></span> Запускаю замер… Если браузер спросит, можно ли открыть программу, — разреши.</span></div>';
+    }
+    return `<div class="netcheck-box">${NETCHECK_NOT_STARTED}</div>`;
+  }
+  if (st.status === 'measuring') {
+    return `<div class="netcheck-box"><span><span class="spinner"></span> Меряю сеть ${Number(st.seconds) || 30} секунд — эфир не останавливай</span></div>`;
+  }
+  if (st.status === 'error' && st.code === 'no-host') return `<div class="netcheck-box">${NETCHECK_NOT_STARTED}${hide}</div>`;
+  const result = st.status === 'done' && st.result ? st.result : { verdict: 'error', reason: st.message };
+  const [title, text] = (NETCHECK_VERDICTS[result.verdict] || NETCHECK_VERDICTS.error)(result);
+  return `<div class="netcheck-box">
+    <b>${escapeHtml(title)}</b>
+    <span>${escapeHtml(text)}</span>
+    ${hide}
+  </div>`;
+}
+
+function stopNetcheckPolling() {
+  if (netcheckTimer) {
+    clearInterval(netcheckTimer);
+    netcheckTimer = null;
+  }
+}
+
+// Состояние замера приходит двумя путями: с общим опросом эфиров (/api/streams) и,
+// пока замер идёт, раз в секунду отдельно — чтобы плашка не отставала на 5 секунд.
+function applyNetcheck(data) {
+  if (!data || !data.status) return;
+  const active = data.status === 'waiting' || data.status === 'measuring';
+  // Сразу после клика сервер ещё может отдать прошлый замер — своё «запускаю» не затираем.
+  if (!active && Date.now() - netcheckClickedAt < 1500) return;
+  netcheckState = data;
+  if (active && !netcheckTimer) netcheckTimer = setInterval(refreshNetcheck, 1000);
+  if (!active) stopNetcheckPolling();
+}
+
+async function refreshNetcheck() {
+  try {
+    const res = await fetch('/api/netcheck');
+    applyNetcheck(await res.json());
+  } catch (e) {
+    // тихо — попробуем на следующем опросе
+  }
+  renderServerStreams(latestStreams);
+}
+
+async function startNetcheck() {
+  netcheckClickedAt = Date.now();
+  netcheckHiddenAt = null;
+  netcheckState = { status: 'waiting' };
+  renderServerStreams(latestStreams);
+  try {
+    await fetch('/api/netcheck/start', { method: 'POST' });
+  } catch (e) {
+    // сервер недоступен — скрипт получит отказ, а плашка подскажет, что замер не запустился
+  }
+  window.location.href = 'bondcast-netcheck://run';
+  if (!netcheckTimer) netcheckTimer = setInterval(refreshNetcheck, 1000);
 }
 
 // --- «Заглушка при обрыве» — реальный бэкенд (server.js: OBS websocket-клиент +
@@ -2490,6 +2646,8 @@ async function refreshStreams() {
     const res = await fetch('/api/streams');
     const data = await res.json();
     latestStreams = data.streams || [];
+    // Замер сети едет тем же ответом — так его итог виден и после перезагрузки страницы.
+    applyNetcheck(data.netcheck);
     if (latestStreams.length) everLive = true;
     renderSubs();
     renderServerStreams(latestStreams);

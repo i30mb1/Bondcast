@@ -12,6 +12,8 @@ const { WebSocketServer } = require('ws');
 const { OBSWebSocket } = require('obs-websocket-js');
 const { createLogger } = require('./logger');
 const { createSceneSwitcher } = require('./scene-switcher');
+const { createSrtHealth } = require('./srt-health');
+const { sanitizeHostSample, parseContainerSample, locateLoss } = require('./net-check');
 
 // Единый логгер стека: сюда пишет и сама панель, и коллектор докеровских логов
 // (см. attachCollector ниже). Папка /logs bind-монтирована с хоста — файл оттуда
@@ -367,6 +369,123 @@ app.post('/api/update/progress', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Замер «где теряются пакеты» ---------------------------------------------
+// Панель видит, что эфир упёрся в потолок (srt-health.js), но не видит, где он
+// стоит: счётчики сетевой карты Windows из контейнера недоступны. Их снимает
+// net-check.ps1 на хосте — тот же мост через протокол, что у обновления
+// (bondcast-netcheck://run), — дважды с паузой в NETCHECK_SEC и шлёт сюда. В те же
+// моменты панель сама снимает счётчики контейнера SRS, разницу считает net-check.js.
+const NETCHECK_SEC = 30;
+// Сколько ждём запуска скрипта после кнопки: при первом запуске браузер спрашивает,
+// можно ли открыть программу, и человеку нужно время ответить.
+const NETCHECK_WAIT_MS = 2 * 60 * 1000;
+// Сколько ждём второй отчёт после первого: сам замер плюс запас на медленный компьютер.
+const NETCHECK_MEASURE_MS = (NETCHECK_SEC + 30) * 1000;
+// status: idle → waiting (нажали кнопку) → measuring (пришёл первый отчёт) →
+// finishing (пришёл второй, считаем) → done | error.
+let netcheck = { status: 'idle' };
+// Итог последнего доведённого до конца замера — для выгрузки логов: новый запуск
+// кнопкой состояние выше сбрасывает, а в файле прошлый результат всё ещё нужен.
+let lastNetcheckResult = null;
+
+// Замер, который не дождался хоста, сам переходит в ошибку — иначе панель ждала бы
+// вечно. code: 'no-host' страница показывает как «замер не запустился» с подсказкой.
+function expireNetcheck() {
+  const now = Date.now();
+  const waitedOut = netcheck.status === 'waiting' && now - netcheck.startedAt > NETCHECK_WAIT_MS;
+  const measuredOut = (netcheck.status === 'measuring' || netcheck.status === 'finishing') && now - netcheck.measuringSince > NETCHECK_MEASURE_MS;
+  if (waitedOut || measuredOut) {
+    netcheck = { status: 'error', code: 'no-host', startedAt: netcheck.startedAt, finishedAt: now, message: 'компьютер не прислал счётчики' };
+    logger.log('panel', 'warn', `замер сети: ${waitedOut ? 'скрипт на компьютере не запустился' : 'скрипт на компьютере не прислал второй отчёт'}`);
+  }
+}
+
+// Сколько итог замера висит на странице: дольше он уже ни о чём — сеть могла измениться.
+const NETCHECK_SHOW_MS = 30 * 60 * 1000;
+
+// То, что видит страница (и /api/streams, и /api/netcheck).
+function netcheckView() {
+  expireNetcheck();
+  const finished = netcheck.status === 'done' || netcheck.status === 'error';
+  if (finished && Date.now() - netcheck.finishedAt > NETCHECK_SHOW_MS) netcheck = { status: 'idle' };
+  return {
+    status: netcheck.status === 'finishing' ? 'measuring' : netcheck.status,
+    seconds: NETCHECK_SEC,
+    startedAt: netcheck.startedAt || null,
+    finishedAt: netcheck.finishedAt || null,
+    result: netcheck.result || null,
+    code: netcheck.code || null,
+    message: netcheck.message || null,
+  };
+}
+
+// «Улучшение картинки» публикует в SRS свой поток изнутри компьютера — он попадает
+// в счётчики контейнера, но не сетевой карты, и замер с ним врёт.
+async function enhancedStreamActive() {
+  try {
+    return (await getActiveSrsStreams({ includeEnhanced: true })).some((s) => isEnhancedName(s.name));
+  } catch (e) {
+    return false;
+  }
+}
+
+// Отчёт хоста — публично, до auth: у скрипта нет способа авторизоваться (тот же
+// принцип, что у прогресса обновления выше). Поэтому принимаем его только пока
+// замер запущен кнопкой из панели (а она уже за auth), и из тела берём одни числа
+// счётчиков — см. sanitizeHostSample.
+app.post('/api/netcheck/report', async (req, res) => {
+  const body = req.body || {};
+  expireNetcheck();
+  if (netcheck.status !== 'waiting' && netcheck.status !== 'measuring') {
+    return res.status(409).json({ error: 'замер не запущен из панели' });
+  }
+  if (body.status === 'error') {
+    // Текст уходит в лог и на страницу — без переводов строк и не длиннее строки.
+    const message = String(body.message || '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'скрипт на компьютере не смог снять счётчики';
+    netcheck = { status: 'error', startedAt: netcheck.startedAt, finishedAt: Date.now(), message };
+    logger.log('panel', 'warn', `замер сети: ${message}`);
+    return res.json({ ok: true });
+  }
+  const host = sanitizeHostSample(body.sample);
+  if (!host) return res.status(400).json({ error: 'в отчёте нет счётчиков' });
+
+  // try/catch обязателен: исключение в async-обработчике Express 4 не ловит, и оно
+  // уронило бы всю панель — а этот маршрут открыт без пароля.
+  try {
+    if (body.status === 'measuring' && netcheck.status === 'waiting') {
+      // Статус меняем до await: второй такой же отчёт не должен начать замер заново.
+      const current = { status: 'measuring', startedAt: netcheck.startedAt, measuringSince: Date.now(), hostA: host, containerA: null, enhanceActive: false };
+      netcheck = current;
+      [current.containerA, current.enhanceActive] = await Promise.all([sampleSrsContainer(), enhancedStreamActive()]);
+      return res.json({ ok: true, seconds: NETCHECK_SEC });
+    }
+    if (body.status === 'done' && netcheck.status === 'measuring') {
+      const current = netcheck;
+      current.status = 'finishing'; // до await: повторный отчёт не должен посчитать итог дважды
+      const [containerB, enhanceNow] = await Promise.all([sampleSrsContainer(), enhancedStreamActive()]);
+      const result = locateLoss({
+        hostA: current.hostA,
+        hostB: host,
+        containerA: current.containerA,
+        containerB,
+        lanIps: (process.env.LAN_IPS || '').split(',').map((s) => s.trim()).filter(Boolean),
+        srt: srtHealth.totalsBetween(current.measuringSince, Date.now()),
+        enhanceActive: current.enhanceActive || enhanceNow,
+      });
+      // Пока считали, замер могли перезапустить кнопкой — чужое состояние не затираем.
+      if (netcheck === current) netcheck = { status: 'done', startedAt: current.startedAt, finishedAt: Date.now(), result };
+      lastNetcheckResult = result;
+      logger.log('panel', result.verdict === 'error' ? 'warn' : 'info', `замер сети: ${describeNetcheck(result)}`);
+      return res.json({ ok: true });
+    }
+  } catch (e) {
+    netcheck = { status: 'error', startedAt: netcheck.startedAt, finishedAt: Date.now(), message: 'панель не смогла обработать счётчики' };
+    logger.log('panel', 'error', `замер сети: ${e.message}`);
+    return res.status(500).json({ error: 'не удалось обработать отчёт' });
+  }
+  return res.status(409).json({ error: 'отчёт не по порядку' });
+});
+
 app.use(auth);
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -404,6 +523,27 @@ function levelOfServiceLine(line) {
   return 'info';
 }
 
+// Статистика приёма SRT из лога SRS — по ней панель сама замечает, что эфир упёрся
+// в ограничение сети (см. srt-health.js). В лог кладём только смену состояния:
+// сами строки статистики там уже есть.
+const srtHealth = createSrtHealth();
+
+function noteSrtHealth(text) {
+  const event = srtHealth.feed(text);
+  if (!event || !event.changed) return;
+  const v = event.verdict;
+  if (!v) {
+    logger.log('panel', 'info', `приём SRT [${event.cid}]: снова в порядке — пакеты больше не выбрасываются`);
+  } else if (v.state === 'limited') {
+    const sign = v.reason === 'shortfall' ? 'доходит меньше, чем шлёт кодер' : `повторов ${Math.round(v.retransShare * 100)} %`;
+    logger.log('panel', 'warn',
+      `приём SRT [${event.cid}]: упёрся в потолок ≈${v.ceilingMbps.toFixed(1)} Мбит/с (${Math.round(v.ceilingPps)} пакетов/с), ` +
+      `${sign} — на пути ограничение скорости; кодеру подойдёт битрейт до ${v.suggestKbps} кбит/с`);
+  } else {
+    logger.log('panel', 'warn', `приём SRT [${event.cid}]: пакеты опаздывают и выбрасываются (${v.dropped} за 30 с)`);
+  }
+}
+
 function attachCollector(name) {
   if (collectorStreams.has(name)) return;
   const container = docker.getContainer(name);
@@ -432,6 +572,7 @@ function attachCollector(name) {
       for (const line of lines) {
         const text = line.trim();
         if (text) logger.log(name, levelOfServiceLine(text), text);
+        if (text && name === 'srs') noteSrtHealth(text);
       }
     };
     stdout.on('data', onData);
@@ -1013,7 +1154,10 @@ async function bundleHeader() {
   }
   try {
     const v = await docker.version();
-    lines.push(`Docker: ${v.Version} (API ${v.ApiVersion}, ${v.Os}/${v.Arch})`);
+    // Platform.Name — «Docker Desktop 4.x»: у Docker Desktop порт пробрасывает его
+    // собственная программа на Windows, и её поведение зависит от этой версии.
+    const platform = v.Platform && v.Platform.Name ? `, ${v.Platform.Name}` : '';
+    lines.push(`Docker: ${v.Version} (API ${v.ApiVersion}, ${v.Os}/${v.Arch}${platform})`);
   } catch (e) {
     lines.push(`Docker: недоступен — ${e.message}`);
   }
@@ -1030,6 +1174,25 @@ async function bundleHeader() {
     } catch (e) {
       lines.push(`${name}: не найден`);
     }
+  }
+  lines.push('');
+  lines.push('--- Приём SRT за последние минуты ---');
+  const publishers = srtHealth.snapshot();
+  if (!publishers.length) lines.push('издателей не было');
+  for (const p of publishers) {
+    const verdict = p.state === 'limited'
+      ? `потолок ≈${p.ceilingMbps.toFixed(2)} Мбит/с, совет кодеру до ${p.suggestKbps} кбит/с`
+      : p.state === 'dropping' ? 'пакеты опаздывают' : 'в порядке';
+    lines.push(`[${p.cid}] ${verdict}; интервалов ${p.intervals}, принято ${p.recv}, потеряно ${p.loss}, повторов ${p.retrans}, выброшено ${p.drop}`);
+  }
+  lines.push(`Замер сети: ${lastNetcheckResult ? describeNetcheck(lastNetcheckResult) : 'не запускался'}`);
+  try {
+    // Счётчики UDP внутри SRS с момента его запуска: RcvbufErrors > 0 — пакеты
+    // дошли до контейнера и не влезли в буфер приёма.
+    const udp = (await execText('srs', ['cat', '/proc/net/snmp'])).split('\n').filter((row) => row.startsWith('Udp:'));
+    lines.push(...udp.map((row) => `SRS ${row.trim()}`));
+  } catch (e) {
+    lines.push(`SRS Udp: недоступно — ${e.message}`);
   }
   return lines.join('\n');
 }
@@ -1233,6 +1396,8 @@ async function fetchSrsStreams() {
     .filter((s) => s.publish && s.publish.active)
     .map((s) => ({
       name: s.name,
+      // Идентификатор издателя: под ним же SRS пишет в лог статистику приёма SRT.
+      cid: (s.publish && s.publish.cid) || null,
       video: s.video || null,
       audio: s.audio || null,
       kbpsRecv30s: (s.kbps && s.kbps.recv_30s) ?? null,
@@ -1249,10 +1414,89 @@ async function fetchSrsStreams() {
 app.get('/api/streams', async (req, res) => {
   try {
     const streams = await getActiveSrsStreams();
-    res.json({ streams: streams.map((s) => ({ ...s, liveSinceMs: streamFirstSeenAt.get(s.name) || null })) });
+    res.json({
+      streams: streams.map((s) => ({
+        ...s,
+        liveSinceMs: streamFirstSeenAt.get(s.name) || null,
+        // null — приём в порядке либо поток пришёл не по SRT (у RTMP такой статистики нет).
+        srtHealth: s.cid ? srtHealth.verdictFor(s.cid) : null,
+      })),
+      // Состояние замера сети едет тем же опросом: страница показывает его под эфирами.
+      netcheck: netcheckView(),
+    });
   } catch (e) {
     res.status(502).json({ error: `не удалось спросить SRS: ${e.message}` });
   }
+});
+
+// Команда внутри контейнера, вывод текстом. Нужна замеру сети: счётчики приёма
+// лежат в /proc контейнера SRS, снаружи их не прочитать.
+async function execText(name, cmd, timeoutMs = 4000) {
+  const exec = await docker.getContainer(name).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+  const stream = await exec.start({});
+  return new Promise((resolve, reject) => {
+    const out = new PassThrough();
+    const chunks = [];
+    out.on('data', (chunk) => chunks.push(chunk));
+    docker.modem.demuxStream(stream, out, new PassThrough());
+    const timer = setTimeout(() => {
+      stream.destroy();
+      reject(new Error('контейнер не ответил'));
+    }, timeoutMs);
+    stream.on('end', () => {
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    stream.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+  });
+}
+
+// null — счётчики снять не удалось; замер тогда честно скажет об этом сам.
+async function sampleSrsContainer() {
+  try {
+    return parseContainerSample(await execText('srs', ['cat', '/proc/net/dev', '/proc/net/snmp']), Date.now());
+  } catch (e) {
+    logger.log('panel', 'warn', `замер сети: счётчики SRS не снялись — ${e.message}`);
+    return null;
+  }
+}
+
+// Итог замера одной строкой — в лог панели, чтобы он попал и в выгрузку.
+function describeNetcheck(r) {
+  if (r.verdict === 'error') return `не удался — ${r.reason}`;
+  const numbers = `в карту «${r.adapter}» ${r.hostMbps.toFixed(2)} Мбит/с, до SRS ${r.containerMbps.toFixed(2)} Мбит/с` +
+    `, потеряно ${r.lostMbps == null ? '?' : r.lostMbps.toFixed(2)} Мбит/с` +
+    `, UDP ${r.hostUdpPps == null ? '?' : Math.round(r.hostUdpPps)} → ${Math.round(r.containerUdpPps)} пакетов/с` +
+    `, отброшено Windows ${r.hostDiscarded}, буфером SRS ${r.containerBufferDrops}, за ${r.seconds} с`;
+  const verdicts = {
+    'before-pc': 'потери до этого компьютера',
+    'inside-pc': 'потери на этом компьютере',
+    'server-busy': 'SRS не успевает читать пакеты',
+    bypass: 'поток идёт к SRS изнутри компьютера, мимо сетевой карты',
+    'enhance-on': 'мешает включённое улучшение картинки',
+    unclear: 'недостача есть, но чья — не разобрать',
+    'too-small': 'потерь слишком мало для замера',
+    'no-loss': 'за время замера потерь не было',
+    'no-stream': 'за время замера эфира не было',
+  };
+  return `${verdicts[r.verdict] || r.verdict} (${numbers})`;
+}
+
+app.post('/api/netcheck/start', (req, res) => {
+  expireNetcheck();
+  // Замер уже идёт — второй запуск сбил бы его окно.
+  if (netcheck.status === 'measuring' || netcheck.status === 'finishing') {
+    return res.status(409).json({ error: 'замер уже идёт' });
+  }
+  netcheck = { status: 'waiting', startedAt: Date.now() };
+  res.json({ ok: true });
+});
+
+app.get('/api/netcheck', (req, res) => {
+  res.json(netcheckView());
 });
 
 app.get('/api/update/status', (req, res) => {

@@ -444,6 +444,14 @@
   .live-slot-info { flex: 1; min-width: 0; }
   .live-slot-info b { display: block; word-break: break-all; }
   .live-slot-info .meta { font-size: var(--fs-xs); color: var(--text-muted); display: block; }
+  /* Проблема приёма под эфиром и итог замера сети — см. srtHealthHtml()/netcheckHtml() в app.js */
+  .live-slot-warn, .netcheck-box { display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-s); color: var(--text-secondary); }
+  .live-slot-warn { border-top: 1px solid var(--divider); padding-top: 10px; }
+  .live-slot-warn b { color: var(--danger); }
+  .netcheck-box { background: var(--step); border: 1px solid var(--divider); border-radius: var(--r-s); padding: 12px; }
+  .netcheck-box b { color: var(--text); }
+  .netcheck-box code { font-family: var(--mono); font-size: var(--fs-xs); word-break: break-all; }
+  .live-slot-warn button, .netcheck-box button { width: 100%; }
   .live-empty { font-size: var(--fs-xs); color: var(--text-muted); }
 
   .overlay-preview {

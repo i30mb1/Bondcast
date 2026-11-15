@@ -49,6 +49,7 @@ Source: "..\get-host-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\get-gateway-ips.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\launch-obs.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\update.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\net-check.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\check-static-ip.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\check-ports.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docker-missing.html"; DestDir: "{app}"; Flags: ignoreversion
@@ -95,6 +96,14 @@ Root: HKCU; Subkey: "Software\Classes\bondcast-obs\shell\open\command"; ValueTyp
 Root: HKCU; Subkey: "Software\Classes\bondcast-update"; ValueType: string; ValueName: ""; ValueData: "URL:Bondcast Stream Updater"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\bondcast-update"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\bondcast-update\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """powershell.exe"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\update.ps1"" ""%1"""
+
+; Кнопка "Найти, где теряется" под эфиром в панели дёргает bondcast-netcheck://run —
+; тот же мост: счётчики сетевой карты Windows из контейнера не видны, их снимает
+; net-check.ps1 и шлёт панели. "%1" скрипту не передаётся: параметров у него нет,
+; а всё, что прошло через браузер, внутрь попадать не должно.
+Root: HKCU; Subkey: "Software\Classes\bondcast-netcheck"; ValueType: string; ValueName: ""; ValueData: "URL:Bondcast Network Check"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\bondcast-netcheck"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\bondcast-netcheck\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """powershell.exe"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\net-check.ps1"""
 
 [Run]
 ; Чекбокс на странице Finished, отмечен по умолчанию (postinstall) - запускает
