@@ -28,7 +28,7 @@ configure<ComposeCompilerGradlePluginExtension> {
     includeSourceInformation = true
     val file = layout.projectDirectory.file("stability_config.conf")
     if (file.asFile.exists()) {
-        stabilityConfigurationFile.set(file)
+        stabilityConfigurationFiles.add(file)
     }
 
     // Generate file with info about compose functions
